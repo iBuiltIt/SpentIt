@@ -70,7 +70,12 @@ SELECT 1 FROM action_headers h WHERE h.state=1 AND (
  OR (h.kind=6 AND EXISTS(SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE b.account_id=?1 AND (o.id=h.payload OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=h.payload)))))
 )SQL");dependent.integer(1,acct.identity);
     if(dependent.row())fail(SQLITE_CONSTRAINT,"Undo the account's transactions, or close and reopen the file before archiving it.");
-    Statement relationships(impl_->db,"SELECT r.prior_payload,r.result_payload FROM review_link_history r JOIN action_headers h ON h.payload=r.answer WHERE h.state=1");
+    Statement relationships(impl_->db,R"SQL(
+SELECT r.prior_payload,r.result_payload FROM review_link_history r
+JOIN review_answers a ON a.id=r.answer
+JOIN action_headers h ON h.payload=r.answer OR a.question='batch-child:'||h.payload
+WHERE h.state=1
+)SQL");
     while(relationships.row())for(int column:{0,1})if(!relationships.null(column) && link_mentions(transfer_codec::view(relationships.bytes(column)).link,acct.identity))fail(SQLITE_CONSTRAINT,"Undo the account's transfer changes, or close and reopen the file before archiving it.");
 
     Statement pending(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND state IN(0,3,4) LIMIT 1");pending.integer(1,acct.identity);

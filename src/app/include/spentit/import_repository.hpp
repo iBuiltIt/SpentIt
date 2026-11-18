@@ -11,6 +11,7 @@
 #include <spentit/transfer_commands.hpp>
 #include <functional>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -342,6 +343,8 @@ public:
     // One save for every automatic pair from an import. It is not its own Undo step.
     virtual void save_automatic_import_review(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Automatic import review is unavailable");}
     virtual void local_preferences_changed() {}
+    // Opaque file identity for local settings that must not follow a replacement file.
+    virtual std::string local_preferences_identity() const {return {};}
     // Automatic links made since the latest non-reversed Accept.
     virtual std::vector<std::string> pending_review_links() const {return {};}
     // Rows kept when another transaction in the same account was merged into them,
@@ -371,8 +374,8 @@ public:
     virtual ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) {throw std::logic_error("Transaction edit Undo unavailable");}
     virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}
     virtual std::optional<ReviewReceipt> review_outcome(std::string_view) const {return {};}
-    virtual AcceptanceReview acceptance_review() const {return {};}
-    virtual AcceptanceReceipt accept_all(std::string_view,bool=false) {throw std::logic_error("Dataset acceptance unavailable");}
+    virtual AcceptanceReview acceptance_review(const std::set<std::int64_t>& = {}) const {return {};}
+    virtual AcceptanceReceipt accept_all(std::string_view,bool=false,const std::set<std::int64_t>& = {}) {throw std::logic_error("Dataset acceptance unavailable");}
     virtual std::optional<AcceptanceReceipt> acceptance_outcome(std::string_view) const {return {};}
 
     // Only a durable, transaction-free read may resolve an uncertain acknowledgement.

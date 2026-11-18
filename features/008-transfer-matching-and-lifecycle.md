@@ -58,8 +58,11 @@ distinct.
   unique pairs in its original connected suggestion group. The manual choice
   and follow-ons are one atomic save and one Undo step; unresolved choices stay
   manual. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
-  **Apply decisions** saves staged links and Not this transfer answers as one
-  atomic operation and one Undo. One-to-one suggestions sort first and start
+  **Apply decisions** saves staged links, Not this transfer answers and
+  checked **Accept without bank match** decisions as one atomic operation
+  and one Undo. Waiting-only cards can be selected by the account holding
+  the generated entries. See [batch acceptance without a bank match](../doc/review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
+  One-to-one suggestions sort first and start
   checked; untouched multiple-choice cards stay out. Review card Link saves
   only its pair and preserves unrelated pending decisions, as does individual
   Not this transfer. Inferred mirrors stay beside related cards; changing a
@@ -67,6 +70,10 @@ distinct.
   This refines the prior follow-on behavior for Review cards.
   See [pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
   See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+- **Accounts that don’t need bank matches** omits waiting-only Review cards
+  for generated entries in listed accounts. **Accept transactions** records
+  their unmatched decisions in the same file-wide save. Possible matches
+  stay in Review. See [account preference](../doc/review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
 
 ## Committed edits
 

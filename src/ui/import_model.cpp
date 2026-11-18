@@ -478,6 +478,8 @@ struct ImportModel::Worker {
     struct AccountView {QString filter;bool projected;int sort;bool descending;std::string batch;std::size_t ordinal;std::set<imports::Occurrence> selection;std::optional<imports::Occurrence> anchor,focus;};
     std::map<std::int64_t,AccountView> accountViews;
     QString sortDocument;
+    QString bankMatchSettingsKey;
+    std::set<std::int64_t> bankMatchOptionalAccounts;
     std::optional<std::int64_t> sortAccount;
     QString sortSettingsGroup() const {
         const QFileInfo file(path);
@@ -489,6 +491,28 @@ struct ImportModel::Worker {
     // A saved false stays off. Callers pass the leaf AutoMerge or AutoLink.
     bool automaticReviewPreference(const QString& leaf) const {
         return QSettings().value(sortDocument+"/"+leaf,true).toBool();
+    }
+    QString bankMatchAccountSetting(std::int64_t id) const {
+        const auto creation=gateway->repository().account_creation_outcome(id);
+        if(!creation)return {};
+        // An older backup can precede an account's creation. Guard against
+        // applying its old preference if the same number is assigned again.
+        QByteArray created;
+        for(const auto& field:{creation->name,creation->currency.definition_id(),creation->date}){
+            created.append(field.data(),static_cast<qsizetype>(field.size()));
+            created.append('\0');
+        }
+        return QString::number(id)+":"+QString::fromLatin1(QCryptographicHash::hash(created,QCryptographicHash::Sha256).toHex());
+    }
+    void loadBankMatchSettings() {
+        bankMatchOptionalAccounts.clear();bankMatchSettingsKey.clear();
+        const auto file=gateway->repository().local_preferences_identity();
+        if(file.empty())return;
+        bankMatchSettingsKey=sortDocument+"/BankMatchOptional/"+QString::fromLatin1(QByteArray(file.data(),static_cast<qsizetype>(file.size())).toHex());
+        for(const auto& value:QSettings().value(bankMatchSettingsKey).toStringList()){
+            bool valid=false;const auto id=value.section(':',0,0).toLongLong(&valid);
+            if(valid && id>0 && value==bankMatchAccountSetting(id))bankMatchOptionalAccounts.insert(id);
+        }
     }
     void restoreAccountSort() {
         if(reportLedgerActive)return;
@@ -1115,19 +1139,25 @@ struct ImportModel::Worker {
         if(metadataSelection!=selected.value("batch").toString()){metadata.clear();metadataSelection=selected.value("batch").toString();}
         diag::cache(diag::Code::metadata,metadata.isEmpty()?diag::EventKind::cache_miss:diag::EventKind::cache_hit);
         if(metadata.isEmpty()) {
+            const auto activeAccounts=repo.accounts();
+            std::set<std::int64_t> bankMatchOptionalActive;
+            for(const auto& account:activeAccounts)
+                if(bankMatchOptionalAccounts.contains(account.identity))bankMatchOptionalActive.insert(account.identity);
+            state["bankMatchSettingsAvailable"]=!bankMatchSettingsKey.isEmpty();
             std::map<std::int64_t,QVariantMap> accountBalances;
             for(const auto& [id,total]:repo.balances()) accountBalances.emplace(id,QVariantMap{{"balance",money(total,amountFormat)}});
             auto packAccount=[&](const app::Account& item){
                 const auto found=accountBalances.find(item.identity);
                 const auto extra=found==accountBalances.end()?QVariantMap{}:found->second;
-                return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived},{"balance",extra.value("balance")}};
+                return QVariantMap{{"id",QString::number(item.identity)},{"name",text(item.name)},{"currency",text(item.currency.code())},{"archived",item.archived},{"balance",extra.value("balance")},{"bankMatchOptional",bankMatchOptionalAccounts.contains(item.identity)}};
             };
             QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
             state["archivedAccounts"]=archivedList;
-            const auto acceptance=repo.acceptance_review();QVariantList acceptanceWarnings;bool canOverride=true;
+            const auto acceptance=repo.acceptance_review(bankMatchOptionalActive);QVariantList acceptanceWarnings;bool canOverride=true;
             for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable},{"missingDestination",warning.missing_destination}});canOverride &= warning.overridable;}
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
+                if(bankMatchOptionalActive.contains(q.waiting_account))continue;
                 QVariantList rows;
                 for(const auto& row:q.rows){auto value=draft(row.draft,categoryById,dateFormat,amountFormat);value["batch"]=text(row.identity.batch);value["ordinal"]=static_cast<int>(row.identity.ordinal);value["account"]=QString::number(row.account);value["accountName"]=text(row.account_name);value["committed"]=row.committed;value["currency"]=text(row.draft.transaction.effective_total().currency().code());value["withdrawal"]=row.draft.transaction.effective_total().units()<0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["deposit"]=row.draft.transaction.effective_total().units()>0?money(row.draft.transaction.effective_total(),amountFormat):QString();value["note"]=text(row.note);value["amountsDiffer"]=false;
                     if(q.kind==app::ReviewKind::link && !q.rows.empty() && row.identity!=q.rows.front().identity && row.draft.transaction.allocations().size()==1 && q.rows.front().draft.transaction.allocations().size()==1) {
@@ -1137,7 +1167,7 @@ struct ImportModel::Worker {
                         value["amountsDiffer"]=left.currency()==right.currency() && magnitude(left.units())!=magnitude(right.units());
                     }
                     value["sameDate"]=!q.rows.empty() && !row.draft.date.empty() && row.draft.date==q.rows.front().draft.date;value["suggestedLeftAllocation"]=text(row.suggested_left_allocation);value["suggestedRightAllocation"]=text(row.suggested_right_allocation);value["manual"]=row.note=="Manually entered";value["transferLinked"]=row.transfer_linked;value["importOrder"]=QString::number(row.import_order);QVariantList peers;for(const auto& peer:row.duplicate_candidates)peers.push_back(text(peer.batch)+":"+QString::number(peer.ordinal));value["duplicateCandidates"]=peers;value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
-                questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
+                questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"waitingAccount",q.waiting_account?QString::number(q.waiting_account):QString()},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
             }
             QVariantList exclusions;
             for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
@@ -1174,7 +1204,7 @@ struct ImportModel::Worker {
             const auto undoable=repo.undoable_account_operation();state["undoableAccountOperation"]=undoable?text(*undoable):QString();
             state["accountId"]=QString::number(acct.identity);
             QVariantList accountList;
-            for(const auto& item:repo.accounts()) accountList.push_back(packAccount(item));
+            for(const auto& item:activeAccounts) accountList.push_back(packAccount(item));
             state["accounts"]=accountList;state["homeCurrency"]=accountList.isEmpty()?text(acct.currency.code()):accountList.front().toMap().value("currency");
             state["transfersSupported"]=repo.transfers_supported();
             if(repo.transfers_supported()){
@@ -1512,6 +1542,7 @@ struct ImportModel::Worker {
             sortAccount.reset();sortDocument=sortSettingsGroup();
             dateFormat=gateway->repository().date_format();amountFormat=gateway->repository().amount_format();active=true; selected.clear(); receipt.clear();clearChanges();
             if(action=="create"){QSettings settings;settings.remove(sortDocument);settings.sync();if(settings.status()!=QSettings::NoError)throw std::runtime_error("The file was created, but its sort preferences could not be reset. Reopen the file before continuing.");}
+            loadBankMatchSettings();
             QSettings settings; settings.setValue("datasetPath",path); settings.sync();
             if(settings.status()!=QSettings::NoError) throw std::runtime_error("Dataset is open, but the startup path could not be saved in Settings");
             return;
@@ -1641,6 +1672,35 @@ struct ImportModel::Worker {
             }
             repo.local_preferences_changed();return;
         }
+        if(action=="bank_match_account_settings") {
+            if(bankMatchSettingsKey.isEmpty())throw std::runtime_error("Bank match settings are unavailable for this file.");
+            bool valid=false;const auto id=a.value("account").toString().toLongLong(&valid);
+            const bool optional=a.value("optional").toBool();
+            if(!valid || id<=0)throw std::invalid_argument("Choose an account.");
+            if(optional){
+                const auto accounts=repo.accounts();
+                if(std::none_of(accounts.begin(),accounts.end(),[&](const auto& account){return account.identity==id;}))
+                    throw std::invalid_argument("Choose an active account.");
+            }
+            auto next=bankMatchOptionalAccounts;
+            if(optional)next.insert(id);else next.erase(id);
+            if(next==bankMatchOptionalAccounts)return;
+            QStringList ids;
+            for(const auto account:next){
+                const auto setting=bankMatchAccountSetting(account);
+                if(setting.isEmpty())throw std::runtime_error("The account could not be identified. Reopen the file and try again.");
+                ids.push_back(setting);
+            }
+            QSettings settings;const auto prior=settings.value(bankMatchSettingsKey);
+            if(ids.isEmpty())settings.remove(bankMatchSettingsKey);else settings.setValue(bankMatchSettingsKey,ids);
+            settings.sync();
+            if(settings.status()!=QSettings::NoError){
+                if(prior.isValid())settings.setValue(bankMatchSettingsKey,prior);else settings.remove(bankMatchSettingsKey);
+                throw std::runtime_error("The bank match setting could not be saved. Check that Settings is writable and try again.");
+            }
+            bankMatchOptionalAccounts=std::move(next);
+            repo.local_preferences_changed();observedSaved();return;
+        }
         if(action=="amount_format") {
             const AmountFormat requested{a.value("enabled").toBool(),str(a.value("style"))};
             validate_amount_format(requested);
@@ -1733,21 +1793,25 @@ struct ImportModel::Worker {
         }
         if(action=="review_batch") {
             reviewFeedback.clear();
-            std::vector<app::ReviewAnswer> answers;bool linking=false;
+            std::vector<app::ReviewAnswer> answers;
             for(const auto& item:a.value("groups").toList()){
                 const auto group=item.toMap();app::ReviewAnswer answer;const auto kind=group.value("answer").toString();
-                if(kind=="link" || kind=="not_linked"){answer.action=kind=="link"?app::ReviewAction::link:app::ReviewAction::not_linked;linking=true;}else if(kind.isEmpty() || kind=="merge")answer.action=app::ReviewAction::merge;else throw std::invalid_argument("Choose a Review decision");
+                if(kind=="link")answer.action=app::ReviewAction::link;
+                else if(kind=="not_linked")answer.action=app::ReviewAction::not_linked;
+                else if(kind=="accept_missing")answer.action=app::ReviewAction::accept_missing;
+                else if(kind.isEmpty() || kind=="merge")answer.action=app::ReviewAction::merge;
+                else throw std::invalid_argument("Choose a Review decision");
                 answer.generation=group.value("generation").toString().toLongLong();answer.question=str(group.value("question"));
                 for(const auto& value:group.value("selected").toList()){const auto row=value.toMap();answer.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
                 if(group.contains("survivor")){const auto row=group.value("survivor").toMap();answer.survivor=imports::Occurrence{str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())};}
                 answer.left_allocation=str(group.value("leftAllocation"));answer.right_allocation=str(group.value("rightAllocation"));
                 answers.push_back(std::move(answer));
             }
-            if(linking)for(const auto& answer:answers)if(answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked)throw std::invalid_argument("Select transfer pairs on their own");
             const auto op=identity();app::ReviewReceipt receipt;
             try{receipt=repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
-            if(linking && receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
-            if(linking && std::any_of(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::not_linked;}))reviewFeedback="Transfer decisions saved. Undo reverses them together.";
+            if(std::any_of(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;}))
+                reviewFeedback="Transfer decisions saved. Undo reverses them together.";
+            else if(receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
             diagnosticSaved=true;selected.clear();return;
         }
         if(action=="review_answer" || action=="review_link_preview") {
@@ -2439,7 +2503,7 @@ struct ImportModel::Worker {
         } else if(action=="commit") {
             const auto operation="accept-"+str(QUuid::createUuid().toString(QUuid::WithoutBraces));
             std::optional<app::AcceptanceReceipt> result;
-            try {result=repo.accept_all(operation,a.value("ignoreWarnings").toBool());}
+            try {result=repo.accept_all(operation,a.value("ignoreWarnings").toBool(),bankMatchOptionalAccounts);}
             catch(...) {
                 const auto failure=std::current_exception();
                 try {result=repo.acceptance_outcome(operation);}
@@ -3148,6 +3212,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                 :(action=="delete_selection" && worker->diagnosticSaved)?"The transactions were deleted, but the screen could not update. Reopen the file before continuing."
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
+                :(action=="bank_match_account_settings" && worker->diagnosticSaved)?"The bank match setting was saved, but the screen could not update. Reopen the file and check Settings."
                 :((action=="map_import" || action=="resolve_import_categories" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :(action=="unmerge" && result.success)?"Unmerge was saved, but the screen could not update. Reopen the file and check the ledger before making more changes."

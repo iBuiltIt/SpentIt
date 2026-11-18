@@ -152,10 +152,11 @@ public:
     app::CommittedEntry committed_entry(const imports::Occurrence& id) const override{return repo().committed_entry(id);}
     app::ReviewReceipt answer_review(std::string_view op,const app::ReviewAnswer& a) override{return repo().answer_review(op,a);}
     app::ReviewReceipt undo_review(std::string_view op) override{return repo().undo_review(op);}
-    app::AcceptanceReview acceptance_review() const override{return repo().acceptance_review();}
-    app::AcceptanceReceipt accept_all(std::string_view op,bool ignore=false) override {
+    std::string local_preferences_identity() const override{return repo().local_preferences_identity();}
+    app::AcceptanceReview acceptance_review(const std::set<std::int64_t>& accounts={}) const override{return repo().acceptance_review(accounts);}
+    app::AcceptanceReceipt accept_all(std::string_view op,bool ignore=false,const std::set<std::int64_t>& accounts={}) override {
         attempted=true;if(fault==before)throw std::runtime_error("Injected failure before commit");
-        auto receipt=repo().accept_all(op,ignore);if(fault==after || fault==unknown)throw std::runtime_error("Injected lost commit acknowledgement");return receipt;
+        auto receipt=repo().accept_all(op,ignore,accounts);if(fault==after || fault==unknown)throw std::runtime_error("Injected lost commit acknowledgement");return receipt;
     }
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view op) const override {if(attempted && fault==unknown)throw std::runtime_error("Injected outcome lookup failure");return repo().acceptance_outcome(op);}
     app::ImportResult import_result(std::string_view id) const override{return repo().import_result(id);}
@@ -651,6 +652,7 @@ private slots:
         QCOMPARE(waiting.value("rows").toList().size(),1);QVERIFY(!waiting.value("waitingLink").toString().isEmpty());
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));QTRY_COMPARE(window->property("currentPage").toString(),"review");
         QTRY_VERIFY(visualItem(window->contentItem(),"acceptMissingMatch"));QVERIFY(visualItem(window->contentItem(),"acceptMissingMatch")->isVisible());
+        auto* noExclusion=visualItem(window->contentItem(),"hideLinkSuggestions");QVERIFY(!noExclusion || !noExclusion->isVisible());
         auto* absent=visualItem(window->contentItem(),"reviewNo");QVERIFY(!absent || !absent->isVisible());
         run(m,"select_account",{{"id","2"}});
         run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-01-03\nT100.00\nPReceipt\nL[Checking]\n^\n")}});
@@ -661,7 +663,128 @@ private slots:
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1") && visualItem(window->contentItem(),"reviewLinkCandidate_1")->isVisible());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo") && visualItem(window->contentItem(),"reviewNo")->isVisible());
         QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
+        QTRY_VERIFY(visualItem(window->contentItem(),"hideLinkSuggestions") && visualItem(window->contentItem(),"hideLinkSuggestions")->isVisible());
         auto* hidden=visualItem(window->contentItem(),"acceptMissingMatch");QVERIFY(!hidden || !hidden->isVisible());
+    }
+    void reviewAcceptWithoutBankMatch() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->resize(1300,900);
+        create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","3"},{"name","Cash"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT-10.00\nPOne\nL[Savings]\n^\nD2026-02-02\nT20.00\nPTwo\nL[Savings]\n^\nD2026-02-03\nT-30.00\nPThree\nL[Cash]\n^\n")}});
+        QCOMPARE(m.state().value("reviewCount").toInt(),3);
+        const auto balance=m.state().value("balance");
+        const auto item=[&](const char* name){return visualItem(window->contentItem(),QString::fromLatin1(name));};
+        const auto click=[&](QQuickItem* control){QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,control->mapToScene({control->width()/2,control->height()/2}).toPoint());};
+        const auto decisions=[&]{return window->property("reviewLinkChoices").value<QJSValue>().toVariant().toMap();};
+        QVERIFY(QMetaObject::invokeMethod(item("reviewNavigation"),"clicked"));
+        QTRY_VERIFY(item("acceptMissingMatch") && item("acceptMissingMatch")->isVisible());
+        QVERIFY(!item("acceptMissingMatch")->property("checked").toBool());
+        QVERIFY(!item("linkSelected")->isVisible());
+        click(item("acceptMissingMatch"));QTRY_COMPARE(decisions().size(),1);
+        click(item("acceptMissingMatch"));QTRY_VERIFY(decisions().isEmpty());
+        auto* account=item("waitingTransferAccount");QVERIFY(account);
+        QCOMPARE(account->property("count").toInt(),2);
+        const auto accounts=window->property("waitingTransferAccounts").value<QJSValue>().toVariant().toList();
+        const int savings=accounts.front().toMap().value("id").toString()=="2"?0:1;
+        account->setProperty("currentIndex",savings);
+        click(item("selectWaitingTransfers"));QTRY_COMPARE(decisions().size(),2);
+        QCOMPARE(item("transferDecisionSummary")->property("text").toString(),QString("2 without bank match"));
+        for(const auto& decision:decisions())QCOMPARE(decision.toMap().value("account").toString(),QString("2"));
+        click(item("selectWaitingTransfers"));QTRY_VERIFY(decisions().isEmpty());
+        click(item("selectWaitingTransfers"));QTRY_COMPARE(decisions().size(),2);
+        QCOMPARE(m.state().value("reviewCount").toInt(),3);
+        click(item("linkSelected"));QTRY_COMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(m.state().value("reviewQuestions").toList().front().toMap().value("waitingAccount").toString(),QString("3"));
+        QCOMPARE(m.state().value("balance"),balance);
+        run(m,"review_undo");QTRY_COMPARE(m.state().value("reviewCount").toInt(),3);
+        QTRY_VERIFY(decisions().isEmpty());
+    }
+    void bankMatchOptionalSettings() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->resize(1300,900);
+        const auto item=[&](const char* name){return visualItem(window->contentItem(),QString::fromLatin1(name));};
+        const auto path=dir.path()+"/doc";
+        create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"create_account",{{"id","3"},{"name","Cash"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(m,"select_account",{{"id","1"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT-10.00\nPPayment\nL[Savings]\n^\nD2026-02-10\nT20.00\nPWithdrawal\nL[Savings]\n^\nD2026-02-11\nT-30.00\nPCash withdrawal\nL[Cash]\n^\n")}});
+        const auto count=[&]{return m.state().value("reviewCount").toInt();};
+        const auto warnings=[&]{return m.state().value("acceptanceWarnings").toList();};
+        QCOMPARE(count(),3);QCOMPARE(warnings().size(),3);
+        const auto newTransactions=m.state().value("newTransactions");
+        const auto undo=m.state().value("actionUndo");
+        QVERIFY(QMetaObject::invokeMethod(item("sidebarSettings"),"clicked"));
+        QTRY_VERIFY(item("bankMatchAccount") && item("bankMatchAccount")->isVisible());
+        item("bankMatchAccount")->setProperty("currentIndex",1);
+        QCOMPARE(item("bankMatchAccount")->property("currentValue").toString(),QString("2"));
+        QVERIFY(QMetaObject::invokeMethod(item("addBankMatchOptional"),"clicked"));
+        QTRY_COMPARE(count(),1);QCOMPARE(warnings().size(),1);
+        QCOMPARE(warnings().front().toMap().value("account").toString(),QString("3"));
+        QCOMPARE(m.state().value("newTransactions"),newTransactions);QCOMPARE(m.state().value("actionUndo"),undo);
+        QTRY_VERIFY(item("removeBankMatchOptional_2") && item("removeBankMatchOptional_2")->isVisible());
+
+        run(m,"select_account",{{"id","2"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-02\nT10.00\nPBank receipt\n^\n")}});
+        QCOMPARE(count(),2);QCOMPARE(warnings().size(),2);
+        run(m,"close");run(m,"open",{{"path",path}});QCOMPARE(count(),2);QCOMPARE(warnings().size(),2);
+        run(m,"bank_match_account_settings",{{"account","3"},{"optional",true}});
+        QCOMPARE(count(),1);QCOMPARE(warnings().size(),1);
+        QCOMPARE(warnings().front().toMap().value("account").toString(),QString("2"));
+        const auto candidate=m.state().value("reviewQuestions").toList().front().toMap();
+        QCOMPARE(candidate.value("rows").toList().size(),2);
+        run(m,"commit",{},false);QVERIFY(m.state().value("newTransactions").toInt()>0);
+        run(m,"review_answer",{{"question",candidate.value("key")},{"generation",m.state().value("reviewGeneration")},
+                {"answer","link"},{"onlyThisPair",true},{"selected",candidate.value("rows")}});
+        QCOMPARE(count(),0);QVERIFY(warnings().isEmpty());
+        QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));
+        QTRY_COMPARE(m.state().value("newTransactions").toInt(),0);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("committed").toString(),QString("-20.00"));
+        run(m,"undo_action",m.state().value("actionUndo").toMap());
+        QCOMPARE(count(),0);QVERIFY(warnings().isEmpty());QVERIFY(m.state().value("newTransactions").toInt()>0);
+        QVERIFY(m.state().value("canRedoAction").toBool());
+        QVERIFY(QMetaObject::invokeMethod(item("sidebarSettings"),"clicked"));
+        QTRY_VERIFY(item("removeBankMatchOptional_2"));
+        QVERIFY(QMetaObject::invokeMethod(item("removeBankMatchOptional_2"),"clicked"));
+        QTRY_COMPARE(count(),1);QCOMPARE(warnings().size(),1);
+        QVERIFY(!m.state().value("canRedoAction").toBool());QVERIFY(m.state().value("canUndoAction").toBool());
+        run(m,"bank_match_account_settings",{{"account","2"},{"optional",true}});
+        run(m,"commit");
+        run(m,"select_account",{{"id","2"}});
+        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-12\nT-20.00\nPLate bank transaction\n^\n")}});
+        QCOMPARE(count(),1);
+        QCOMPARE(m.state().value("reviewQuestions").toList().front().toMap().value("rows").toList().size(),2);
+    }
+    void bankMatchOptionalFileScope() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        const auto path=dir.path()+"/doc", replacement=dir.path()+"/replacement", backup=dir.path()+"/older-backup";
+        const QVariantMap account{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}};
+        const auto listed=[&]{
+            for(const auto& item:m.state().value("accounts").toList())
+                if(item.toMap().value("id").toString()=="2")return item.toMap().value("bankMatchOptional").toBool();
+            return false;
+        };
+        create(m,path);run(m,"close");
+        QVERIFY(QFile::copy(path,backup));
+        run(m,"open",{{"path",path}});run(m,"create_account",account);
+        run(m,"bank_match_account_settings",{{"account","2"},{"optional",true}});QVERIFY(listed());
+        run(m,"rename_account",{{"name","Renamed savings"}});QVERIFY(listed());
+        run(m,"change_password",{{"password","test-password"},{"confirmation","test-password"}});
+        run(m,"close");run(m,"unlock",{{"path",path},{"password","test-password"}});QVERIFY(listed());
+        run(m,"close");
+        create(m,replacement);run(m,"create_account",account);QVERIFY(!listed());run(m,"close");
+        QVERIFY(QFile::rename(path,dir.path()+"/original"));QVERIFY(QFile::rename(replacement,path));
+        run(m,"open",{{"path",path}});QVERIFY(!listed());
+        run(m,"close");QVERIFY(QFile::rename(path,replacement));QVERIFY(QFile::rename(backup,path));
+        run(m,"open",{{"path",path}});
+        auto newAccount=account;newAccount["name"]="Cash";run(m,"create_account",newAccount);
+        run(m,"close");run(m,"open",{{"path",path}});QVERIFY(!listed());
     }
     void reviewLinkSelected() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);

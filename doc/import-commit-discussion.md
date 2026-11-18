@@ -1,11 +1,17 @@
 # Acceptance and matching
 
-Last updated: 2026-11-09
+Last updated: 2026-11-18
 
 Accept transactions accepts new transactions across the file in one durable
 operation. Failed import rows stay visible. Several imports can be pending.
 Duplicate-only sources can complete without accepting older work. The ordinary
 balance includes new and accepted rows. Closing does not accept.
+
+**Accounts that don’t need bank matches** lets the user pre-authorize
+acceptance without a bank match for waiting-only generated counterparts
+in selected accounts. Accept records this decision in the same transaction
+as file-wide acceptance. A transfer with a candidate follows the ordinary
+Review and acceptance flow. See [account preference](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
 
 Account Discard removes that account's exclusively owned uncommitted material.
 It preserves accepted transactions and other retained sources. It requires an

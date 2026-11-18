@@ -35,6 +35,7 @@ struct ReviewQuestion {
     std::optional<std::size_t> ordinal;
     std::vector<ReviewTransaction> rows;
     std::string waiting_link={};
+    std::int64_t waiting_account=0;
 };
 struct ReviewSheet {
     std::int64_t generation=0;

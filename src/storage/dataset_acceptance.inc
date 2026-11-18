@@ -38,7 +38,7 @@ void ImportStore::local_preferences_changed() {
 }
 // Dataset acceptance consumes prepared mutation review. Financial revisions are
 // referenced by entry_revisions.draft_revision, never copied at acceptance.
-app::AcceptanceReview ImportStore::acceptance_review() const {
+app::AcceptanceReview ImportStore::acceptance_review(const std::set<std::int64_t>& accounts_without_bank_matches) const {
     if(impl_->review_changes!=sqlite3_total_changes64(impl_->db))const_cast<ImportStore*>(this)->prepare_review();
     app::AcceptanceReview result;
     for(const auto& pending:missing_import_categories()) {
@@ -96,12 +96,21 @@ app::AcceptanceReview ImportStore::acceptance_review() const {
             }
         }
     }
+    std::set<std::string> waiting_without_match;
+    // Review's cached, unfiltered sheet is built using the default acceptance
+    // review. Only a waiting-only card identifies a counterpart covered here.
+    if(!accounts_without_bank_matches.empty()){
+        std::set<std::int64_t> eligible_accounts;
+        for(const auto& account:accounts())if(accounts_without_bank_matches.contains(account.identity))eligible_accounts.insert(account.identity);
+        if(!eligible_accounts.empty())for(const auto& q:review_sheet().questions)
+            if(eligible_accounts.contains(q.waiting_account))waiting_without_match.insert(q.waiting_link);
+    }
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}) {
         if(side->state!=transfers::State::draft || !local_side(*side) || side->proposed_evidence)continue;
         ++result.transactions;
         if(value.link.unresolved)
             result.warnings.push_back({side->endpoint.account,"",{},"","Resolve this transfer before accepting transactions"});
-        else if(!side->accepted_unmatched) {
+        else if(!side->accepted_unmatched && (side!=&value.link.destination || !waiting_without_match.contains(value.link.identity))) {
             app::ImportBlocker warning{side->endpoint.account,"",{},"","This transfer has not been matched to an imported transaction."};warning.overridable=true;result.warnings.push_back(std::move(warning));
         }
     }
@@ -126,7 +135,7 @@ void ImportStore::accept_local(std::string_view operation,const app::TransferReq
     append_financial(impl_->db,operation,app::ChangeKind::transfer,{"",0},-1,0,before,change,before+change,"",request.expected_sequence,catalog_sequence(impl_->db));
     if(accepting)exec(impl_->db,"UPDATE account SET frozen=1 WHERE singleton=spentit_account()");
 }
-app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool ignore_warnings) {
+app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool ignore_warnings,const std::set<std::int64_t>& accounts_without_bank_matches) {
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE,"Acceptance operation identifier is too long");
     const auto digest=session_snapshot::digest(ignore_warnings?"accept:1":"accept:0");
     if(const auto saved=ActionChain(impl_->db).durable_outcome(operation,digest);saved && *saved!=ActionChain::Outcome::applied && *saved!=ActionChain::Outcome::no_change)throw app::OperationAlreadyCompleted(std::string(operation));
@@ -137,7 +146,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
     ActionChain(impl_->db).require_idle();
     const bool has_marks=!merge_survivors().empty() || !pending_review_links().empty();
     const auto baseline=acceptance_baseline(impl_->db,all_transfers());
-    const auto review=acceptance_review();
+    const auto review=acceptance_review(accounts_without_bank_matches);
     for(const auto& warning:review.warnings)if(!ignore_warnings || !warning.overridable)fail(SQLITE_CONSTRAINT,warning.reason.c_str());
     struct Scope {Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;state.accepting_dataset=false;state.publishing_review=false;}} scope{*impl_,impl_->selected_account};
     Atomic transaction(impl_->db);impl_->accepting_dataset=true;impl_->publishing_review=true;

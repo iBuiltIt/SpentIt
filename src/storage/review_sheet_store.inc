@@ -570,7 +570,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         auto question=std::find_if(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.kind==app::ReviewKind::link && !q.rows.empty() && q.rows.front().identity==row->first && q.waiting_link.empty();});
         if(question!=result.questions.end()){question->reason=message;question->waiting_link=link.identity;}
         else if(std::any_of(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()>1 && std::any_of(q.rows.begin(),q.rows.end(),[&](const auto& candidate){return candidate.identity==row->first;});}))continue;
-        else result.questions.push_back({"waiting:"+link.identity,app::ReviewKind::link,row->second.account,row->second.account_name,message,row->first.batch,row->first.ordinal,{row->second},link.identity});
+        else result.questions.push_back({"waiting:"+link.identity,app::ReviewKind::link,row->second.account,row->second.account_name,message,row->first.batch,row->first.ordinal,{row->second},link.identity,link.destination.endpoint.account});
     }
     const auto acceptance=acceptance_review();
     for(const auto& warning:acceptance.warnings){
@@ -867,24 +867,33 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
     return write_review_answer(operation,answer,sheet);
 }
 app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,const app::ReviewAnswer& answer,const app::ReviewSheet& sheet,std::string_view parent) {
-    if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || (answer.action!=app::ReviewAction::merge && answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked)))fail(SQLITE_MISUSE,"A batch child requires its enclosing Review transaction");
+    if(!parent.empty() && (sqlite3_get_autocommit(impl_->db) || answer.action==app::ReviewAction::separate))fail(SQLITE_MISUSE,"A batch child requires its enclosing Review transaction");
     if(impl_->enclosing_automatic_review && (parent.empty()==false || sqlite3_get_autocommit(impl_->db)))fail(SQLITE_MISUSE,"Automatic import review requires its enclosing transaction");
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
     const auto encoded=review_request(answer);
     if(answer.action==app::ReviewAction::accept_missing){
-        const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question && !q.waiting_link.empty();});
-        if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This waiting transfer has changed");
+        const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question && q.waiting_account!=0;});
+        if(question==sheet.questions.end() || !answer.selected.empty())fail(SQLITE_CONSTRAINT,"This waiting transfer has changed");
         const auto values=all_transfers();const auto old=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==question->waiting_link;});if(old==values.end())fail(SQLITE_CONSTRAINT);
+        const auto& destination=old->link.destination;
+        if(old->link.destination_released || old->link.origin.endpoint.entry!=question->rows.front().identity ||
+           destination.ledger_entry || destination.attached_evidence || destination.accepted_unmatched || destination.endpoint.account!=question->waiting_account)
+            fail(SQLITE_CONSTRAINT,"This waiting transfer has changed");
         struct Guard {Impl& state;std::int64_t selected;~Guard(){state.selected_account=selected;state.composing_review=false;}} guard{*impl_,impl_->selected_account};
-        Atomic transaction(impl_->db);
-        Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,?,?,?)");receipt.text(1,operation);receipt.integer(2,4);receipt.text(3,answer.question);receipt.text(4,encoded);receipt.integer(5,answer.generation);receipt.done();
+        std::optional<Atomic> transaction;
+        if(parent.empty())transaction.emplace(impl_->db);
+        Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,?,?,?)");receipt.text(1,operation);receipt.integer(2,4);receipt.text(3,parent.empty()?answer.question:"batch-child:"+std::string(parent));receipt.text(4,encoded);receipt.integer(5,answer.generation);receipt.done();
         impl_->selected_account=old->link.destination.endpoint.account;impl_->composing_review=true;
         app::TransferRequest request{};request.action=app::TransferAction::accept;request.link=old->link.identity;request.expected_sequence=transfer_sequence();
         const auto child=std::string(operation)+"-accept";apply_transfer(child,request);impl_->composing_review=false;
         const auto updated=all_transfers();const auto next=std::find_if(updated.begin(),updated.end(),[&](const auto& v){return v.link.identity==request.link;});
+        if(next==updated.end())fail(SQLITE_CORRUPT,"Saved transfer is missing");
         Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,request.link);history.blob(3,transfer_codec::encode(*old));history.blob(4,transfer_codec::encode(*next));history.text(5,child);history.integer(6,old->sequence);history.done();
-        Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;
-        finish([&]{transaction.commit();});return {std::string(operation)};
+        if(transaction){
+            Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,answer.generation+1);stack.done();impl_->pending_review_action=operation;
+            finish([&]{transaction->commit();});
+        }
+        return {std::string(operation)};
     }
     const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question;});if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This question has already changed");
     if(question->kind==app::ReviewKind::correction)fail(SQLITE_CONSTRAINT,"Correct the record before resolving it");
@@ -1527,25 +1536,28 @@ app::ReviewReceipt ImportStore::link_review_group(std::string_view operation,con
 }
 
 app::ReviewReceipt ImportStore::merge_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
-    // Apply the staged transfer decisions exactly; do not discover more pairs.
-    if(!answers.empty() && (answers.front().action==app::ReviewAction::link || answers.front().action==app::ReviewAction::not_linked)) {
-        for(const auto& answer:answers)if((answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked) || answer.automatic || (answer.action==app::ReviewAction::link && answer.selected.size()!=2))fail(SQLITE_CONSTRAINT,"Select each transfer pair once");
-        return write_review_batch(operation,answers,context);
-    }
-    for(const auto& answer:answers)if(answer.action!=app::ReviewAction::merge)fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
     return write_review_batch(operation,answers,context);
 }
 
 app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,const std::vector<app::ReviewAnswer>& answers,const app::OperationContext& context) {
     diag::Span span(diag::Code::review_write);
+    ScopedStatements statements(impl_->db);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(answers.empty())fail(SQLITE_CONSTRAINT,"Select at least one match group");
-    const bool linking=answers.front().action==app::ReviewAction::link || answers.front().action==app::ReviewAction::not_linked;
+    const bool linking=answers.front().action!=app::ReviewAction::merge;
     std::string encoded="batch:";
     std::set<std::string> questions;std::set<imports::Occurrence> selected;
     for(const auto& answer:answers){
         context.checkpoint("Checking selected matches");
-        if((linking?(answer.action!=app::ReviewAction::link && answer.action!=app::ReviewAction::not_linked):answer.action!=app::ReviewAction::merge) || answer.question=="selected")fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
+        if(linking){
+            // Apply only the staged transfer decisions.
+            const bool valid=answer.action==app::ReviewAction::link?answer.selected.size()==2:
+                answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;
+            if(!valid || answer.automatic || answer.question=="selected")
+                fail(SQLITE_CONSTRAINT,"Choose a valid transfer decision");
+        }else if(answer.action!=app::ReviewAction::merge || answer.question=="selected"){
+            fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
+        }
         if(!questions.insert(answer.question).second)fail(SQLITE_CONSTRAINT,"Select each match group only once");
         for(const auto& id:answer.selected)if(!selected.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once in a batch");
         const auto request=review_request(answer);encoded+=std::to_string(request.size())+":"+request;

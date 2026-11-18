@@ -1434,6 +1434,16 @@ AmountFormat ImportStore::amount_format() const {
     if(!row.row() || (row.integer(0)!=0 && row.integer(0)!=1))fail(SQLITE_CORRUPT,"Amount preferences are missing or invalid");
     AmountFormat result{row.integer(0)!=0,row.bytes(1)};validate_amount_format(result);return result;
 }
+std::string ImportStore::local_preferences_identity() const {
+    // SQLCipher's public header salt is stable across writes and passphrase
+    // changes. Use a purpose-specific digest so a different file at the same
+    // path does not inherit account-level policies.
+    Statement row(impl_->db,"PRAGMA cipher_salt");
+    if(!row.row())return {};
+    const auto salt=row.bytes(0);
+    if(salt.size()!=32 || salt.find_first_not_of("0123456789abcdefABCDEF")!=std::string::npos)return {};
+    return session_snapshot::digest("SpentIt/local-preferences/v1:"+salt);
+}
 void ImportStore::set_amount_format(const AmountFormat& format) {
     validate_amount_format(format);
     Atomic transaction(impl_->db);

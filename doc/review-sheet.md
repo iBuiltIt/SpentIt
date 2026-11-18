@@ -752,3 +752,44 @@ Transaction details and Inspect remain available. The checked partner can still
 be unchecked, and switching partners can still release and recalculate automatic
 suggestions. The visual state follows the same conflict check as selection;
 matching and saving behavior are unchanged.
+
+## Batch accept without a bank match — owner Go, 2026-11-18
+
+On a waiting-only transfer card, **Accept without bank match** starts unchecked.
+In **Unmatched transfers in**, choose the account that holds the generated
+entry. **Select all** checks its waiting-only cards. Individual checkboxes and
+**Clear selection** let the user change that selection before saving.
+Transfers with candidate matches use their existing link controls and offer
+**Hide suggestions…**.
+
+**Apply decisions** saves checked unmatched transfers with the pending links
+and rejections in one atomic operation and one Undo step. It records the
+decision without creating bank evidence or accepting a New transaction.
+**Accept transactions** remains a separate file-wide action. Redo replays the
+saved decisions. Cancellation, stale choices, and failure follow the same
+rules as other pending decisions. The database stays at version 1.
+
+## Accounts that don’t need bank matches — owner Go, 2026-11-18
+
+In **Settings → Accounts that don’t need bank matches**, add the account
+that holds the entries SpentIt creates for transfers. For listed active
+accounts, waiting-only cards are omitted from Review and their generated
+entries are accepted without a bank match during **Accept transactions**.
+Existing and future waiting-only entries follow the same rule. Candidate
+matches, ordinary acceptance warnings and blockers follow the existing
+Review and acceptance flow. A candidate that appears later is still eligible
+for Review.
+
+Adding or removing an account changes the local preference immediately.
+Removing it brings any still-waiting cards and warnings back. The application
+stores the preference on this computer for this file at its current path,
+using the file and account creation identities. Renaming an account or
+changing the file password preserves the preference. Copies at other paths
+and independently created replacement files start with an empty list.
+Archiving pauses the setting for that account until it is reactivated.
+
+The settings change preserves Undo and clears pending Redo. It creates no
+financial operation. The existing file-wide acceptance operation saves both
+sides and the unmatched decision atomically. Undo of acceptance restores
+the prior transaction and transfer state. The active preference still applies
+to Review after Undo. The database stays at version 1.

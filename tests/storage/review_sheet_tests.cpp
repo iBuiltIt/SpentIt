@@ -805,11 +805,18 @@ void editor_faults(const std::filesystem::path& dir,bool memo_only=false){
 // Forward duplicate references are valid only inside one atomic acceptance.
 void acceptance_order_tests(const std::filesystem::path& dir) {
     const Currency cad("CAD");
+    const auto optional_accounts=[](int mode){return mode==3?std::set<std::int64_t>{2}:std::set<std::int64_t>{};};
     const auto prepare=[&](const std::filesystem::path& path,int mode) {
         auto s=ImportStore::create(path,"test","Visa",cad,"2026-01-01");
         s.opening(0,"2026-01-01",Money(0,cad));
         const auto purchase=source("Market","-42.18"),refund=source("Refund","6.00");
-        if(mode==1) {
+        if(mode==3) {
+            s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);
+            s.opening(0,"2026-01-01",Money(0,cad));s.select_account(1);
+            s.ingest("first","!Type:Bank\nD01/01/2026\nT-42.18\nPPayment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+            check(s.acceptance_review().warnings.size()==1,"Generated transfer normally needs a bank match decision");
+            check(s.acceptance_review(optional_accounts(mode)).warnings.empty(),"Listed waiting transfer does not require a warning override");
+        } else if(mode==1) {
             s.ingest("first",purchase+source("Market groceries","-42.18").substr(11)+refund.substr(11),qif::DateOrder::dmy);
             ReviewAnswer merge;merge.generation=s.review_sheet().generation;merge.question="selected";merge.action=ReviewAction::merge;
             merge.selected={{"first",0},{"first",1}};merge.survivor=imports::Occurrence{"first",1};s.answer_review("merge",merge);
@@ -822,32 +829,40 @@ void acceptance_order_tests(const std::filesystem::path& dir) {
         s.verify();check(s.acceptance_review().transactions==2,"Two survivors awaiting acceptance");
     };
     const auto inspect=[&](ImportStore& s,int mode,bool accepted) {
-        s.verify();check(s.balance().units()==(mode==2?-6218:-3618),"Merge keeps exact balance");
-        check(s.current_ledger().size()==2,"Two retained transactions");
-        check(s.committed_balance().units()==(accepted?(mode==2?-6218:-3618):0),"Acceptance is all or nothing");
+        s.verify();const auto amount=mode==3?-4218:mode==2?-6218:-3618;
+        check(s.balance().units()==amount,"Acceptance keeps the exact balance");
+        check(s.current_ledger().size()==(mode==3?1u:2u),"All transactions retained");
+        check(s.committed_balance().units()==(accepted?amount:0),"Acceptance is all or nothing");
         check(s.acceptance_outcome("accept-order").has_value()==accepted,"Acceptance receipt agrees with financial state");
         check(s.acceptance_review().transactions==(accepted?0U:2U),"New count agrees with durable acceptance");
+        if(mode==3){
+            s.select_account(2);
+            check(s.balance().units()==4218 && s.committed_balance().units()==(accepted?4218:0),"Generated transfer acceptance is atomic with origin");
+            const auto values=s.transfers();
+            check(values.size()==1 && values.front().link.destination.accepted_unmatched==accepted && !values.front().link.destination.attached_evidence,"Acceptance records the unmatched decision without bank evidence");
+            s.select_account(1);
+        }
     };
-    const auto apply=[&](ImportStore& s) {
-        const auto receipt=s.accept_all("accept-order");
+    const auto apply=[&](ImportStore& s,int mode) {
+        const auto receipt=s.accept_all("accept-order",false,optional_accounts(mode));
         check(receipt.transactions==2 && receipt.failed_records==0 && !receipt.ignored_warnings,"Acceptance receipt counts survivors");
-        const auto again=s.accept_all("accept-order");
+        const auto again=s.accept_all("accept-order",false,optional_accounts(mode));
         check(again.operation==receipt.operation && again.transactions==receipt.transactions && again.failed_records==receipt.failed_records && again.ignored_warnings==receipt.ignored_warnings,"Acceptance retry returns original receipt");
     };
     fault_vfs::install();
-    for(int mode=0;mode<3;++mode) {
+    for(int mode=0;mode<4;++mode) {
         std::cout<<"Acceptance ordering mode "<<mode<<std::endl;
         const auto base=dir/("acceptance-base-"+std::to_string(mode));prepare(base,mode);
         const auto completed=dir/("acceptance-complete-"+std::to_string(mode));
         std::filesystem::copy_file(base,completed);
         const auto backup=dir/("acceptance-backup-"+std::to_string(mode));
-        {auto s=ImportStore::open(completed,"test");apply(s);inspect(s,mode,true);s.backup_to(backup,"test");}
-        for(const auto& path:{completed,backup}){auto s=ImportStore::open(path,"test");inspect(s,mode,true);apply(s);inspect(s,mode,true);}
+        {auto s=ImportStore::open(completed,"test");apply(s,mode);inspect(s,mode,true);s.backup_to(backup,"test");}
+        for(const auto& path:{completed,backup}){auto s=ImportStore::open(path,"test");inspect(s,mode,true);apply(s,mode);inspect(s,mode,true);}
         int positions=0;
         for(int nth=1;nth<2000;++nth) {
             const auto trial=dir/"acceptance-fault";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
-            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.accept_all("accept-order");}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-            {auto s=ImportStore::open(trial,"test");inspect(s,mode,s.acceptance_outcome("accept-order").has_value());apply(s);inspect(s,mode,true);}
+            {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{s.accept_all("accept-order",false,optional_accounts(mode));}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
+            {auto s=ImportStore::open(trial,"test");inspect(s,mode,s.acceptance_outcome("accept-order").has_value());apply(s,mode);inspect(s,mode,true);}
             if(!fired){positions=nth-1;break;}
         }
         check(positions>0,"Acceptance write failure sweep completed");
@@ -855,9 +870,9 @@ void acceptance_order_tests(const std::filesystem::path& dir) {
         for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}) {
             const auto trial=dir/"acceptance-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
             const auto child=fork();check(child>=0,"fork");
-            if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto point){if(point==phase)_exit(71);});s.accept_all("accept-order");_exit(72);}catch(...){_exit(73);}}
+            if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto point){if(point==phase)_exit(71);});s.accept_all("accept-order",false,optional_accounts(mode));_exit(72);}catch(...){_exit(73);}}
             int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Acceptance interruption reached durable boundary");
-            auto s=ImportStore::open(trial,"test");inspect(s,mode,phase==storage::ImportPhase::after_commit);apply(s);inspect(s,mode,true);
+            auto s=ImportStore::open(trial,"test");inspect(s,mode,phase==storage::ImportPhase::after_commit);apply(s,mode);inspect(s,mode,true);
         }
     }
     // Two independent legacy publications must not gain the atomic-group
@@ -1547,6 +1562,15 @@ void mirror_transfer_fixture(ImportStore& store) {
     store.ingest("in","!Type:Bank\nD01/01/2026\nT10.00\nPIncoming 0\n^\nD01/01/2026\nT10.00\nPIncoming 1\n^\n",qif::DateOrder::dmy);store.select_account(1);
     store.ingest("out","!Type:Bank\nD01/01/2026\nT-10.00\nPOutgoing 0\n^\nD01/01/2026\nT-10.00\nPOutgoing 1\n^\n",qif::DateOrder::dmy);
 }
+std::vector<ReviewAnswer> waiting_transfer_answers(ImportStore& store) {
+    const auto sheet=store.review_sheet();std::vector<ReviewAnswer> answers;
+    for(const auto& q:sheet.questions)if(q.waiting_account){
+        ReviewAnswer answer;
+        answer.generation=sheet.generation;answer.question=q.key;answer.action=ReviewAction::accept_missing;
+        answers.push_back(std::move(answer));
+    }
+    return answers;
+}
 void link_batch_tests(const std::filesystem::path& dir) {
     const Currency cad("CAD");
     {
@@ -1606,14 +1630,54 @@ void link_batch_tests(const std::filesystem::path& dir) {
         UndoPreview redo;redo.token=store.action_token();redo.action=store.redo_history().front();store.redo_action("redo-decisions",redo);store.verify();
         check(open_link_questions(store)==0 && active_links(store)==(mode?0u:1u),"Redo replays rejections as well as links");
     }
+    {
+        constexpr std::size_t count=105;
+        auto store=ImportStore::create(dir/"waiting-batch","test","Checking",cad,"2026-01-01");
+        store.opening(0,"2026-01-01",Money(0,cad));store.create_account(2,"Savings",cad,"2026-01-01");
+        store.select_account(2);store.opening(0,"2026-01-01",Money(0,cad));store.select_account(1);
+        std::string records="!Type:Bank\n";
+        for(std::size_t i=0;i<count;++i)records+=(i%2?"D02/01/2026\nT20.00\n":"D01/01/2026\nT-10.00\n")+std::string("PRepeated transfer\nL[Savings]\n^\n");
+        store.ingest("waiting",records,qif::DateOrder::dmy);
+        const auto answers=waiting_transfer_answers(store);
+        check(answers.size()==count,"Every repeated transfer has its own waiting card");
+        const auto before=store.balance(),accepted=store.committed_balance();
+        store.select_account(2);const auto destination=store.balance(),destination_accepted=store.committed_balance();store.select_account(1);
+        const auto head=store.action_head()->id;
+        auto stale=answers;stale.back().generation--;
+        bool refused=false;try{OperationContext c;store.merge_review_batch("stale-waiting",stale,c);}catch(const storage::ImportError&){refused=true;}
+        check(refused && !store.review_outcome("stale-waiting"),"Stale unmatched batch is refused");
+        OperationContext cancelled;
+        cancelled.progress=[&](auto phase){if(phase=="Saving transfer decisions")cancelled.request();};
+        bool stopped=false;try{store.merge_review_batch("cancel-waiting",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}
+        check(stopped && !store.review_outcome("cancel-waiting") && waiting_transfer_answers(store).size()==count && store.action_head()->id==head,"Cancellation rolls back all unmatched decisions");
+        OperationContext context;
+        const auto started=std::chrono::steady_clock::now();
+        store.merge_review_batch("accept-waiting",answers,context);
+        const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count();
+        std::cout<<"Apply decisions for "<<count<<" unmatched transfers: "<<elapsed<<" ms\n";
+        const auto check_money=[&]{
+            check(store.balance()==before && store.committed_balance()==accepted,"Origin amount and status preserved");
+            store.select_account(2);check(store.balance()==destination && store.committed_balance()==destination_accepted,"Destination amount and status preserved");store.select_account(1);
+        };
+        check_money();store.verify();
+        check(waiting_transfer_answers(store).empty() && store.action_head()->id=="accept-waiting" && store.action_display_label(*store.action_head())=="Transfer decisions","Waiting cards save together as one transfer decision action");
+        store.undo_action("undo-waiting",store.preview_undo("accept-waiting",store.action_token()));
+        check(waiting_transfer_answers(store).size()==count && store.action_head()->id==head,"One Undo restores all waiting cards");check_money();store.verify();
+        UndoPreview redo;redo.token=store.action_token();redo.action=store.redo_history().front();
+        store.redo_action("redo-waiting",redo);
+        check(waiting_transfer_answers(store).empty(),"Redo accepts the same waiting transfers");check_money();store.verify();
+    }
     std::cout<<"Selected transfer links passed\n";
 }
 void decision_batch_faults(const std::filesystem::path& dir) {
     fault_vfs::install();const Currency cad("CAD");const auto base=dir/"decisions-base";std::vector<ReviewAnswer> answers;
-    {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");mirror_transfer_fixture(s);answers=disjoint_link_answers(s);answers.front().action=ReviewAction::not_linked;answers.front().selected.clear();}
+    {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");mirror_transfer_fixture(s);
+        s.ingest("waiting","!Type:Bank\nD15/02/2026\nT-40.00\nPSeparate payment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        answers=disjoint_link_answers(s);answers.front().action=ReviewAction::not_linked;answers.front().selected.clear();
+        const auto waiting=waiting_transfer_answers(s);check(waiting.size()==1,"One waiting transfer for mixed decision fault test");answers.push_back(waiting.front());}
     const auto saved=[](ImportStore& s){return s.review_outcome("follow").has_value();};
     const auto apply=[&](ImportStore& s){OperationContext context;s.merge_review_batch("follow",answers,context);};
-    const auto verify=[&](ImportStore& s){s.verify();const auto done=saved(s);check(active_links(s)==(done?1u:0u) && open_link_questions(s)==(done?0u:2u),"Rejection and link are atomic");s.select_account(1);check(s.balance().units()==-2000,"Money survives decision faults");check((s.action_head()->id=="follow")==done,"Undo publication is atomic with decisions");};
+    const auto verify=[&](ImportStore& s){s.verify();const auto done=saved(s);check(active_links(s)==(done?2u:1u) && open_link_questions(s)==(done?0u:2u) && waiting_transfer_answers(s).size()==(done?0u:1u),"Rejection, link, and unmatched acceptance are atomic");s.select_account(1);check(s.balance().units()==-6000,"Money survives decision faults");check((s.action_head()->id=="follow")==done,"Undo publication is atomic with decisions");};
     int positions=0;
     for(int nth=1;nth<2000;++nth){const auto trial=dir/"decisions-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
         {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}

@@ -97,7 +97,9 @@ With Auto Link enabled, a manual Review Link also resolves remaining unambiguous
 pairs in its original connected suggestion group. That manual decision and its
 follow-ons share one ordinary Undo step, separate from import Undo. Acceptance
 stays explicit. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
-**Apply decisions** saves pending transfer links and rejections together.
+**Apply decisions** saves pending transfer links, rejections and checked
+**Accept without bank match** decisions together. Select waiting-only
+transfers individually or by the account holding the generated entries.
 Review card Link now saves only its pair; individual saves preserve unrelated
 pending choices. Exact one-to-one suggestions sort first and start checked.
 Differing amounts start unchecked and single-amount candidates show

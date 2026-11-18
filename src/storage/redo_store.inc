@@ -44,6 +44,7 @@ app::ReviewAnswer ImportStore::redo_review_answer(app::ReviewAnswer answer) cons
     for(auto& id:answer.selected)id=redo_occurrence(id);
     if(answer.survivor)answer.survivor=redo_occurrence(*answer.survivor);
     for(const auto prefix:{"same:","link:","repair:"})if(answer.question.starts_with(prefix))answer.question=std::string(prefix)+review_key(redo_occurrence(redo_key(std::string_view(answer.question).substr(std::string_view(prefix).size()))));
+    if(answer.question.starts_with("waiting:"))answer.question="waiting:"+redo_mapped(impl_->redo_names,"link:",answer.question.substr(8));
     return answer;
 }
 app::TransferRequest ImportStore::redo_transfer(app::TransferRequest request,std::string_view operation) {

@@ -13,6 +13,48 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Accounts that don’t need bank matches — 2026-11-18
+
+Owner Go adds a Settings list of accounts where waiting-only generated
+transfers can be accepted without a bank match. Listed active accounts no
+longer show those cards in Review. Candidate matches still appear. Accept
+transactions publishes the entries and the unmatched decision together.
+The setting is local to the file at its current path on this computer.
+See [Review](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
+Manual work is MAN-082.
+
+The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed the
+focused offscreen Settings, Review, acceptance and password cases and the
+committed UI suite. The new cases verify add and remove, candidate visibility
+before and after acceptance, Undo, reopening, rename, password change, and
+file replacement or restoration. The acceptance fault sweep passed 237
+injected write and sync positions for the listed-account case and process
+exits on both sides of commit. It checked exact balances, durable retry,
+and the unmatched decision on the generated entry. The Review policy,
+Review batch, account lifecycle and statement Review regressions passed.
+`./build/SpentIt --smoke`, changed-document links and `git diff --check` passed.
+
+## Apply unmatched transfer decisions in bulk — 2026-11-18
+
+Owner Go adds an unchecked **Accept without bank match** checkbox to
+waiting-only Review cards. Users can select all for the account that holds
+the generated entries. **Apply decisions** saves checked entries with any
+staged links and rejections, in one operation and one Undo. **Hide
+suggestions…** is offered on cards with candidate matches. See
+[Review](review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
+Manual work is MAN-081.
+
+On macOS arm64 with Qt 6.12.0, ten focused rules-enabled Release UI cases
+passed offscreen. The storage test applied 105 synthetic unmatched decisions
+in 174 ms, excluding UI refresh, and verified exact balances, unchanged
+transaction acceptance status, stale-request refusal, cancellation, Undo and
+Redo. The Review policy, duplicate batch and transfer assignment tests also
+passed. The rebuilt `./build/SpentIt --smoke` passed offscreen.
+The mixed transfer decision sweep passed 157 injected write and sync
+fault positions and process exits on both sides of commit. It checked
+atomicity, exact retry and Undo. Changed documentation links and
+`git diff --check` passed.
+
 ## Tab selects a category — 2026-11-18
 
 Tab chooses the highlighted entry in the shared ledger and report category

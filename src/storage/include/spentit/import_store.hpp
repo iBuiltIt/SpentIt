@@ -191,6 +191,7 @@ public:
     app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
     void save_automatic_import_review(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
     void local_preferences_changed() override;
+    std::string local_preferences_identity() const override;
     std::vector<std::string> pending_review_links() const override;
     std::vector<imports::Occurrence> merge_survivors() const override;
     app::UnmergePreview preview_unmerge(const std::vector<imports::Occurrence>&) const override;
@@ -210,8 +211,8 @@ public:
     app::ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) override;
     app::ReviewReceipt undo_review(std::string_view) override;
     std::optional<app::ReviewReceipt> review_outcome(std::string_view) const override;
-    app::AcceptanceReview acceptance_review() const override;
-    app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
+    app::AcceptanceReview acceptance_review(const std::set<std::int64_t>& = {}) const override;
+    app::AcceptanceReceipt accept_all(std::string_view,bool=false,const std::set<std::int64_t>& = {}) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
     std::set<std::string> action_categories(const app::ActionSummary&,bool) const;

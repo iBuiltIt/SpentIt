@@ -21,12 +21,29 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-081. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-083. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+### MAN-082 — Accounts that don’t need bank matches · 2026-11-18
+
+In [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
+and [Accept transactions](../manual/accept-transactions.md), show how to
+add or remove a generated-entry account in Settings. Explain that waiting-only
+transfers in listed accounts are handled by Accept transactions and possible
+matches still appear in Review. Update Settings pictures that show these
+preferences. See [account preference](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
+
+### MAN-081 — Select waiting transfers by account · 2026-11-18
+
+In [Review duplicates and transfers](../manual/review-duplicates-transfers.md),
+explain the unchecked **Accept without bank match** checkbox, selecting all
+waiting entries by the account holding the generated transfers, and
+**Apply decisions** with one Undo. Update any Review pictures that show the
+old waiting-only controls. See [batch acceptance](review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
 
 ### MAN-080 — Tab selects a category · 2026-11-18
 

@@ -3568,6 +3568,19 @@ ApplicationWindow {
         return choice && choice.action==="link"?choice.index:-1
     }
     function decisionFingerprint(rows) {return JSON.stringify(rows)}
+    readonly property var waitingTransferAccounts: {
+        const accounts=new Set()
+        for(const q of (s.reviewQuestions||[]))if(q.waitingAccount)accounts.add(q.waitingAccount)
+        return Array.from(accounts, id=>({id:id,name:reviewAccountName(id)}))
+    }
+    function selectWaitingTransfers(questions, checked) {
+        const choices=Object.assign({},reviewLinkChoices)
+        for(const q of questions) {
+            if(checked)choices[q.key]={action:"accept_missing",account:q.waitingAccount,fingerprint:decisionFingerprint(q.rows)}
+            else delete choices[q.key]
+        }
+        reviewLinkChoices=choices
+    }
     function makeLinkDecision(q, index, automatic) {
         const row=q.rows[index]
         return {action:"link",index:index,auto:automatic,partner:reviewRowId(row),
@@ -3579,15 +3592,17 @@ ApplicationWindow {
         const questions=s.reviewQuestions||[]
         const next={}, ranks=Object.assign({},reviewLinkHolds)
         for(const q of questions) {
-            if(q.kind!=="link" || q.rows.length<2)continue
             const old=reviewLinkChoices[q.key]
-            if(old) {
+            if(q.waitingAccount && old) {
+                next[q.key]=old.action==="accept_missing" && old.account===q.waitingAccount &&
+                    decisionFingerprint(q.rows)===old.fingerprint?old:{action:"changed"}
+            } else if(q.kind==="link" && q.rows.length>1 && old) {
                 if(old.action==="link") {
                     const index=q.rows.findIndex(row=>reviewRowId(row)===old.partner)
                     next[q.key]=index>0 && decisionFingerprint([q.rows[0],q.rows[index]])===old.fingerprint?Object.assign({},old,{index:index}):{action:"changed"}
                 } else if(old.action==="not_linked") {
                     next[q.key]=decisionFingerprint(q.rows)===old.fingerprint?old:{action:"changed"}
-                } else next[q.key]=old
+                } else next[q.key]=old.action==="accept_missing"?{action:"changed"}:old
             }
         }
         // Preserve duplicate selections by identity too; a saved answer only
@@ -3694,7 +3709,9 @@ ApplicationWindow {
         for(const q of (s.reviewQuestions||[])) {
             const choice=reviewLinkChoices[q.key]
             if(!choice || q.kind!=="link")continue
-            if(choice.action==="not_linked")result.push({question:q.key,generation:s.reviewGeneration,answer:"not_linked",selected:[]})
+            if(choice.action==="accept_missing" && q.waitingAccount===choice.account)
+                result.push({question:q.key,generation:s.reviewGeneration,answer:"accept_missing",selected:[]})
+            else if(choice.action==="not_linked")result.push({question:q.key,generation:s.reviewGeneration,answer:"not_linked",selected:[]})
             else if(choice.action==="link" && choice.left && choice.right && !choice.requiresImmediate)
                 result.push({question:q.key,generation:s.reviewGeneration,answer:"link",selected:[q.rows[0],q.rows[choice.index]],leftAllocation:choice.left,rightAllocation:choice.right})
         }
@@ -3702,8 +3719,10 @@ ApplicationWindow {
     }
     function transferDecisionSummary() {
         const groups=linkSelectedGroups(), links=groups.filter(g=>g.answer==="link").length
-        const rejected=groups.length-links
-        return links+" "+(links===1?"link":"links")+", "+rejected+" not "+(rejected===1?"a transfer":"transfers")
+        const rejected=groups.filter(g=>g.answer==="not_linked").length
+        const unmatched=groups.length-links-rejected
+        const summary=links+" "+(links===1?"link":"links")+", "+rejected+" not "+(rejected===1?"a transfer":"transfers")
+        return unmatched?(links||rejected?summary+", ":"")+unmatched+" without bank match":summary
     }
     function linkSelectedTransfers() {
         const groups=linkSelectedGroups()
@@ -4137,6 +4156,25 @@ ApplicationWindow {
             Button {objectName:"mergeSelectedMatches";text:"Merge pairs";visible:mergePairGroups().length>0;enabled:!workflow.busy
                 onClicked:{captureReviewView();workflow.command("review_batch",{groups:mergePairGroups()})}}
         }
+        RowLayout {
+            Layout.leftMargin:12;Layout.rightMargin:12;Layout.fillWidth:true
+            visible:waitingTransferAccounts.length>0
+            Label {text:"Unmatched transfers in"}
+            UsableComboBox {
+                id:waitingTransferAccount;objectName:"waitingTransferAccount"
+                model:waitingTransferAccounts;textRole:"name";valueRole:"id";enabled:!workflow.busy
+                Layout.maximumWidth:260;Accessible.name:"Account for unmatched transfers"
+            }
+            Button {
+                objectName:"selectWaitingTransfers"
+                readonly property var questions: (s.reviewQuestions||[]).filter(q=>q.waitingAccount && q.waitingAccount===waitingTransferAccount.currentValue)
+                readonly property bool allSelected: questions.length>0 && questions.every(q=>(reviewLinkChoices[q.key]||{}).action==="accept_missing")
+                text:allSelected?"Clear selection":"Select all"
+                enabled:!workflow.busy && questions.length>0
+                onClicked:selectWaitingTransfers(questions,!allSelected)
+            }
+            Item {Layout.fillWidth:true}
+        }
         Item {Layout.fillWidth:true;Layout.preferredHeight:visible?30:0;visible:reviewQuestions.count>0;clip:true
             RowLayout {x:-reviewQuestions.contentX;
                 width:reviewQuestions.contentWidth-24;height:30
@@ -4213,7 +4251,12 @@ ApplicationWindow {
                     }}
                     Button {text:questionCard.modelData.kind==="same"?"Keep separate":"Not this transfer";objectName:"reviewNo";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,questionCard.modelData.kind==="same"?"separate":"not_linked",[])}
                     Button {objectName:"reviewShowLedger";text:"Show in ledger";visible:questionCard.modelData.kind==="same";enabled:!workflow.busy;onClicked:showDuplicateInLedger(questionCard.modelData.rows.find(row=>!row.committed)||questionCard.modelData.rows[0])}
-                    Button {text:"Accept without bank match";objectName:"acceptMissingMatch";visible:!!questionCard.modelData.waitingLink && questionCard.modelData.rows.length<=1;enabled:!workflow.busy;onClicked:answerReview(questionCard.modelData,"accept_missing",[])}
+                    CheckBox {
+                        text:"Accept without bank match";objectName:"acceptMissingMatch"
+                        visible:!!questionCard.modelData.waitingAccount;enabled:!workflow.busy
+                        checked:(reviewLinkChoices[questionCard.modelData.key]||{}).action==="accept_missing"
+                        onClicked:selectWaitingTransfers([questionCard.modelData],checked)
+                    }
                     Button {objectName:"reviewCorrect";text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}
                 }
                 RowLayout {
@@ -4227,6 +4270,11 @@ ApplicationWindow {
                     }}
                     Button {text:"Mark not a transfer";enabled:!workflow.busy;onClicked:stageTransferDecision(questionCard.modelData,"not_linked")}
                     Button {text:"Decide later";enabled:!workflow.busy;onClicked:stageTransferDecision(questionCard.modelData,"undecided")}
+                }
+                Label {
+                    visible:!!questionCard.modelData.waitingAccount && (reviewLinkChoices[questionCard.modelData.key]||{}).action==="changed"
+                    text:"This pending decision changed. Choose again before applying it."
+                    wrapMode:Text.Wrap;Layout.fillWidth:true
                 }
                 Repeater {model:questionCard.modelData.rows;delegate:ColumnLayout {
                     id:reviewRow;required property var modelData;required property int index;Layout.fillWidth:true
@@ -4247,7 +4295,7 @@ ApplicationWindow {
                         Label {text:reviewRow.modelData.deposit;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.currency;Layout.preferredWidth:40;textFormat:Text.PlainText}
                         Item {Layout.preferredWidth:160;Layout.preferredHeight:40
-                        Button {anchors.fill:parent;text:"Hide suggestions…";ToolTip.text:"Hide transfer suggestions like this…";ToolTip.visible:hovered;visible:questionCard.modelData.kind==="link";enabled:!workflow.busy;onClicked:openLinkExclusion(reviewRow.modelData,null)}
+                        Button {anchors.fill:parent;objectName:"hideLinkSuggestions";text:"Hide suggestions…";ToolTip.text:"Hide transfer suggestions like this…";ToolTip.visible:hovered;visible:questionCard.modelData.kind==="link" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:openLinkExclusion(reviewRow.modelData,null)}
                         }
                         Button {Layout.preferredWidth:100;text:"Inspect";enabled:!workflow.busy;onClicked:inspectReviewTransaction(reviewRow.modelData)}
                     }
@@ -4732,6 +4780,41 @@ ApplicationWindow {
                         Label {text:"Applies after import in this file on this computer. Matches stay marked until you choose Accept transactions. Uncertain matches stay in Review.";Layout.fillWidth:true;wrapMode:Text.Wrap}
                         Button {objectName:"hiddenTransferSuggestions";text:"Hidden transfer matches…";onClicked:transferSuggestionSettings.open()}
 
+                        ColumnLayout {
+                            id:bankMatchSettings
+                            Layout.fillWidth:true;visible:!!s.bankMatchSettingsAvailable
+                            readonly property var availableAccounts: (s.accounts||[]).filter(account=>!account.bankMatchOptional)
+                            readonly property var listedAccounts: (s.accounts||[]).concat(s.archivedAccounts||[]).filter(account=>account.bankMatchOptional)
+                            Label {text:"Accounts that don’t need bank matches";font.bold:true}
+                            Label {
+                                text:"Choose accounts where you don’t import bank transactions. Accept transactions includes transfers SpentIt created in these accounts when there’s no bank match to review. Possible matches still appear in Review."
+                                Layout.fillWidth:true;wrapMode:Text.Wrap
+                            }
+                            Repeater {
+                                model:bankMatchSettings.listedAccounts
+                                delegate:RowLayout {
+                                    required property var modelData
+                                    Layout.fillWidth:true
+                                    Label {text:modelData.name+(modelData.archived?" (archived)":"");textFormat:Text.PlainText;elide:Text.ElideRight;Layout.fillWidth:true}
+                                    Button {
+                                        objectName:"removeBankMatchOptional_"+modelData.id;text:"Remove";Accessible.name:"Remove "+modelData.name+" from accounts that don’t need bank matches"
+                                        onClicked:workflow.command("bank_match_account_settings",{account:modelData.id,optional:false})
+                                    }
+                                }
+                            }
+                            RowLayout {
+                                visible:bankMatchAccount.count>0
+                                UsableComboBox {
+                                    id:bankMatchAccount;objectName:"bankMatchAccount"
+                                    model:bankMatchSettings.availableAccounts;textRole:"name";valueRole:"id"
+                                    Layout.maximumWidth:300;Accessible.name:"Account to add"
+                                }
+                                Button {
+                                    objectName:"addBankMatchOptional";text:"Add account";enabled:bankMatchAccount.currentIndex>=0
+                                    onClicked:workflow.command("bank_match_account_settings",{account:bankMatchAccount.currentValue,optional:true})
+                                }
+                            }
+                        }
                         Item {Layout.fillWidth:true;Layout.preferredHeight:16}
                         Label {text:"Password";font.bold:true;visible:!!s.active}
                         Label {objectName:"passwordBackupReminder";visible:!!s.active;text:"Making a backup before changing the password is a good idea.";wrapMode:Text.Wrap;Layout.fillWidth:true}
