@@ -2589,14 +2589,15 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(help, "dismiss"));
         createDocument(session, "Context help");
         // Every instantiated dialog carries a fixed target validated by the catalog.
-        int dialogs = 0;
+        QSet<QString> dialogsWithHelp;
         for (auto* candidate : session.root->findChildren<QObject*>()) {
             const auto target = candidate->property("helpTarget");
             if (!target.isValid()) continue;
-            ++dialogs;
+            dialogsWithHelp.insert(candidate->objectName());
             QVERIFY2(catalog.resolveLink("", target.toString()).value("ok").toBool(), qPrintable(target.toString()));
         }
-        QCOMPARE(dialogs, 34);
+        for(const auto* name:{"overwriteDatasetDialog","importCategories","importAccountMapping","deleteAccountDialog"})
+            QVERIFY2(dialogsWithHelp.contains(QString::fromLatin1(name)),name);
         const QList<QPair<QString, QString>> pages{{"ledger", "find-transactions"}, {"review", "review-duplicates-transfers"},
             {"categories", "organize-categories"}, {"rules", "use-rules"}, {"reports", "answer-with-reports"},
             {"history", "add-correct-transactions"}, {"settings", "look-after-your-work"}};

@@ -38,7 +38,7 @@ void embedded_returns(){
     {
         auto s=create(path);s.opening(0,"2026-08-01",Money(0,cad));s.ingest("cr",raw,qif::DateOrder::dmy);
         auto row=s.row({"cr",0});check(row.draft && row.draft->payee=="SYNTHETIC SHOP\rTEXT AGAIN\rT999.00");
-        auto edit=*row.draft;s.save(row.identity,0,edit);check(s.commit("cr",1,"cr-commit").after==Money(-1038,cad));
+        auto edit=*row.draft;const auto prior=s.action_token();s.save(row.identity,0,edit);check(s.batches().at(0).revision==0 && s.action_token()==prior);check(s.commit("cr",0,"cr-commit").after==Money(-1038,cad));
         edit.memo="Changed\rMemo";const auto preview=s.preview_committed_change({app::ChangeKind::correct,row.identity,edit,{}});
         s.apply_committed_change_with_catalog("cr-edit",preview.request,preview.expected,preview.preview_sequence,preview.catalog_revision);
         s.verify();s.backup_to(d.path/"restored",password);
@@ -137,10 +137,23 @@ void errors(){
 }
 void backup(){
     Directory d;prepare(d.path/"doc");
-    {auto s=ImportStore::open(d.path/"doc",password);s.backup_to(d.path/"backup",password);fails([&]{s.backup_to(d.path/"backup",password);});}
-    {auto s=ImportStore::open(d.path/"backup",password);check(s.projected_balance()->units()==12069);s.backup_to(d.path/"restored",password);}
-    {auto s=ImportStore::open(d.path/"restored",password);check(s.commit("first",0,"restored-op").after.units()==12069);s.backup_to(d.path/"committed",password);}
-    {auto s=ImportStore::open(d.path/"committed",password);check(s.commit("first",0,"restored-op").after.units()==12069);s.verify();}
+    {auto s=ImportStore::open(d.path/"doc",password);s.certify({});}
+    fs::copy_file(d.path/"doc",d.path/"backup");
+    std::error_code copy_error;
+    check(!fs::copy_file(d.path/"doc",d.path/"backup",fs::copy_options::none,copy_error) && copy_error==std::errc::file_exists);
+    {auto s=ImportStore::open(d.path/"backup",password);check(s.projected_balance()->units()==12069);s.certify({});}
+    fs::copy_file(d.path/"backup",d.path/"restored");
+    {auto s=ImportStore::open(d.path/"restored",password);check(s.commit("first",0,"restored-op").after.units()==12069);s.certify({});}
+    fs::copy_file(d.path/"restored",d.path/"committed");
+    {
+        auto s=ImportStore::open(d.path/"committed",password);
+        check(s.committed_balance().units()==12069 && s.evidence("first")==source);
+        check(s.outcome("restored-op")->after.units()==12069 && s.action_token().head.empty());
+        bool already_completed=false;
+        try{s.commit("first",0,"restored-op");}catch(const app::OperationAlreadyCompleted&){already_completed=true;}
+        check(already_completed && s.committed_balance().units()==12069);
+        s.verify();
+    }
     const auto before=bytes(d.path/"committed");fails([&]{ImportStore::open(d.path/"committed","wrong");});check(bytes(d.path/"committed")==before);no_leaks(d.path);
 }
 const std::string repair_source="D31/02/2026\nT-10\nPRepair date\n^\nD1/3/2026\nT-20\nPSplit repair\nSFood\n$-19\n^\n";
@@ -335,16 +348,36 @@ void operation(ImportStore& s,int kind){
 }
 void setup(const fs::path& path,int kind){
     if(kind==6 || kind==7){auto s=create(path);s.opening(0,"2026-01-01",Money(10000,cad));s.ingest("first","D31/02/2026\nTbad\n^\n",qif::DateOrder::dmy);if(kind==7){operation(s,6);s.decide({"first",0},1,{imports::Disposition::include,{}});}return;}
-    if(kind==0 || kind==5){auto s=create(path);}else if(kind==4){auto s=create(path);s.ingest("first","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);}else prepare(path);}
+    if(kind==0 || kind==5){auto s=create(path);}else if(kind==4){auto s=create(path);s.ingest("first","D31/02/2026\nT-10\n^\n",qif::DateOrder::dmy);}else {
+        prepare(path);
+        if(kind==2){auto s=ImportStore::open(path,password);test_session::close_reopen(s,path,password);}
+    }
+}
 void recovered(const fs::path& path,int kind){
     auto s=ImportStore::open(path,password);s.verify();
     if(kind==5){
-        app::OperationContext context;
-        if(s.batches().empty())s.ingest_controlled("new",source,qif::DateOrder::dmy,context);
-        const auto batch=s.batches().at(0);
-        if(batch.state==app::BatchState::captured){app::OperationContext retry;s.resume("new",batch.revision,retry);}
-        check(s.batches().size()==1 && s.batches()[0].state==app::BatchState::pending && s.projected_balance()->units()==2069);
-        check(s.evidence("new")==source);s.verify();
+        auto batches=s.batches();
+        check(batches.size()<=1 && s.committed_balance().units()==0);
+        if(batches.empty()){
+            app::OperationContext context;
+            if(s.startup_import_cleanup()){
+                // Recovery removed the captured rows but retained the original
+                // identity as terminal. Repeat the import with a fresh identity.
+                bool terminal=false;
+                try{s.ingest_controlled("new",source,qif::DateOrder::dmy,context);}
+                catch(const app::OperationAlreadyCompleted& done){terminal=done.operation=="new";}
+                check(terminal);
+                app::OperationContext retry;
+                s.ingest_controlled("new-retry",source,qif::DateOrder::dmy,retry);
+            }else{
+                s.ingest_controlled("new",source,qif::DateOrder::dmy,context);
+            }
+        }else{
+            check(batches.front().id=="new" && batches.front().state==app::BatchState::pending);
+        }
+        batches=s.batches();
+        check(batches.size()==1 && batches.front().state==app::BatchState::pending && s.projected_balance()->units()==2069);
+        check(s.evidence(batches.front().id)==source);s.verify();
     }
     if(kind==0){check(s.batches().size()<=1);s.ingest("new",source,qif::DateOrder::dmy);check(s.batches().size()==1);}
     if(kind==1){const auto b=s.batches().at(0);check(b.revision==0 || b.revision==1);check(s.row({"first",0}).draft->payee==(b.revision==0?marker:"edited"));}
@@ -357,27 +390,34 @@ void recovered(const fs::path& path,int kind){
     if(kind==7){check(s.committed_balance().units()==10000 || s.committed_balance().units()==9000);check(s.commit("first",2,"op").after.units()==9000);check(!s.committed_entry({"first",0}).current.draft.transaction.original_imported_amount());}
     if(kind==3){check(s.committed_balance().units()==10000 || s.committed_balance().units()==12069);check(s.commit("first",0,"op").after.units()==12069);check(s.ledger(false).size()==2);}
 }
-void io(bool crash){
+void io(bool crash,int scenario=-1){
+    check(scenario>=-1 && scenario<8);
     fault_vfs::install();
     for(int kind=0;kind<8;++kind){
+        if(scenario>=0 && kind!=scenario)continue;
+        Directory fixture;
+        const auto seed=fixture.path/"seed";
+        setup(seed,kind);
         int count=0;
-        {Directory d;setup(d.path/"doc",kind);auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(-1);operation(s,kind);count=fault_vfs::seen;fault_vfs::disarm();}
+        {Directory d;fs::copy_file(seed,d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(-1);operation(s,kind);count=fault_vfs::seen;fault_vfs::disarm();}
         check(count>0);
+        std::cout<<"Import operation "<<kind<<": sweeping "<<count<<" points"<<std::endl;
         for(int n=1;n<=count;++n){
-            Directory d;setup(d.path/"doc",kind);
+            if(n==1 || n%25==0)std::cout<<"Import operation "<<kind<<", point "<<n<<"/"<<count<<std::endl;
+            Directory d;fs::copy_file(seed,d.path/"doc");
             if(crash){
                 const auto child=fork();check(child>=0);
                 if(child==0){auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(n,SQLITE_IOERR_WRITE,true,true);operation(s,kind);_exit(0);}
-                int status=0;check(waitpid(child,&status,0)==child);check(WIFEXITED(status) && (WEXITSTATUS(status)==71 || WEXITSTATUS(status)==0));
+                int status=0;check(waitpid(child,&status,0)==child);check(WIFEXITED(status) && WEXITSTATUS(status)==71);
             }else{
                 auto s=ImportStore::open(d.path/"doc",password);fault_vfs::arm(n,n%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
-                try{operation(s,kind);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();
+                try{operation(s,kind);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}check(fault_vfs::fired);fault_vfs::disarm();
             }
             no_leaks(d.path);recovered(d.path/"doc",kind);
         }
         std::cout<<"operation "<<kind<<": "<<count<<" fault positions\n";
     }
-    if(crash)for(int kind:{3,4,6,7})for(auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
+    if(crash)for(int kind:{3,4,6,7})if(scenario<0 || scenario==kind)for(auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
         Directory d;setup(d.path/"doc",kind);const auto child=fork();check(child>=0);
         if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase p){if(p==phase)_exit(72);});operation(s,kind);_exit(0);}
         int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
@@ -576,6 +616,6 @@ int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spenti
 
     const std::string mode=argc>1?argv[1]:"";
     if(mode=="local_locks")local_locks();else if(mode=="replacement")replacement();else if(mode=="amount_candidate_limit")amount_candidate_limit();else if(mode=="amount_repairs")amount_repairs();else if(mode=="basics")basics();else if(mode=="cancellation")cancellation();else if(mode=="review")review();else if(mode=="repairs")repairs();else if(mode=="errors")errors();else if(mode=="backup")backup();
-    else if(mode=="io")io(false);else if(mode=="crashes")io(true);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="backup_cancellation")backup_cancellation();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
+    else if(mode=="io" || mode=="crashes")io(mode=="crashes",argc>2?std::stoi(argv[2]):-1);else if(mode=="backup_failures")backup_failures();else if(mode=="backup_crashes")backup_failures(true);else if(mode=="backup_publication")backup_publication();else if(mode=="backup_cancellation")backup_cancellation();else if(mode=="validation")validation();else if(mode=="opening")opening_policy();else if(mode=="benchmark")benchmark(argc>2?std::stoul(argv[2]):100000);else return 2;
     std::cout<<"Import "<<mode<<" passed\n";
 }catch(const ImportError& e){std::cerr<<"Storage code "<<e.code()<<": "<<e.what()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

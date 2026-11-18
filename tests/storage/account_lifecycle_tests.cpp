@@ -7,6 +7,7 @@
 #include <iterator>
 #include <source_location>
 #include <string>
+#include <tuple>
 #include <sqlite3.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -239,19 +240,64 @@ void behavior(){
     }
     no_leaks(dir.path);
 }
+auto lifecycle_snapshot(ImportStore& store) {
+    using AccountState=std::tuple<std::int64_t,std::string,Currency,std::string,Money,bool,std::int64_t,bool,bool>;
+    std::vector<AccountState> accounts;
+    auto record=[&](const app::Account& account){
+        accounts.emplace_back(account.identity,account.name,account.currency,
+            account.opening_date,account.opening,account.frozen,account.revision,
+            account.opening_confirmed,account.archived);
+    };
+    for(const auto& account:store.accounts())record(account);
+    for(const auto& account:store.archived_accounts())record(account);
+
+    std::vector<std::tuple<std::int64_t,Money,std::optional<Money>>> balances;
+    for(const auto& balance:store.account_balances())
+        balances.emplace_back(balance.identity,balance.committed,balance.projected);
+    return std::tuple{accounts,balances,store.amount_format(),store.action_token().head};
+}
 template<class Prepare,class Run,class Done>
 void boundary(const char* name,Prepare prepare,Run run,Done done){
-    int writes=0;{Directory dir("spentit-lifecycle-count-XXXXXX");const auto path=dir.path/"doc";prepare(path);auto store=ImportStore::open(path,password);fault_vfs::arm(-1);run(store);writes=fault_vfs::seen;fault_vfs::disarm();}check(writes>0);
+    Directory seed("spentit-lifecycle-seed-XXXXXX");
+    const auto fixture=seed.path/"doc";
+    prepare(fixture);
+    Directory baseline("spentit-lifecycle-count-XXXXXX");
+    fs::copy_file(fixture,baseline.path/"doc");
+    auto store=ImportStore::open(baseline.path/"doc",password);
+    const auto before=lifecycle_snapshot(store);
+    fault_vfs::arm(-1);
+    run(store);
+    const auto writes=fault_vfs::seen;
+    fault_vfs::disarm();
+    check(writes>0 && done(store));
+    const auto after=lifecycle_snapshot(store);
+    check(before!=after);
     for(const int position:{1,(writes+1)/2,writes}){
-        Directory dir("spentit-lifecycle-io-XXXXXX");const auto path=dir.path/"doc";prepare(path);
-        {auto store=ImportStore::open(path,password);fault_vfs::arm(position,position==1?SQLITE_FULL:SQLITE_IOERR_WRITE);try{run(store);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}fault_vfs::disarm();}
-        auto store=ImportStore::open(path,password);run(store);check(done(store));store.verify();
+        Directory dir("spentit-lifecycle-io-XXXXXX");
+        const auto path=dir.path/"doc";fs::copy_file(fixture,path);
+        {
+            auto trial=ImportStore::open(path,password);
+            fault_vfs::arm(position,position==1?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            try{run(trial);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}
+            check(fault_vfs::fired);
+            fault_vfs::disarm();
+        }
+        auto recovered=ImportStore::open(path,password);
+        recovered.verify();
+        const auto state=lifecycle_snapshot(recovered);
+        check(state==before || state==after);
+        check(done(recovered)==(state==after));
+        run(recovered);
+        check(done(recovered));recovered.verify();
     }
     for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){
-        Directory dir("spentit-lifecycle-observer-XXXXXX");const auto path=dir.path/"doc";prepare(path);const auto child=fork();check(child>=0);
+        Directory dir("spentit-lifecycle-observer-XXXXXX");const auto path=dir.path/"doc";fs::copy_file(fixture,path);const auto child=fork();check(child>=0);
         if(child==0){auto store=ImportStore::open(path,password);store.observer([&](ImportPhase at){if(at==phase)_exit(72);});run(store);_exit(0);}
         int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);
-        auto store=ImportStore::open(path,password);check(done(store)==(phase==ImportPhase::after_commit));run(store);check(done(store));store.verify();
+        auto recovered=ImportStore::open(path,password);
+        const bool committed=phase==ImportPhase::after_commit;
+        check(lifecycle_snapshot(recovered)==(committed?after:before));
+        check(done(recovered)==committed);run(recovered);check(done(recovered));recovered.verify();
     }
     std::cout<<"Account lifecycle boundary "<<name<<": "<<writes<<" write/sync positions\n";
 }

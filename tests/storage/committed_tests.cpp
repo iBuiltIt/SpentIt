@@ -485,20 +485,27 @@ void backup() {
         apply(store,"correct",correction(store,first,-3000));apply(store,"remove",removal(second));
         store.ingest("pending","D1/9/2026\nT5\nPPending\n^\n",qif::DateOrder::dmy);
         check(store.committed_balance().units()==7000 && store.projected_balance()->units()==7500);
-        store.backup_to(dir.path/"backup",password);
+        check(!store.action_token().head.empty());
+        store.certify({});
     }
+    fs::copy_file(dir.path/"doc",dir.path/"backup");
     {
         auto restored=ImportStore::open(dir.path/"backup",password);restored.verify();
         check(restored.committed_balance().units()==7000 && restored.projected_balance()->units()==7500);
         check(restored.evidence("first")==source && restored.outcome("publication-first")->after.units()==12069);
-        check(restored.committed_change_outcome("correct")->after.units()==12000);
+        check(restored.committed_entry(first).current.draft.transaction.effective_total()==Money(-3000,cad));
+        bool expired=false;
+        try{(void)restored.committed_change_outcome("correct");}catch(const app::OperationAlreadyCompleted&){expired=true;}
+        check(expired);
         check(!eligible(restored,second,"remove"));
-        restored.backup_to(dir.path/"working",password);
+        check(restored.action_token().head.empty());
+        restored.certify({});
     }
+    fs::copy_file(dir.path/"backup",dir.path/"working");
     auto working=ImportStore::open(dir.path/"working",password);
     working.undo_import("undo-pending","pending",working.ledger_edit_generation());
-    apply(working,"restore",undo(second,"remove"));
-    check(working.committed_balance().units()==12000 && working.projected_balance()->units()==12000);
+    check(working.action_token().head.empty());
+    check(working.committed_balance().units()==7000 && working.projected_balance()->units()==7000);
     working.verify();no_leaks(dir.path);
 }
 void legacy() {

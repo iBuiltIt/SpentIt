@@ -12,3 +12,7 @@ if(BUILD_TESTING)
  target_link_libraries(spentit_diagnostics_tests PRIVATE spentit_diagnostics)
  add_test(NAME diagnostics.collector COMMAND spentit_diagnostics_tests)
 endif()
+
+if(BUILD_TESTING)
+  spentit_test_defaults()
+endif()

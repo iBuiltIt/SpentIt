@@ -80,3 +80,30 @@ run instead of `./build/SpentIt`.
 Run the tests that cover the change. A configure command is not a passing run.
 Record the host, the build, and the result in the work notes you give the
 owner. Do not treat an old status page as a current green run.
+
+For a reproducible Release test build, configure with `cmake --preset app-release`
+and build with `cmake --build --preset app-release`. Pass the local Qt and
+OpenSSL search paths as needed. CTest uses four jobs with this preset.
+
+```sh
+ctest --preset app-release -L '^core$'
+ctest --preset app-release -L '^durability$'
+ctest --preset app-release -L '^native$'
+python3 tools/run_release_tests.py --output build/release-test-run
+```
+
+Run the core tests during development and the affected fault tests for storage
+changes. Run the complete suite regularly and before release. The complete
+run includes the native dark Help tests on macOS. Unlock the desktop before
+running that group. When the desktop is unavailable, run with `--exclude-native`
+and follow up with a separate run using `--label native` on the unlocked Mac.
+An output directory for the runner must be new. Its manifest records the planned
+registrations, actual results, and elapsed time. Missing or skipped registrations
+make a run incomplete. Use `--verbose` to stream the progress from fault sweeps.
+
+The import, mapped account, transfer, and Review sweeps expose one CTest per
+operation and fault mode. To reproduce a failure, use the full test name
+(for example, `ctest --preset app-release -R '^transferstore\.crashes\.4$' -V`).
+These tests enumerate write and sync positions on a successful operation trace.
+They inject one error or process exit at a time. The password cases use a
+bounded sample for each protection transition and check every planned injection.

@@ -36,3 +36,7 @@ if(SPENTIT_IMPORT_WORKFLOW)
     spentit_compiler_options(spentit_search_benchmark)
   endif()
 endif()
+
+if(BUILD_TESTING)
+  spentit_test_defaults()
+endif()

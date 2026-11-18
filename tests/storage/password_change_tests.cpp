@@ -115,16 +115,18 @@ void behavior() {
     check(bytes(limited)==limitedBytes);
     check(!opens(limited,std::string(65,'b'),7));
 }
-void faults() {
+void faults(bool add=false,bool remove=false) {
     fault_vfs::install();
     Directory directory;
     const auto seed=directory.path/"seed";
-    constexpr auto current="synthetic-password";
-    constexpr auto next="next-password";
+    const auto current=add?"":"synthetic-password";
+    const auto next=remove?"":"next-password";
+    const auto oldPassword=add?std::nullopt:std::optional<std::string>(current);
+    const auto newPassword=remove?std::nullopt:std::optional<std::string>(next);
     constexpr long units=1234;
     {
         auto gateway=storage::document_gateway();
-        gateway->create(seed,true,current,"Synthetic",Currency("CAD"),"2026-01-01");
+        gateway->create(seed,!add,current,"Synthetic",Currency("CAD"),"2026-01-01");
         gateway->repository().opening(0,"2026-01-01",Money(units,Currency("CAD")));
         gateway->close();
     }
@@ -133,45 +135,49 @@ void faults() {
     int count=0;
     {
         auto gateway=storage::document_gateway();
-        gateway->open(counted,std::string(current));
+        gateway->open(counted,oldPassword);
         fault_vfs::arm(-1);
-        check(gateway->change_password(current,next,false)==app::PasswordUpdate::changed);
+        check(gateway->change_password(current,next,remove)==(remove?app::PasswordUpdate::removed:app::PasswordUpdate::changed));
         count=fault_vfs::seen;
         fault_vfs::disarm();
         gateway->close();
     }
     check(count>1);
     const int step=count>40?std::max(1,count/20):1;
-    for(int position=1;position<=count;position+=step) {
-        const auto sample=directory.path/("sample-"+std::to_string(position));
+    std::vector<int> positions;
+    for(int position=1;position<count;position+=step)positions.push_back(position);
+    positions.push_back(count);
+    for(const bool crash:{false,true})for(const int position:positions) {
+        const auto sample=directory.path/("sample-"+std::to_string(crash)+"-"+std::to_string(position));
         fs::copy_file(seed,sample);
         bool failed=true;
-        if(position%2==0) {
+        if(crash) {
             const auto child=::fork();
             check(child>=0);
             if(child==0) {
                 try {
                     auto gateway=storage::document_gateway();
-                    gateway->open(sample,std::string(current));
+                    gateway->open(sample,oldPassword);
                     fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);
-                    gateway->change_password(current,next,false);
+                    gateway->change_password(current,next,remove);
                 } catch(...) {}
                 _exit(0);
             }
             int status=0;
-            check(::waitpid(child,&status,0)==child && WIFEXITED(status) && (WEXITSTATUS(status)==71 || WEXITSTATUS(status)==0));
+            check(::waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);
         } else {
             auto gateway=storage::document_gateway();
-            gateway->open(sample,std::string(current));
-            fault_vfs::arm(position,position%4==1?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            gateway->open(sample,oldPassword);
+            fault_vfs::arm(position,((position-1)/step)%2==0?SQLITE_FULL:SQLITE_IOERR_WRITE);
             failed=false;
-            try {gateway->change_password(current,next,false);}
+            try {gateway->change_password(current,next,remove);}
             catch(const std::exception&) {failed=true;}
+            check(fault_vfs::fired);
             fault_vfs::disarm();
             try {gateway->close();} catch(...) {}
         }
-        const bool old_key=opens(sample,std::string(current),units);
-        const bool new_key=opens(sample,std::string(next),units);
+        const bool old_key=opens(sample,oldPassword,units);
+        const bool new_key=opens(sample,newPassword,units);
         if(old_key==new_key)throw std::runtime_error("Password fault at position "+std::to_string(position)+" left old="+std::to_string(old_key)+" new="+std::to_string(new_key)+" threw="+std::to_string(failed));
         if(!failed)check(new_key);
     }
@@ -182,6 +188,8 @@ int main(int argc,char** argv) {
         const std::string mode=argc>1?argv[1]:"behavior";
         if(mode=="behavior") behavior();
         else if(mode=="faults") faults();
+        else if(mode=="faults_add") faults(true,false);
+        else if(mode=="faults_remove") faults(false,true);
         else throw std::runtime_error("Unknown password change test");
     } catch(const std::exception& error) {
         std::cerr<<error.what()<<'\n';

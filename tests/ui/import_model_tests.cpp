@@ -346,7 +346,7 @@ private slots:
         QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);
         QVERIFY(click("ledgerDuplicateSeparate"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList().size(),2);QCOMPARE(m.rowCount(),5);QCOMPARE(m.state().value("balance").toString(),"-32.00");
-        auto undoShortcut=[&]{auto* ledger=visualItem(window->contentItem(),"durableLedger");if(!ledger)return false;ledger->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);auto* confirm=window->findChild<QObject*>("actionUndoConfirm");if(!confirm || !confirm->property("visible").toBool())return false;return click("confirmActionUndo");};
+        auto undoShortcut=[&]{auto* ledger=visualItem(window->contentItem(),"durableLedger");if(!ledger)return false;ledger->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);return true;};
         QVERIFY(undoShortcut());QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList().size(),3);
         // Reset the origin explicitly, choose a pair, and merge without a survivor dialog.
         QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
@@ -495,7 +495,7 @@ private slots:
         QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),40);
         QVERIFY(!visualItem(window->contentItem(),"selectAllMerges")->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"clearMergeSelection"),"clicked"));
-        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        QTRY_COMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         select(0);select(1);QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),2);
         // A read-only inspection refresh must retain group intent.
         const auto row=m.state().value("reviewQuestions").toList().at(0).toMap().value("rows").toList().at(0).toMap();run(m,"inspect",{{"batch",row.value("batch")},{"ordinal",row.value("ordinal")}});
@@ -507,10 +507,10 @@ private slots:
         QTRY_COMPARE(status->mapToScene(QPointF()),statusPosition);QCOMPARE(list->mapToScene(QPointF()),listPosition);QCOMPARE(list->height(),listHeight);
         if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS")){const auto observed=diagnostics::Collector::instance().snapshot();QCOMPARE(observed.latest.action,diagnostics::Action::review_batch);QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_saved);qInfo()<<"Batch UI worker_us"<<observed.latest.ended-observed.latest.started<<"delivery_us"<<observed.latest.delivered-observed.latest.ended;}
         run(m,"review_undo");QCOMPARE(m.state().value("reviewCount").toInt(),40);QCOMPARE(m.state().value("balance").toString(),"-1,640.00");
-        select(0);QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("reviewSheet"),"close"));QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        select(0);QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("reviewSheet"),"close"));QTRY_COMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         run(m,"review_batch",{{"groups",QVariantList{}}},false);QVERIFY(!m.error().isEmpty());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"rulesNavigation"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(status->isVisible());QCOMPARE(status->mapToScene(QPointF()),statusPosition);
-        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));select(0);run(m,"commit",{{"ignoreWarnings",true}});QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));select(0);run(m,"commit",{{"ignoreWarnings",true}});QTRY_COMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         run(m,"close");
     }
     void unifiedReviewSheet() {
@@ -543,7 +543,7 @@ private slots:
         QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),1);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"rulesNavigation"),"clicked"));
         QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(window->property("currentPage").toString(),"rules");
-        QCOMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
+        QTRY_COMPARE(window->property("reviewBatch").value<QJSValue>().toVariant().toMap().size(),0);
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
         QTRY_COMPARE(window->property("currentPage").toString(),"review");
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));
@@ -702,11 +702,10 @@ private slots:
         for(auto it=staged.cbegin();it!=staged.cend();++it)if(it.value().toMap().value("auto").toBool()){autoKey=it.key();autoIndex=it.value().toMap().value("index").toInt();}
         QVERIFY(!autoKey.isEmpty());
         QVERIFY(QMetaObject::invokeMethod(linkSelected,"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(linkQuestions().size(),0);QCOMPARE(choices().size(),0);
+        QCOMPARE(linkQuestions().size(),0);QTRY_COMPARE(choices().size(),0);
         QCOMPARE(window->property("workspaceFeedback").toString(),QString("Linked 2 pairs. Undo reverses them together."));
         visualItem(window->contentItem(),"reviewQuestions")->forceActiveFocus();QTest::keySequence(window,QKeySequence::Undo);
-        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(linkQuestions().size(),2);QCOMPARE(choices().size(),0);
+        QTRY_COMPARE_WITH_TIMEOUT(linkQuestions().size(),2,30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QTRY_COMPARE(choices().size(),0);
         QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,first.value("key")),Q_ARG(QVariant,QVariant(1))));
         QCOMPARE(choices().size(),2);
         QVERIFY(QMetaObject::invokeMethod(window,"selectReviewLink",Q_ARG(QVariant,autoKey),Q_ARG(QVariant,autoIndex)));
@@ -1500,7 +1499,18 @@ private slots:
         QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);QVERIFY(window);
         create(m,dir.path()+"/doc");QVERIFY(QTest::qWaitForWindowExposed(window));
         auto* ledger=root->findChild<QQuickItem*>("durableLedger");QVERIFY(ledger);
-        const auto keys=[&](bool clear){QSignalSpy completed(&m,&ImportModel::completed);ledger->forceActiveFocus();if(auto* row=visualItem(window->contentItem(),"ledgerRow_0"))row->forceActiveFocus();QTRY_VERIFY(window->activeFocusItem()==ledger || (window->activeFocusItem() && window->activeFocusItem()->property("ledgerSelectionRow").toBool()));QTest::keyClick(window,Qt::Key_A,clear?Qt::ControlModifier|Qt::ShiftModifier:Qt::ControlModifier);QTRY_VERIFY(!completed.empty());QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());};
+        const auto keys=[&](bool clear){
+            QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            ledger->forceActiveFocus();
+            if(auto* row=visualItem(window->contentItem(),"ledgerRow_0"))row->forceActiveFocus();
+            QTRY_VERIFY(window->activeFocusItem()==ledger ||
+                (window->activeFocusItem() && window->activeFocusItem()->property("ledgerSelectionRow").toBool()));
+            QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            QSignalSpy completed(&m,&ImportModel::completed);
+            QTest::keyClick(window,Qt::Key_A,clear?Qt::ControlModifier|Qt::ShiftModifier:Qt::ControlModifier);
+            QTRY_VERIFY_WITH_TIMEOUT(!completed.empty() && !m.busy(),10000);
+            QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        };
         keys(false);QTRY_VERIFY(!m.busy());QCOMPARE(m.state().value("selectionCount").toInt(),0); // Opening only.
         run(m,"import",{{"path",fixture(dir.path(),"D1/1/2026\nT-1\nPKeep one\n^\nD2/1/2026\nT-2\nPKeep two\n^\nD3/1/2026\nT-3\nPOther\n^\n")},{"profile","DMY"}});
         const auto batch=selected(m).value("batch").toString();
@@ -1531,6 +1541,7 @@ private slots:
         ledger->forceActiveFocus();QVERIFY(QMetaObject::invokeMethod(unsaved,"open"));QTRY_VERIFY(unsaved->property("visible").toBool());
         QTest::keyClick(window,Qt::Key_A,Qt::ControlModifier);QCOMPARE(m.state().value("selectionCount").toInt(),0);
         QVERIFY(QMetaObject::invokeMethod(unsaved,"close"));QTRY_VERIFY(!unsaved->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root,"discardEditor",Q_ARG(QVariant,QVariant())));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy() && !root->property("dirty").toBool(),30000);
         payee->setProperty("text","Saved name");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QVERIFY(QMetaObject::invokeMethod(root,"saveEditor"));QTRY_VERIFY(!m.busy());QVERIFY(m.state().value("canUndoEdit").toBool());
         keys(false);keys(true);QVERIFY(m.state().value("canUndoEdit").toBool());run(m,"undo_edit");QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Keep one");run(m,"close");
     }
@@ -2513,7 +2524,7 @@ private slots:
     void publicRecoveryAndSeparation() {
         QTemporaryDir dir;auto g=storage::document_gateway();const auto path=(dir.path()+"/public").toStdString();
         g->create(path,false,"","Synthetic",Currency("CAD"),"2026-10-25");g->repository().opening(0,"2026-10-25",Money(123,Currency("CAD")));
-        g->backup((dir.path()+"/portable").toStdString());g->close();g.reset();QSettings().clear();
+        g->close();QVERIFY(QFile::copy(dir.path()+"/public",dir.path()+"/portable"));g.reset();QSettings().clear();
         // Independent SQLCipher C interface: no application factory/store or Settings.
         sqlite3* raw=nullptr;
         const auto copy=QFileInfo(dir.path()+"/portable").canonicalFilePath().toUtf8();
@@ -2526,9 +2537,11 @@ private slots:
         ImportModel unsupported(storage::document_gateway());run(unsupported,"open",{{"path",dir.path()+"/portable"}},false);
         QVERIFY(!unsupported.state().value("unlockRequired").toBool());QVERIFY(unsupported.error().contains("This dataset format is not supported"));
         g=storage::document_gateway();
-        g->create((dir.path()+"/protected").toStdString(),true,storage::public_document_key,"Synthetic",Currency("CAD"),"2026-10-25");g->close();
+        const auto protectedPath=(dir.path()+"/protected").toStdString();
+        QVERIFY_THROWS_EXCEPTION(std::invalid_argument,g->create(protectedPath,true,storage::public_document_key,"Synthetic",Currency("CAD"),"2026-10-25"));
+        g->create(protectedPath,true,"synthetic-protected-password","Synthetic",Currency("CAD"),"2026-10-25");g->close();
         QVERIFY_THROWS_EXCEPTION(app::UnlockRequired,g->open((dir.path()+"/protected").toStdString(),{}));
-        g->open((dir.path()+"/protected").toStdString(),std::string(storage::public_document_key));g->close();
+        g->open((dir.path()+"/protected").toStdString(),std::string("synthetic-protected-password"));g->close();
     }
     void cachedViewsRemainCurrent() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/one");

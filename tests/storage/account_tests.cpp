@@ -253,21 +253,42 @@ void mapping_openings() {
     }
     {Directory d;auto s=create(d.path/"invalid");auto bad=bytes;bad.replace(bad.find("B100.00"),7,"Binvalid");app::OperationContext capture;bool invalid=false;try{s.prepare_import_group("invalid",bad,qif::DateOrder::dmy,{{0,2,app::AccountCreation{2,"New account",cad,"1900-01-01"},true}},capture);}catch(const std::exception&){invalid=true;}check(invalid);check(s.accounts().size()==1 && !s.import_group_outcome("invalid"));s.verify();}
 }
+// Reopening an unfinished capture leaves a terminal receipt. A new attempt
+// must use a fresh command identity, while a completed attempt is retryable.
+std::string capture_attempt(ImportStore& store, std::string_view base) {
+    for(unsigned attempt=0;;++attempt) {
+        const auto id=attempt?std::string(base)+"-retry-"+std::to_string(attempt):std::string(base);
+        const auto outcome=store.import_group_outcome(id);
+        if(!outcome || outcome->state!=app::GroupState::aborted)return id;
+    }
+}
 void mapping_opening_faults() {
     fault_vfs::install();
     const std::string bytes="!Account\nNNew account\nTBank\nB100.00\n^\n!Type:Bank\nD2009-01-01\nT-10\nPOPENING-CHOICE-SYNTHETIC-MARKER\n^\n";
     const std::vector<app::ImportAccountMapping> mappings{{0,2,app::AccountCreation{2,"New account",cad,"2009-01-01"},true}};
     for(int mode=0;mode<4;++mode){Directory d;const auto base=d.path/"base";
         {auto s=create(base);if(mode>0){app::OperationContext c;s.prepare_import_group("opening",bytes,qif::DateOrder::dmy,mappings,c);}if(mode>1){app::OperationContext c;s.resume_import_group("opening",c);}s.verify();}
-        const auto ready=[&](ImportStore& s){if(mode==1 && !s.import_group_outcome("opening")){app::OperationContext c;s.prepare_import_group("opening",bytes,qif::DateOrder::dmy,mappings,c);}};
-        const auto apply=[&](ImportStore& s){ready(s);app::OperationContext c;if(mode==0)s.prepare_import_group("opening",bytes,qif::DateOrder::dmy,mappings,c);else if(mode==1)s.resume_import_group("opening",c);else if(mode==2)s.accept_all("accept");else s.abort_import_group("opening");};
-        const auto done=[&](ImportStore& s){const auto group=s.import_group_outcome("opening");return group && (mode==0 || (mode==1 && group->state==app::GroupState::reviewing) || (mode==2 && group->state==app::GroupState::started) || (mode==3 && group->state==app::GroupState::aborted));};
-        const auto verify=[&](ImportStore& s){s.verify();if(mode==3)check(s.accounts().size()==1);else {s.select_account(2);check(s.account().opening==Money(10000,cad) && s.account().opening_confirmed);check(s.balance()==Money(mode==0?10000:9000,cad));}};
+        const auto identity=[&](ImportStore& s){return mode<=1?capture_attempt(s,"opening"):std::string("opening");};
+        const auto ready=[&](ImportStore& s){
+            const auto id=identity(s);
+            if(mode==1 && !s.import_group_outcome(id)){app::OperationContext c;s.prepare_import_group(id,bytes,qif::DateOrder::dmy,mappings,c);}
+        };
+        const auto apply=[&](ImportStore& s){ready(s);const auto id=identity(s);app::OperationContext c;if(mode==0)s.prepare_import_group(id,bytes,qif::DateOrder::dmy,mappings,c);else if(mode==1)s.resume_import_group(id,c);else if(mode==2)s.accept_all("accept");else s.abort_import_group(id);};
+        const auto done=[&](ImportStore& s){
+            const auto group=s.import_group_outcome(identity(s));
+            if(mode<=1 && !group)check(s.accounts().size()==1 && s.import_groups().empty());
+            return group && (mode==0 || (mode==1 && group->state==app::GroupState::reviewing) || (mode==2 && group->state==app::GroupState::started) || (mode==3 && group->state==app::GroupState::aborted));
+        };
+        const auto verify=[&](ImportStore& s){
+            s.verify();
+            s.select_account(2);
+            check(s.accounts().size()==2 && s.account().opening==Money(10000,cad) && s.account().opening_confirmed);
+            check(s.balance()==Money(mode==0 || mode==3?10000:9000,cad));
+        };
         int positions=0;
         for(int nth=1;nth<2000;++nth){const auto path=d.path/"trial";fs::copy_file(base,path,fs::copy_options::overwrite_existing);bool fired;
             {auto s=ImportStore::open(path,password);ready(s);fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-            {auto s=ImportStore::open(path,password);s.verify();apply(s);check(done(s));verify(s);s.backup_to(d.path/"backup",password);}
-            {auto s=ImportStore::open(d.path/"backup",password);if(mode==0)check(s.accounts().size()==1 && !s.import_group_outcome("opening"));else verify(s);}fs::remove(d.path/"backup");
+            {auto s=ImportStore::open(path,password);s.verify();(void)done(s);apply(s);check(done(s));verify(s);}
             if(!fired){positions=nth-1;break;}
         }check(positions>0);
         for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){const auto path=d.path/"crash";fs::copy_file(base,path,fs::copy_options::overwrite_existing);const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);ready(s);s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);auto s=ImportStore::open(path,password);check(done(s)==(mode!=0 && phase==ImportPhase::after_commit));apply(s);verify(s);}
@@ -487,27 +508,39 @@ std::string group_fault_source(int kind){
 }
 std::vector<app::ImportAccountMapping> group_fault_mapping(){return {{0,2,app::AccountCreation{2,"Fault first",cad,"2026-01-01"},false},{1,3,app::AccountCreation{3,"Fault second",cad,"2026-01-01"},false}};}
 imports::DraftRow group_fault_repair(){return {"2026-01-01","GROUP-FAULT-MARKER","",Transaction::repaired_import({},Money(1000,cad),{{"","",Money(1000,cad)}})};}
-void group_fault_setup(const fs::path& path,int kind,bool initial_categories=false){
+void group_fault_setup(const fs::path& path,int kind){
     auto s=create(path);if(kind==0)return;app::OperationContext capture;s.prepare_import_group("fault",group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),capture);if(kind==1 || kind==7)return;
-    app::OperationContext resume;s.resume_import_group("fault",resume);if(initial_categories)choose_import_categories(s,"fault");if(kind==2 || kind==6 || kind==9)return;
+    app::OperationContext resume;s.resume_import_group("fault",resume);choose_import_categories(s,"fault");if(kind==2 || kind==6 || kind==9)return;
     if(kind==8){s.select_account(3);imports::DraftRow edit{"2026-01-01","","",Transaction::repaired_import({},Money(1000,cad),{{"Fault first","",Money(1000,cad),{},"source-0",0}})};s.save({"fault-account-1",0},1,edit);s.decide({"fault-account-1",0},2,{imports::Disposition::include,{}});return;}
-    if(kind==3){s.select_account(2);s.save({"fault-account-0",0},1,group_fault_repair());return;}
+    if(kind==3){s.select_account(2);s.save({"fault-account-0",0},1,group_fault_repair());test_session::close_reopen(s,path,password);return;}
     if(kind==5){s.select_account(2);app::TransferRequest r{};r.action=app::TransferAction::from_draft;r.link="fault-link";r.origin=imports::Occurrence{"fault-account-0",0};r.allocation="source-0";r.destination=3;r.batch_revision=1;r.expected_sequence=s.transfer_sequence();s.apply_transfer("link",r);s.select_account(3);r={};r.action=app::TransferAction::accept;r.link="fault-link";r.expected_sequence=s.transfer_sequence();s.apply_transfer("accept",r);}
 
 }
 void group_fault_ready(ImportStore& s,int kind){
-    if((kind==1 || kind==7) && !s.import_group_outcome("fault")){app::OperationContext capture;s.prepare_import_group("fault",group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),capture);}
+    if(kind!=1 && kind!=7)return;
+    const auto id=capture_attempt(s,"fault");
+    if(!s.import_group_outcome(id)){app::OperationContext capture;s.prepare_import_group(id,group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),capture);}
 }
 void group_fault_execute(ImportStore& s,int kind){
     group_fault_ready(s,kind);
+    const auto id=(kind==0 || kind==1 || kind==7)?capture_attempt(s,"fault"):std::string("fault");
     app::OperationContext context;
-    if(kind==0)s.prepare_import_group("fault",group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),context);
-    else if(kind==1 || kind==7)s.resume_import_group("fault",context);
+    if(kind==0)s.prepare_import_group(id,group_fault_source(kind),qif::DateOrder::dmy,group_fault_mapping(),context);
+    else if(kind==1 || kind==7)s.resume_import_group(id,context);
     else if(kind==8)s.resolve_import_transfers("fault",context);
     else if(kind==9)s.abort_import_group("fault");
     else if(kind==2){s.select_account(2);s.correct_opening("fault-opening","2026-01-01",Money(9000,cad));}
     else if(kind==3)s.abort_import_group("fault");
-    else if(kind==4){s.select_account(2);s.commit("fault-account-0",revision(s,"fault-account-0"),"publish");}
+    else if(kind==4){
+        s.select_account(2);
+        const auto current_revision=revision(s,"fault-account-0");
+        const auto saved=s.outcome("publish");
+        // A committed publication advances the revision. Retrying the same
+        // operation must use its original request, even after a lost reply.
+        if(saved)check(saved->revision+1==current_revision);
+        const auto receipt=s.commit("fault-account-0",saved?saved->revision:current_revision,"publish");
+        check(receipt.after==Money(1000,cad));
+    }
     else if(kind==5){s.select_account(3);app::TransferRequest r{};r.action=app::TransferAction::commit_local;r.link="fault-link";r.expected_sequence=2;s.apply_transfer("publish-transfer",r);}
     else {s.select_account(2);if(s.batches()[0].revision==1)s.save({"fault-account-0",0},1,group_fault_repair());}
 }
@@ -528,7 +561,7 @@ void group_validation(){
         {4,false,"INSERT INTO retired_import_accounts(account_id,group_id) VALUES(2,'fault')"},
         {4,true,"DROP TRIGGER category_versions_immutable;UPDATE category_versions SET name='Forged unused category' WHERE id='import-cat-fault-1'"},
         {3,true,"DROP TRIGGER account_name_command;DROP TRIGGER frozen_opening;DROP TRIGGER account_definition_command;UPDATE account SET name='' WHERE singleton=2"}}){
-        Directory d;const auto path=d.path/"tampered-group";group_fault_setup(path,item.setup_kind,true);
+        Directory d;const auto path=d.path/"tampered-group";group_fault_setup(path,item.setup_kind);
         if(item.setup_kind==7){auto s=ImportStore::open(path,password);app::OperationContext c;s.prepare_import_group("fault-retry",group_fault_source(7),qif::DateOrder::dmy,group_fault_mapping(),c);app::OperationContext r;s.resume_import_group("fault-retry",r);s.verify();}
         {auto s=ImportStore::open(path,password);if(item.execute && item.setup_kind!=7){if(item.setup_kind==3)test_session::close_reopen(s,path,password);group_fault_execute(s,item.setup_kind);}s.verify();if(!restored_checked)s.backup_to(d.path/"restore",password);}
         if(!restored_checked){auto restored=ImportStore::open(d.path/"restore",password);restored.verify();restored.select_account(2);check(restored.evidence("fault-account-0").find("GROUP-FAULT-MARKER")!=std::string::npos);restored_checked=true;}
@@ -539,41 +572,54 @@ void group_validation(){
     }
 }
 bool group_fault_done(ImportStore& s,int kind){
-    const auto saved=s.import_group_outcome("fault");
-    if(kind==0){check(s.accounts().size()==(saved?3:1));return saved.has_value();}
-    if(!saved && (kind==1 || kind==7)){check(s.accounts().size()==1);return false;}
+    const auto id=(kind==0 || kind==1 || kind==7)?capture_attempt(s,"fault"):std::string("fault");
+    const auto saved=s.import_group_outcome(id);
+    if(!saved && (kind==0 || kind==1 || kind==7)){
+        check(s.accounts().size()==1 && s.import_groups().empty());
+        return false;
+    }
+    if(kind==0){check(s.accounts().size()==3 && saved->state==app::GroupState::captured);return true;}
     check(saved.has_value());
     if(kind==1 || kind==7){const bool done=saved->state==app::GroupState::reviewing;if(kind==7){s.select_account(2);check(s.transfers().size()==(done?2:0));}return done;}
     if(kind==8){s.select_account(2);const auto count=s.transfers().size();check(count==3 || count==4);return count==4;}
-    if(kind==9){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==(done?1:3));return done;}
+    if(kind==9){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==3);return done;}
     if(kind==2){s.select_account(2);return s.account().opening==Money(9000,cad);}
-    if(kind==3){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==(done?1:3));check(s.category_catalog().categories.empty());return done;}
-    if(kind==4 || kind==5){s.select_account(kind==4?2:3);const bool done=kind==4?s.outcome("publish").has_value():s.transfer_outcome("publish-transfer").has_value();check((saved->state==app::GroupState::started)==done);check(s.category_catalog().categories.size()==(done?2:0));check(s.account().opening.units()==0);return done;}
+    if(kind==3){const bool done=saved->state==app::GroupState::aborted;check(s.accounts().size()==3);check(s.category_catalog().categories.size()==2);return done;}
+    if(kind==4 || kind==5){s.select_account(kind==4?2:3);const bool done=kind==4?s.outcome("publish").has_value():s.transfer_outcome("publish-transfer").has_value();check((saved->state==app::GroupState::started)==done);check(s.category_catalog().categories.size()==2);check(s.account().opening.units()==0);return done;}
     s.select_account(2);const bool done=s.row({"fault-account-0",0}).draft.has_value();check(s.batches()[0].revision==(done?2:1));return done;
 }
 void group_fault_recovered(const fs::path& path,int kind){
-    auto s=ImportStore::open(path,password);(void)group_fault_done(s,kind);group_fault_execute(s,kind);s.verify();const auto group=s.import_groups()[0];
+    auto s=ImportStore::open(path,password);(void)group_fault_done(s,kind);group_fault_execute(s,kind);s.verify();const auto groups=s.import_groups();
+    if(kind!=3 && kind!=9)check(groups.size()==1);
+    const auto group=s.import_group_outcome(groups.empty()?"fault":groups.front().id).value();
     if(kind==0)check(group.state==app::GroupState::captured && s.accounts().size()==3);
     if(kind==1 || kind==7)check(group.state==app::GroupState::reviewing && group.accounts.size()==2);
     if(kind==8){s.select_account(2);check(s.transfers().size()==4);check(s.balance()==Money(-4000,cad));s.select_account(3);check(s.balance()==Money(4000,cad));}
-    if(kind==9)check(group.state==app::GroupState::aborted && s.accounts().size()==1);
+    if(kind==9)check(group.state==app::GroupState::aborted && s.accounts().size()==3);
     if(kind==2){s.select_account(2);check(s.account().opening==Money(9000,cad));}
-    if(kind==3)check(group.state==app::GroupState::aborted && s.accounts().size()==1);
+    if(kind==3)check(group.state==app::GroupState::aborted && s.accounts().size()==3);
     if(kind==4)check(s.committed_balance()==Money(1000,cad));
     if(kind==5)check(s.committed_balance()==Money(1000,cad));
     if(kind==6)check(s.row({"fault-account-0",0}).draft->transaction.effective_total()==Money(1000,cad));
 }
-void group_faults(bool crash,int first=0){
+void group_faults(bool crash,int first=0,int end=10,bool preflight=false){
+    check(first>=0 && first<end && end<=10);
     fault_vfs::install();
-    for(int kind=first;kind<10;++kind){
+    for(int kind=first;kind<end;++kind){
         std::cout<<"Mapped fault sweep kind "<<kind<<std::endl;
-        int count=0;{Directory d;group_fault_setup(d.path/"doc",kind);auto s=ImportStore::open(d.path/"doc",password);group_fault_ready(s,kind);fault_vfs::arm(-1);group_fault_execute(s,kind);count=fault_vfs::seen;fault_vfs::disarm();}check(count>0);
-        for(int position=1;position<=count;++position){Directory d;const auto path=d.path/"doc";group_fault_setup(path,kind);
-            if(crash){const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);group_fault_ready(s,kind);fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);group_fault_execute(s,kind);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && (WEXITSTATUS(status)==71 || WEXITSTATUS(status)==0));}
-            else{auto s=ImportStore::open(path,password);group_fault_ready(s,kind);fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{group_fault_execute(s,kind);}catch(const ImportError&){}fault_vfs::disarm();}
+        Directory fixture;
+        const auto seed=fixture.path/"seed";
+        group_fault_setup(seed,kind);
+        int count=0;{Directory d;fs::copy_file(seed,d.path/"doc");auto s=ImportStore::open(d.path/"doc",password);group_fault_ready(s,kind);fault_vfs::arm(-1);group_fault_execute(s,kind);count=fault_vfs::seen;fault_vfs::disarm();}check(count>0);
+        if(preflight)continue;
+        for(int position=1;position<=count;++position){
+            if(position==1 || position%25==0)std::cout<<"Mapped operation "<<kind<<", point "<<position<<"/"<<count<<std::endl;
+            Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);
+            if(crash){const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);group_fault_ready(s,kind);fault_vfs::arm(position,SQLITE_IOERR_WRITE,true,true);group_fault_execute(s,kind);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71);}
+            else{auto s=ImportStore::open(path,password);group_fault_ready(s,kind);fault_vfs::arm(position,position%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{group_fault_execute(s,kind);}catch(const ImportError&){}catch(const app::OperationOutcomeUnknown&){}check(fault_vfs::fired);fault_vfs::disarm();}
             group_fault_recovered(path,kind);no_leaks(d.path);
         }
-        for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto path=d.path/"doc";group_fault_setup(path,kind);const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);group_fault_ready(s,kind);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});group_fault_execute(s,kind);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(path,password);check(group_fault_done(s,kind)==(kind!=0 && phase==ImportPhase::after_commit));}group_fault_recovered(path,kind);}
+        for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;const auto path=d.path/"doc";fs::copy_file(seed,path);const auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(path,password);group_fault_ready(s,kind);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});group_fault_execute(s,kind);_exit(0);}int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);{auto s=ImportStore::open(path,password);check(group_fault_done(s,kind)==(kind!=0 && phase==ImportPhase::after_commit));}group_fault_recovered(path,kind);}
         std::cout<<"Group operation "<<kind<<": "<<count<<" write/sync positions"<<std::endl;
     }
 }
@@ -700,4 +746,4 @@ void faults(bool crash){
     }
 }
 }
-int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spentit::diagnostics::Collector::instance().enable();try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="aliases")account_aliases_test();else if(mode=="mapping_openings"){mapping_openings();group_balances();}else if(mode=="mapping_opening_faults")mapping_opening_faults();else if(mode=="groups"){std::cout<<"Aliases"<<std::endl;account_aliases_test();std::cout<<"Snapshot"<<std::endl;group_snapshot_invalidation();std::cout<<"Groups"<<std::endl;groups();std::cout<<"Mapped"<<std::endl;mapped_transfers();std::cout<<"Categories"<<std::endl;group_categories();std::cout<<"Transfers"<<std::endl;group_transfers();group_balances();std::cout<<"Duplicates"<<std::endl;group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_io")group_faults(false);else if(mode=="group_crashes")group_faults(true);else if(mode=="validation"){validation();group_validation();association_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){if(std::getenv("SPENTIT_TEST_DIAGNOSTICS"))spentit::diagnostics::Collector::instance().enable();try{std::string mode=argc>1?argv[1]:"basics";if(mode=="group_benchmark")group_benchmark();else if(mode=="basics")basics();else if(mode=="combined")combined_recovery();else if(mode=="combined_io")combined_io();else if(mode=="aliases")account_aliases_test();else if(mode=="mapping_openings"){mapping_openings();group_balances();}else if(mode=="mapping_opening_faults")mapping_opening_faults();else if(mode=="groups"){std::cout<<"Aliases"<<std::endl;account_aliases_test();std::cout<<"Snapshot"<<std::endl;group_snapshot_invalidation();std::cout<<"Groups"<<std::endl;groups();std::cout<<"Mapped"<<std::endl;mapped_transfers();std::cout<<"Categories"<<std::endl;group_categories();std::cout<<"Transfers"<<std::endl;group_transfers();group_balances();std::cout<<"Duplicates"<<std::endl;group_duplicates_and_protection();}else if(mode=="mapped_io")group_faults(false,7);else if(mode=="mapped_crashes")group_faults(true,7);else if(mode=="group_preflight")group_faults(false,0,10,true);else if(mode=="group_io" || mode=="group_crashes"){const auto scenario=argc>2?std::stoi(argv[2]):-1;group_faults(mode=="group_crashes",scenario<0?0:scenario,scenario<0?10:scenario+1);}else if(mode=="validation"){validation();group_validation();association_validation();}else if(mode=="io")faults(false);else if(mode=="crashes")faults(true);else return 2;std::cout<<"Accounts "<<mode<<" passed\n";}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

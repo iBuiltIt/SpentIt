@@ -225,9 +225,9 @@ void batch_tests(const std::filesystem::path& dir) {
     }
     std::cout<<"Batch Review tests passed\n";
 }
-void fault_tests(const std::filesystem::path& dir,int first_mode=0) {
+void fault_tests(const std::filesystem::path& dir,int first_mode=0,int end=8) {
     const Currency cad("CAD");fault_vfs::install();
-    for(int mode=first_mode;mode<8;++mode){
+    for(int mode=first_mode;mode<end;++mode){
         const auto base=dir/("base-"+std::to_string(mode));
         ReviewAnswer request;std::vector<ReviewAnswer> batch_request;
         {
@@ -240,15 +240,26 @@ void fault_tests(const std::filesystem::path& dir,int first_mode=0) {
             if(mode%2){if(mode>=6){OperationContext context;store.merge_review_batch("answer",batch_request,context);}else store.answer_review("answer",request);}
         }
         const auto apply=[&](ImportStore& s){if(mode%2)s.undo_review("operation");else if(mode>=6){OperationContext context;s.merge_review_batch("operation",batch_request,context);}else s.answer_review("operation",request);};
+        const auto trial=dir/"trial";
+        std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
         int positions=0;
-        for(int nth=1;nth<2000;++nth){
-            const auto trial=dir/"trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+        {
+            auto s=ImportStore::open(trial,"test");
+            fault_vfs::arm(-1);
+            apply(s);
+            positions=fault_vfs::seen;
+            fault_vfs::disarm();
+            check(s.review_outcome("operation").has_value(),"Unfaulted operation completed");
+        }
+        check(positions>0 && positions<2000,"Expected bounded fault trace");
+        for(int nth=1;nth<=positions;++nth){
+            if(nth==1 || nth%25==0)std::cout<<"Review scenario "<<mode<<", point "<<nth<<"/"<<positions<<std::endl;
+            std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
             {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-            {auto s=ImportStore::open(trial,"test");s.verify();if(mode>=6){const bool complete=s.review_outcome("operation").has_value();const bool merged=mode==6?complete:!complete;check(s.current_ledger().size()==(merged?2:5) && s.balance().units()==(merged?-3000:-7000),"Fault leaves all or none of batch");}if(!s.review_outcome("operation"))apply(s);check(s.review_outcome("operation").has_value(),"Retry completed");if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Retry exact batch result");s.verify();s.backup_to(dir/"restored","test");}
-            {auto s=ImportStore::open(dir/"restored","test");s.verify();if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Restored exact batch result");}
-            std::filesystem::remove(dir/"restored");
+            {auto s=ImportStore::open(trial,"test");s.verify();if(mode>=6){const bool complete=s.review_outcome("operation").has_value();const bool merged=mode==6?complete:!complete;check(s.current_ledger().size()==(merged?2:5) && s.balance().units()==(merged?-3000:-7000),"Fault leaves all or none of batch");}if(!s.review_outcome("operation"))apply(s);check(s.review_outcome("operation").has_value(),"Retry completed");if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Retry exact batch result");s.verify();}
+            {auto s=ImportStore::open(trial,"test");s.verify();if(mode>=6)check(s.current_ledger().size()==(mode==6?2:5) && s.balance().units()==(mode==6?-3000:-7000),"Restored exact batch result");}
             std::ifstream bytes(trial,std::ios::binary);const std::string raw{std::istreambuf_iterator<char>(bytes),{}};check(raw.find("SYNTHETIC-REVIEW-MARKER")==std::string::npos,"Encrypted Review storage");
-            if(!fired){positions=nth-1;break;}
+            check(fired,"Planned write/sync fault reached");
         }
         check(positions>0,"Fault sweep reached writes");std::cout<<"Review fault mode "<<mode<<": "<<positions<<" positions\n";
         for(const auto phase:{spentit::storage::ImportPhase::before_commit,spentit::storage::ImportPhase::after_commit}){
@@ -311,8 +322,8 @@ void policy_tests(const std::filesystem::path& dir) {
         if(n==3){
             auto edit=*s.row({"out",0}).draft;edit.payee="Opening Balance";
             s.save({"out",0},0,edit);check(comparisons(s)==0,"Opening payee invalidates cached eligibility");
-            edit.payee="Ordinary payment";s.save({"out",0},1,edit);check(comparisons(s)==1,"Ordinary payee restores cached eligibility");
-            edit.memo="New memo";s.save({"out",0},2,edit);check(comparisons(s)==1,"Memo preserves cached transfer eligibility");
+            edit=*s.row({"out",0}).draft;edit.payee="Ordinary payment";edit.payee_owner=FieldOwnership::manual;s.save({"out",0},1,edit);check(comparisons(s)==1,"Ordinary payee restores cached eligibility");
+            edit.memo="New memo";edit.memo_owner=FieldOwnership::manual;s.save({"out",0},2,edit);check(comparisons(s)==1,"Memo preserves cached transfer eligibility");
             edit.date="2026-02-01";s.save({"out",0},3,edit);check(comparisons(s)==0,"Date edit removes old neighborhood edges");
             edit.date="2026-01-01";s.save({"out",0},4,edit);check(comparisons(s)==1,"Date restoration restores neighborhood edges");
             s.verify();
@@ -455,10 +466,10 @@ void review_benchmark(const std::filesystem::path& dir) {
     std::cout<<"Review workload: "<<count*2<<" rows, "<<count<<" expected pairs, zero unexpected pairs; import "<<ms(start,imported)<<" ms, first Review "<<ms(imported,built)<<" ms, five cached opens "<<ms(built,opened)<<" ms, save and affected Review "<<ms(opened,changed)<<" ms\n";
 }
 
-void policy_faults(const std::filesystem::path& dir) {
+void policy_faults(const std::filesystem::path& dir,int first_mode=0,int end=6) {
     const Currency cad("CAD");fault_vfs::install();
     const std::string payment="!Type:Bank\nD01/01/2026\nT-100.00\nPSYNTHETIC-LINK-LEARNING-MARKER\nL[Visa]\n^\n";
-    for(int mode=0;mode<6;++mode){
+    for(int mode=first_mode;mode<end;++mode){
         const auto base=dir/("policy-base-"+std::to_string(mode));ReviewAnswer request;std::int64_t generation=0;
         const LinkExclusion exclusion{"exclude-marker","payee","SYNTHETIC-LINK-LEARNING-MARKER",0,false,false};
         {
@@ -479,15 +490,26 @@ void policy_faults(const std::filesystem::path& dir) {
             else s.answer_review("operation",request);
         };
         const auto outcome=[&](ImportStore& s){if(mode!=1)return s.review_outcome("operation").has_value();s.select_account(1);const auto batches=s.batches();return std::any_of(batches.begin(),batches.end(),[](const auto& b){return b.id=="operation";});};
+        const auto trial=dir/"policy-trial";
+        std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
         int positions=0;
-        for(int nth=1;nth<2500;++nth){
-            const auto trial=dir/"policy-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
+        {
+            auto s=ImportStore::open(trial,"test");
+            fault_vfs::arm(-1);
+            apply(s);
+            positions=fault_vfs::seen;
+            fault_vfs::disarm();
+            check(outcome(s),"Unfaulted operation completed");
+        }
+        check(positions>0 && positions<2500,"Expected bounded fault trace");
+        for(int nth=1;nth<=positions;++nth){
+            if(nth==1 || nth%25==0)std::cout<<"Review scenario "<<mode<<", point "<<nth<<"/"<<positions<<std::endl;
+            std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
             {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-            {auto s=ImportStore::open(trial,"test");s.verify();apply(s);check(outcome(s),"Recovery retry completed");s.verify();s.backup_to(dir/"policy-restored","test");}
-            {auto s=ImportStore::open(dir/"policy-restored","test");s.verify();}
-            std::filesystem::remove(dir/"policy-restored");
+            {auto s=ImportStore::open(trial,"test");s.verify();apply(s);check(outcome(s),"Recovery retry completed");s.verify();}
+            {auto s=ImportStore::open(trial,"test");s.verify();}
             std::ifstream file(trial,std::ios::binary);const std::string bytes{std::istreambuf_iterator<char>(file),{}};check(bytes.find("SYNTHETIC-LINK-LEARNING-MARKER")==std::string::npos,"Encrypted exclusion and transfer storage");
-            if(!fired){positions=nth-1;break;}
+            check(fired,"Planned write/sync fault reached");
         }
         check(positions>0,"Recovery sweep reached writes");std::cout<<"Review policy fault mode "<<mode<<": "<<positions<<" positions\n"<<std::flush;
         for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
@@ -1640,11 +1662,11 @@ int main(int argc,char** argv){
         if(argc>1 && std::string(argv[1])=="batch"){batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="decisions"){decision_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):1000);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="generation"){generation_workload(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):120);std::filesystem::remove_all(dir);return 0;}
-        if(argc>1 && std::string(argv[1])=="policy_faults"){policy_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="policy_faults"){policy_faults(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):0,argc>3?std::stoi(argv[3]):6);std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="benchmark"){review_benchmark(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="policy"){policy_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="adjacent"){adjacent_day_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
-        if(argc>1){fault_tests(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):0);std::filesystem::remove_all(dir);return 0;}
+        if(argc>1){fault_tests(std::filesystem::canonical(dir),argc>2?std::stoi(argv[2]):0,argc>3?std::stoi(argv[3]):8);std::filesystem::remove_all(dir);return 0;}
         const auto cad=Currency("CAD");
         {
             auto store=ImportStore::create(path,"test","Visa",cad,"2026-01-01");store.opening(0,"2026-01-01",Money(0,cad));

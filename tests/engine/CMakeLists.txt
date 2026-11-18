@@ -89,3 +89,7 @@ add_executable(spentit_report_tests report_tests.cpp)
 target_link_libraries(spentit_report_tests PRIVATE SpentIt::engine)
 spentit_compiler_options(spentit_report_tests)
 add_test(NAME engine.reports COMMAND spentit_report_tests)
+
+if(BUILD_TESTING)
+  spentit_test_defaults()
+endif()

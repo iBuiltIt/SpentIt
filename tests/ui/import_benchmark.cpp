@@ -242,6 +242,10 @@ int main(int argc,char** argv) {
             command("group_prepare","map_import",{{"mappings",mappings}});
             require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Repeated transfers were not resolved");
             const auto group=model.state().value("importGroup").toMap().value("id");
+            for(const auto& item:model.state().value("importCategoryDecisions").toList()) {
+                const auto decision=item.toMap();
+                command("group_categories","resolve_import_categories",{{"source",decision.value("source")},{"selected",decision.value("names")}});
+            }
             command("close_group","close");
             command("open_group","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
             for(int pass=0;pass<2;++pass)for(int account=0;account<6;++account) {
@@ -264,6 +268,8 @@ int main(int argc,char** argv) {
             require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Ordinary edit changed transfer resolution");
             command("resolve_existing","group_resolve_transfers",{{"group",group}});
             require(model.state().value("importGroup").toMap().value("unresolvedTransfers").toInt()==0,"Repeated matching behavior changed");
+            command("close_after_edit","close");
+            command("reopen_after_edit","unlock",{{"path",path},{"password","synthetic-benchmark-password"}});
             command("abort_group","group_abort",{{"group",group}});
             command("final_close","close");
             std::cout<<"correctness=passed scope=group-prepare-open-switch-resolve-abort"<<std::endl;return 0;
