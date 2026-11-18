@@ -576,4 +576,51 @@ Link correct_draft_date(const Link& before,const Endpoint& endpoint,std::string_
     validate(link);
     return link;
 }
+Link correct_manual_draft_origin(const Link& before,const Money& amount,std::string_view after_date,bool break_link) {
+    validate(before);
+    auto link=before;
+    if(link.unresolved || link.destination_released || link.origin.state!=State::draft ||
+       !link.origin.ledger_entry || !link.origin.manually_entered || link.destination.state==State::removed ||
+       amount.currency()!=link.origin.amount.currency())invalid();
+    const bool generated=disposable(link.destination) && !link.destination.ledger_entry;
+    if(break_link){
+        link.destination.proposed_evidence.reset();
+        if(generated)link.destination.state=State::removed;
+        link.unresolved=!generated;
+        retire_origin(link);
+    }else{
+        date(after_date);
+        if(amount.units()==0 || (!generated && amount!=link.origin.amount))invalid();
+        if((link.destination.proposed_evidence || link.destination.attached_evidence) &&
+           (amount!=link.origin.amount || after_date!=link.origin.date))invalid();
+        link.origin.date=after_date;
+        if(generated && !link.destination.proposed_evidence){
+            link.origin.amount=amount;
+            link.destination.amount=-amount;
+            link.generated_date=after_date;
+            link.destination.date=after_date;
+        }
+        link.origin_date_corrected=link.origin.date!=link.generated_date;
+    }
+    validate(link);
+    return link;
+}
+Link correct_manual_draft_destination(const Link& before,std::string_view after_date,bool break_link) {
+    validate(before);
+    auto link=before;
+    if(link.unresolved || link.destination_released || link.origin.state==State::removed ||
+       link.destination.state!=State::draft || !link.destination.ledger_entry || !link.destination.manually_entered)
+        invalid();
+    if(break_link){
+        link.destination.state=State::removed;
+        if(counts_locally(link.origin) || link.origin.attached_evidence || link.origin.proposed_evidence)
+            link.destination_released=true;
+        else {link.unresolved=true;retire_origin(link);}
+    }else{
+        date(after_date);
+        link.destination.date=after_date;
+    }
+    validate(link);
+    return link;
+}
 } // namespace spentit::transfers

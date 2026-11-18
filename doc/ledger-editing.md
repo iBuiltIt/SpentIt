@@ -109,6 +109,8 @@ Other fields retain Enter-to-accept behavior and session Undo remains unchanged.
 
 ## Correcting the date of a New transfer
 
+For a manually entered posting, see [Editing a New manual transfer](#editing-a-new-manual-transfer).
+
 Double-click the original transaction to edit its Date. Press Enter to save or
 Escape to discard the edit. The transaction stays New and the link stays in
 place. The transfer editor's existing restrictions on other fields still apply.
@@ -122,6 +124,28 @@ An attached or proposed bank match locks the date.
 **Undo Correct transfer date** restores the previous date or dates in one step.
 Redo reapplies the correction through the same validation. Amounts, allocation
 identities, source evidence and acceptance status are preserved.
+
+## Editing a New manual transfer
+
+Double-click the manually entered transaction to edit its date, payee, memo,
+amount, and splits, including their categories, memos, and amounts. From its
+generated entry, **Edit original transaction** opens that editor. Press Enter to
+save. A single split follows the total, and multiple splits must add up to it.
+
+An eligible New generated counterpart follows the original's date, the opposite
+of its linked split amount, and its payee and memo changes. A split memo takes
+precedence over the transaction memo for its generated entry. Review reevaluates
+matches after the save.
+
+SpentIt asks before saving an edit that would break a link. A removed transfer
+split, a zero amount, or a changed destination can break its link. A changed
+amount can also break a link to an independent or accepted posting. Corrections
+that affect a bank match require the same decision. The confirmation explains
+which postings stay, which generated entries are removed, and whether the edit
+releases a proposed bank match. Cancel leaves the edit open.
+
+The original edit and its changes across accounts save together as one Undo
+step. Undo and Redo restore the corresponding postings and links together.
 
 ## Undo scope and persistence
 

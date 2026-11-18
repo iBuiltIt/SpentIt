@@ -28,8 +28,9 @@ void ImportStore::publish_review_action(std::string_view operation) {
         question=="transfer-assignment"?"Change category":question.starts_with("ledger-")?"Edit transactions":"Review transactions";
     if(question=="ledger-edit-batch"){const auto encoded=saved.bytes(1);transfer_codec::Reader request{encoded};const auto kind=static_cast<app::LedgerSelectionAction>(request.number());action.label=kind==app::LedgerSelectionAction::rename_payee?"Rename payee":kind==app::LedgerSelectionAction::set_memo?"Set memo":"Restore imported values";}
     if(question=="ledger-edit"){
-        Statement transfer_date(impl_->db,"SELECT 1 FROM review_members m JOIN ledger_operations l ON l.id=m.child AND l.kind=4 WHERE m.answer=? AND m.committed=0");
-        transfer_date.text(1,operation);if(transfer_date.row())action.label="Correct transfer date";
+        Statement transfer_edit(impl_->db,"SELECT e.request FROM review_members m JOIN transfer_events e ON e.operation=m.child WHERE m.answer=? AND m.committed=0");
+        transfer_edit.text(1,operation);
+        if(transfer_edit.row())action.label=transfer_codec::request(transfer_edit.bytes(0)).origin?"Edit manual transfer":"Correct transfer date";
     }
     Statement count(impl_->db,"SELECT count(*) FROM review_members WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)");count.text(1,operation);
     if(!count.row())fail(SQLITE_CORRUPT);action.count=question=="review-exclusion"?1:count.integer(0);

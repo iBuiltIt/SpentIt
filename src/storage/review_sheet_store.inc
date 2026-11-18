@@ -1366,7 +1366,11 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
         const auto current=all_transfers();
         auto working=current;std::map<std::int64_t,Money> link_balances;
         Statement link_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");link_question.text(1,answer);
-        if(link_question.row() && link_question.bytes(0)=="unmerge-link"){
+        const bool is_unmerge=link_question.row() && link_question.bytes(0)=="unmerge-link";
+        Statement editor_link(impl_->db,"SELECT e.request FROM review_members m JOIN transfer_events e ON e.operation=m.child WHERE m.answer=? AND m.committed=0");
+        editor_link.text(1,answer);
+        const bool is_manual_edit=editor_link.row() && transfer_codec::request(editor_link.bytes(0)).origin.has_value();
+        if(is_unmerge){
             std::vector<std::size_t> order;
             if(!ordered_link_writes(current,restored,order))fail(SQLITE_CONSTRAINT,"This unmerge cannot be undone.");
             std::vector<app::TransferView> arranged;arranged.reserve(order.size());
@@ -1374,7 +1378,14 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             restored=std::move(arranged);
         }else{
         const auto active_count=[&](const app::TransferView& value){const auto found=std::find_if(current.begin(),current.end(),[&](const auto& v){return v.link.identity==value.link.identity;});if(found==current.end())fail(SQLITE_CORRUPT);return int(found->link.origin.state!=transfers::State::removed)+int(found->link.destination.state!=transfers::State::removed);};
-        std::stable_sort(restored.begin(),restored.end(),[&](const auto& a,const auto& b){return active_count(a)>active_count(b);});
+        std::stable_sort(restored.begin(),restored.end(),[&](const auto& a,const auto& b){
+            if(is_manual_edit){
+                const bool a_new=link_lineage.at(a.link.identity).second==0;
+                const bool b_new=link_lineage.at(b.link.identity).second==0;
+                if(a_new!=b_new)return a_new;
+            }
+            return active_count(a)>active_count(b);
+        });
         }
         std::size_t link_serial=0;
         for(const auto& target:restored){
@@ -1759,9 +1770,22 @@ app::ReviewReceipt ImportStore::assign_transfer_batch(std::string_view operation
 // The existing snapshot journal also records editor acceptances. No pending
 // buffer is persisted: only a complete, validated transaction reaches this API.
 app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,const imports::Occurrence& id,std::int64_t revision,const std::optional<app::EntryToken>& token,const imports::DraftRow& input) {
+    return edit_transaction_impl(operation,id,revision,token,input,nullptr);
+}
+app::ReviewReceipt ImportStore::edit_manual_transfer(std::string_view operation,const imports::Occurrence& id,
+    std::int64_t revision,const imports::DraftRow& input,const app::ManualTransferEdit& transfer) {
+    return edit_transaction_impl(operation,id,revision,{},input,&transfer);
+}
+app::ReviewReceipt ImportStore::edit_transaction_impl(std::string_view operation,const imports::Occurrence& id,std::int64_t revision,
+    const std::optional<app::EntryToken>& token,const imports::DraftRow& input,const app::ManualTransferEdit* transfer) {
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     transfer_codec::Writer request;request.text(review_key(id));request.number(revision);request.number(token?1:0);
     if(token){request.text(review_key(token->identity));request.number(token->revision);request.number(integer(token->dependencies.size()));for(const auto& dependency:token->dependencies){request.text(dependency.batch);request.number(dependency.revision);request.number(static_cast<int>(dependency.state));}}
+    if(transfer){
+        request.text("manual-transfer");
+        request.number(transfer->confirmed_generation.value_or(-1));
+        for(const auto& [position,account]:transfer->destinations){request.number(integer(position));request.number(account);}
+    }
     const auto encoded=request.bytes;
     session_snapshot::request_draft(request,input);const auto request_hash=session_snapshot::digest(request.bytes);
     session_snapshot::retry(impl_->db,operation,"editor",request_hash);
@@ -1776,7 +1800,7 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
         const bool draft_transfer=!accepted && link.row();
         const auto before=accepted?entry_snapshot(id,saved.integer(2)).draft:review_draft(id,saved.integer(2),draft_transfer);
         const auto after=accepted?entry_snapshot(id,saved.integer(3)).draft:review_draft(id,saved.integer(3),draft_transfer);
-        if(!same_draft(draft_transfer?input:canonical_draft(id,input,before,saved.integer(3),accepted,false),after))fail(SQLITE_CONSTRAINT,"Edit retry changed its values");
+        if(!same_draft(draft_transfer && !transfer?input:canonical_draft(id,input,before,saved.integer(3),accepted,false),after))fail(SQLITE_CONSTRAINT,"Edit retry changed its values");
         return *receipt;
     }
     if(review_survivor(impl_->db,id)!=id)fail(SQLITE_CONSTRAINT,"Edit the retained transaction");
@@ -1785,6 +1809,7 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     if(!row.draft || row.excluded_by_clear || row.matched_generated)fail(SQLITE_CONSTRAINT,"Resolve this record before editing");
     const bool committed=transaction_accepted(id);
     if(committed!=token.has_value())fail(SQLITE_CONSTRAINT,"Transaction acceptance changed; refresh before editing");
+    const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL);
     auto canonical=*row.draft;auto original=canonical;
     std::optional<EntryLinkPlan> links;
     const auto before_links=all_transfers();
@@ -1798,26 +1823,63 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
     }else{
         if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This draft is not editable");
         if(info.revision==INT64_MAX)fail(SQLITE_FULL);
-        if(transfer_linked(id)){
+        if(transfer){
+            if(!info.manual)fail(SQLITE_CONSTRAINT,"Choose a New manually entered transaction.");
+            if(transfer->confirmed_generation && *transfer->confirmed_generation!=generation)
+                fail(SQLITE_CONSTRAINT,"The transfer changed. Review the edit again before saving.");
+            canonical=canonical_draft(id,input,row.draft,info.revision+1,false);
+            for(const auto& [position,destination]:transfer->destinations){
+                const auto& allocations=canonical.transaction.allocations();
+                if(position>=allocations.size() || destination<0)fail(SQLITE_CONSTRAINT,"Choose a transfer split again.");
+                if(destination==0)continue;
+                if(destination==impl_->selected_account ||
+                   !allocations[position].category.empty() || allocations[position].category_binding)
+                    fail(SQLITE_CONSTRAINT,"Choose a different account for this transfer.");
+                require_writable_account(impl_->db,destination);
+                if(account_by_id(destination).currency!=allocations[position].amount.currency())
+                    fail(SQLITE_CONSTRAINT,"This account uses another currency. Select both transactions and choose Link.");
+            }
+            const auto sequence=financial_sequence(impl_->db);
+            if(sequence==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");
+            auto plan=plan_manual_transfer_edit(transfers(),impl_->selected_account,id,original,canonical,
+                transfer->destinations,operation,sequence+1);
+            for(const auto& changed:plan.changed){
+                const auto& destination=changed.link.destination;
+                if(destination.state==transfers::State::draft && local_side(destination))
+                    require_writable_account(impl_->db,destination.endpoint.account);
+            }
+            imports::validate_draft(row.source,canonical,row.source.source_currency && *row.source.source_currency!=canonical.transaction.effective_total().currency());
+            if(plan.breaks_link && !transfer->confirmed_generation){
+                std::string message="Saving will break the affected transfer links.";
+                if(plan.keeps_counterpart)message+=" Independent or accepted postings stay in their accounts.";
+                if(plan.removes_generated)message+=" SpentIt removes the affected New generated entries.";
+                if(plan.drops_proposal)message+=" SpentIt releases the proposed bank match and keeps the imported transaction.";
+                if(plan.creates_counterpart)message+=" SpentIt creates entries in the newly chosen accounts.";
+                return {{},0,std::move(message),generation};
+            }
+            draft_transfer=true;
+            links.emplace();links->changed=std::move(plan.changed);
+        }else if(transfer_linked(id)){
             canonical.date=input.date;
             if(!same_draft(canonical,input))fail(SQLITE_CONSTRAINT,"Only the date can be changed on this New transfer.");
             auto changed=plan_draft_transfer_date(transfers(),impl_->selected_account,id,original.date,canonical.date);
             if(changed.empty())fail(SQLITE_CONSTRAINT,"This transfer date is locked.");
             draft_transfer=true;
             if(original.date!=canonical.date){links.emplace();links->changed=std::move(changed);}
+        }else canonical=canonical_draft(id,input,row.draft,info.revision+1,false);
 #ifdef SPENTIT_RULES_STORAGE
+        if(draft_transfer){
             Statement mark(impl_->db,R"SQL(SELECT ruleset_revision FROM draft_rule_fields
                 WHERE batch=?1 AND ordinal=?2 AND revision=(SELECT max(revision) FROM versions WHERE batch=?1 AND ordinal=?2))SQL");
             mark.text(1,id.batch);mark.integer(2,integer(id.ordinal));if(mark.row())retained_ruleset=mark.integer(0);
+        }
 #endif
-        }else canonical=canonical_draft(id,input,row.draft,info.revision+1,false);
         imports::validate_draft(row.source,canonical,row.source.source_currency && *row.source.source_currency!=canonical.transaction.effective_total().currency());
     }
-    const auto generation=review_generation(impl_->db);if(generation==INT64_MAX)fail(SQLITE_FULL);
     auto without_memo=canonical;without_memo.memo=original.memo;without_memo.memo_owner=original.memo_owner;without_memo.memo_rule=original.memo_rule;
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
     const bool prepared_current=impl_->review_changes==cache_changes;
-    const bool memo_only=prepared_current && same_draft(original,without_memo) && (!links || links->changed.empty());
+    const bool memo_only=!transfer && prepared_current && same_draft(original,without_memo) && (!links || links->changed.empty());
     Atomic transaction(impl_->db);
     if(same_draft(original,canonical) && (!links || links->changed.empty())){
         ActionChain(impl_->db).no_change(action_token(),operation,request_hash);
@@ -1836,7 +1898,8 @@ app::ReviewReceipt ImportStore::edit_transaction(std::string_view operation,cons
             const auto balance=committed_balance();
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,balance,Money(0,balance.currency()),balance,"",sequence,catalog_sequence(impl_->db));
         }
-        write_entry_links(child,impl_->selected_account,app::TransferAction::relink,financial_sequence(impl_->db),links->changed);
+        if(transfer)write_entry_links(child,impl_->selected_account,app::TransferAction::relink,financial_sequence(impl_->db),links->changed,id,transfer->destinations);
+        else write_entry_links(child,impl_->selected_account,app::TransferAction::relink,financial_sequence(impl_->db),links->changed);
         for(const auto& value:links->changed){
             const auto old=std::find_if(before_links.begin(),before_links.end(),[&](const auto& v){return v.link.identity==value.link.identity;});
             Statement history(impl_->db,"INSERT INTO review_link_history VALUES(?,?,?,?,?,?)");history.text(1,operation);history.text(2,value.link.identity);

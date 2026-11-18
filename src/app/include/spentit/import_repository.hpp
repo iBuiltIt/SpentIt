@@ -370,6 +370,7 @@ public:
     virtual DeletionPreview preview_deletion(const LedgerSelectionEdit&,const OperationContext&) {throw std::logic_error("Deletion preview unavailable");}
     virtual ReviewReceipt edit_transactions(std::string_view,const LedgerSelectionEdit&,const OperationContext&) {throw std::logic_error("Selected transaction editing unavailable");}
     virtual ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<EntryToken>&,const imports::DraftRow&) {throw std::logic_error("Transaction editing unavailable");}
+    virtual ReviewReceipt edit_manual_transfer(std::string_view,const imports::Occurrence&,std::int64_t,const imports::DraftRow&,const ManualTransferEdit&) {throw std::logic_error("Transfer editing unavailable");}
     virtual bool can_undo_transaction_edit(std::string_view) const {return false;}
     virtual ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) {throw std::logic_error("Transaction edit Undo unavailable");}
     virtual ReviewReceipt undo_review(std::string_view) {throw std::logic_error("Review Undo unavailable");}

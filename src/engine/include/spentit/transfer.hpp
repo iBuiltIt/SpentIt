@@ -123,6 +123,8 @@ EntryLinkEdit edit_linked_allocation(std::span<const Link>,const AllocationFact&
 // destination follows the origin while all other posting dates stay in place.
 bool draft_date_editable(const Link&,const Side&);
 Link correct_draft_date(const Link&,const Endpoint&,std::string_view date);
+Link correct_manual_draft_origin(const Link&,const Money&,std::string_view date,bool break_link);
+Link correct_manual_draft_destination(const Link&,std::string_view date,bool break_link);
 // Pass the complete relationship set for the operation. A protected allocation
 // preserves its entire source transaction, including sibling transfer links.
 // Duplicate endpoints and inconsistent states of a shared entry are rejected.

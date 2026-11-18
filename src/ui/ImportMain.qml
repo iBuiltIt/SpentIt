@@ -198,6 +198,7 @@ ApplicationWindow {
         if(currencyDialog.visible) modals+=Math.pow(2,25)
         if(discardDialog.visible) modals+=Math.pow(2,27)
         if(acceptanceDialog.visible || mappedTransferConfirm.visible || reviewDifference.visible || reviewSurvivor.visible || statusDetails.visible || statusExplanationDialog.visible) modals+=Math.pow(2,28)
+        if(manualTransferConfirmation.visible) modals+=Math.pow(2,30)
         let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+((ledgerViewRestore || reviewViewRestoring)?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
         let observedList=currentPage==="review"?reviewQuestions:ledger
         let first=currentPage==="review"?reviewVisibleIndex():observedList.indexAt(1,observedList.contentY+1)
@@ -1557,7 +1558,7 @@ ApplicationWindow {
         if(pickerIndex<0 || pickerIndex>=splitModel.count)return
         let split=splitModel.get(pickerIndex)
         let link=originLink(split.allocationId)
-        if(link && !committedEditing) {
+        if(link && !committedEditing && !manualTransferEditor) {
             categoryPicker.close()
             transferCommand("transfer_retarget",{link:link,batch:selected.batch,ordinal:selected.ordinal,allocation:split.allocationId,mode:0,categoryId:id||"",categoryPath:path||""})
             return
@@ -1566,11 +1567,23 @@ ApplicationWindow {
         splitModel.setProperty(pickerIndex,"categoryId",id)
         splitModel.setProperty(pickerIndex,"bindingRevision",id?(s.catalogRevision||""):"")
         splitModel.setProperty(pickerIndex,"categoryDisplay",id?path:path?"Unmapped: "+path:"Uncategorized")
+        if(manualTransferEditor)splitModel.setProperty(pickerIndex,"transferAccount","0")
         splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close();if(!selected.newManual)saveEditor()
     }
     function chooseAccountDestination(accountId) {
         if(pickerIndex<0 || pickerIndex>=splitModel.count) return
         let split=splitModel.get(pickerIndex)
+        if(manualTransferEditor) {
+            const account=(s.accountCategories||[]).find(function(item){return item.accountId===accountId})
+            splitModel.setProperty(pickerIndex,"category","")
+            splitModel.setProperty(pickerIndex,"categoryId","")
+            splitModel.setProperty(pickerIndex,"bindingRevision","")
+            splitModel.setProperty(pickerIndex,"categoryDisplay",account?account.path+" [Account]":"")
+            splitModel.setProperty(pickerIndex,"categoryTouched",true)
+            splitModel.setProperty(pickerIndex,"transferAccount",accountId)
+            dirty=true;categoryPicker.close();saveEditor()
+            return
+        }
         let link=originLink(split.allocationId)
         let stamp=workflow.newIdentity()
         categoryPicker.close()
@@ -1581,10 +1594,12 @@ ApplicationWindow {
     property var editView: null
     property var editFocus: null
     property bool committedEditing: false
-    property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect)) && !s.readOnly
+    readonly property bool manualTransferEditor: !!selected.manualTransferEditable && !s.readOnly
+    property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect) || manualTransferEditor) && !s.readOnly
     readonly property bool transferDateOnly: !!selected.transferDateEditable && !s.readOnly
     function usesTextUndo(item) {
-        return !!item && typeof item.undo === "function" && !(item===editDate && transferDateOnly && !dirty)
+        return !!item && typeof item.undo === "function" && !(!dirty &&
+            ((item===editDate && transferDateOnly) || (manualTransferEditor && item.objectName!=="" && editorField(editor,item.objectName)===item)))
     }
     property bool dirty: false
     property bool manualSplitAmounts: false
@@ -1627,7 +1642,7 @@ ApplicationWindow {
         splitModel.clear()
         if (d) {
             editDate.text=d.date; editPayee.text=d.payee; editMemo.text=d.memo; editTotal.text=d.total
-            for(let a of d.splits) splitModel.append(a)
+            for(let a of d.splits) splitModel.append(Object.assign({},a,{transferAccount:""}))
             if(!manualSplitAmounts){
                 let candidates=d.splits.map(function(a){return {amount:a.amount,transferAmount:!!a.transferAmount || !!originLink(a.allocationId)}})
                 automaticSplitIndex=remainderAllocation!==""?d.splits.findIndex(a=>a.allocationId===remainderAllocation):workflow.chooseSplitRemainder(d.total,candidates,d.currencyDefinition)
@@ -2109,7 +2124,9 @@ ApplicationWindow {
         if(!selected.draft || !selected.draft.currencyDefinition)return true
         let amounts=[]
         for(let i=0;i<splitModel.count;++i)amounts.push(splitModel.get(i).amount)
-        let result=workflow.splitAmounts(editTotal.text,amounts,!manualSplitAmounts && automaticSplitIndex>=0,selected.draft.currencyDefinition,automaticSplitIndex)
+        const singleManualTransfer=manualTransferEditor && splitModel.count===1
+        let result=workflow.splitAmounts(editTotal.text,amounts,singleManualTransfer || (!manualSplitAmounts && automaticSplitIndex>=0),
+            selected.draft.currencyDefinition,singleManualTransfer?0:automaticSplitIndex)
         if(!result.valid){splitEditMessage=result.error;return false}
         if(!result.balanced){splitSum=result.sum;splitEditMessage="Splits add up to "+result.sum+". Adjust the split amounts or close the transaction to change its total.";return false}
         editTotal.text=result.total
@@ -2126,7 +2143,7 @@ ApplicationWindow {
         if(!prepareSplitAmounts()){pendingAction=null;return}
         rememberEditView()
         let splits=[]
-        for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched})}
+        for(let i=0;i<splitModel.count;i++) {let a=splitModel.get(i);splits.push({category:a.category,memo:a.memo,amount:a.amount,categoryId:a.categoryId||"",bindingRevision:a.bindingRevision||"",allocationId:a.allocationId||"",categoryTouched:!!a.categoryTouched,memoTouched:!!a.memoTouched,transferAccount:a.transferAccount||""})}
         workflow.command(selected.newManual?"save_manual":committedEditing?"accept_edit":"save", {remainderAllocation:remainderAllocation,manualSplitAmounts:manualSplitAmounts,kind:"correct",date:editDate.text,payee:editPayee.text,memo:editMemo.text,total:editTotal.text,splits:splits,restoreImportedText:restoringImportedText,payeeTouched:payeeTouched,memoTouched:memoTouched})
     }
     onClosing: function(close) {
@@ -2138,6 +2155,22 @@ ApplicationWindow {
         if(helpWindowInstance && helpWindowInstance.visible) helpWindowInstance.dismiss()
         guard(requestQuit)
     }
+    Dialog {
+        id:manualTransferConfirmation
+        objectName:"manualTransferConfirmation"
+        title:"Break transfer link?"
+        modal:true
+        anchors.centerIn:parent
+        width:Math.min(500,window.width-48)
+        onVisibleChanged:window.diagnosticModalChanged(30,visible)
+        onRejected:pendingAction=null
+        contentItem:Label {text:s.manualTransferConfirmation||"";wrapMode:Text.Wrap;textFormat:Text.PlainText}
+        footer:DialogButtonBox {
+            Button {objectName:"confirmManualTransfer";text:"Break link and save";DialogButtonBox.buttonRole:DialogButtonBox.AcceptRole}
+            Button {objectName:"cancelManualTransfer";text:"Cancel";DialogButtonBox.buttonRole:DialogButtonBox.RejectRole}
+        }
+        onAccepted:workflow.command("save",{confirmManualTransfer:true})
+    }
     Connections {
         target: workflow
         // Drop the old delegate index before a smaller filtered model replaces it.
@@ -2145,6 +2178,10 @@ ApplicationWindow {
         function onModelAboutToBeReset() { ledger.currentIndex=-1 }
         function onChanged() {if(workflow.busy){cancelAccountDrag();captureReviewView()}}
         function onCompleted(action,success) {
+            if(success && action==="save" && s.manualTransferConfirmation){
+                manualTransferConfirmation.open()
+                return
+            }
             if(action.startsWith("exchange_"))exchangeFailure=success?"":workflow.error
             if(success && action==="exchange_qif_prepare"){qifExportRows=(s.qifExportAccounts||[]).map(r=>Object.assign({},r));qifExportDialog.open()}
             if(success && action==="exchange_read")prepareDefinitionImport()
@@ -2273,7 +2310,7 @@ ApplicationWindow {
                                 ledger.currentIndex=workflow.selectedRowIndex()
                                 ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)
                             }
-                            if(editDateOnArrival && transferDateOnly)editDate.forceActiveFocus()
+                            if(editDateOnArrival && (transferDateOnly || manualTransferEditor))editDate.forceActiveFocus()
                         })
                     }
                     else if(accountViewports[s.accountId])restoreAccountViewport()
@@ -5252,13 +5289,13 @@ ApplicationWindow {
                         id:editDate;objectName:"durableDate";KeyNavigation.tab:editPayee
                         placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!(editEnabled || transferDateOnly)
                         Keys.onShortcutOverride:function(event){
-                            if(transferDateOnly && !dirty && (event.matches(StandardKey.Undo) || event.matches(StandardKey.Redo)))
+                            if((transferDateOnly || manualTransferEditor) && !dirty && (event.matches(StandardKey.Undo) || event.matches(StandardKey.Redo)))
                                 event.accepted=true
                         }
                         Keys.onPressed:function(event){
                             if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}
-                            else if(transferDateOnly && !dirty && event.matches(StandardKey.Undo)){undoEdit();event.accepted=true}
-                            else if(transferDateOnly && !dirty && event.matches(StandardKey.Redo)){redoEdit();event.accepted=true}
+                            else if((transferDateOnly || manualTransferEditor) && !dirty && event.matches(StandardKey.Undo)){undoEdit();event.accepted=true}
+                            else if((transferDateOnly || manualTransferEditor) && !dirty && event.matches(StandardKey.Redo)){redoEdit();event.accepted=true}
                         }
                         onAccepted:if(editEnabled || transferDateOnly)saveEditor()
                         onTextEdited:dirty=true
@@ -5303,7 +5340,7 @@ ApplicationWindow {
                                 if(splitModel.count===1)editMemo.forceActiveFocus()
                                 else splitMemo.forceActiveFocus()
                                 pickerIndex=index
-                                if(choice.account && unresolvedTransfer)transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:choice.accountId,allocation:splitModel.get(index).allocationId})
+                                if(choice.account && unresolvedTransfer && !manualTransferEditor)transferCommand("transfer_from_draft",{link:workflow.newIdentity(),destination:choice.accountId,allocation:splitModel.get(index).allocationId})
                                 else if(choice.account)chooseAccountDestination(choice.accountId)
                                 else chooseCategory(choice.id,choice.path)
                             }
@@ -5320,21 +5357,21 @@ ApplicationWindow {
                         NavigableTextField {id:splitMemo;KeyNavigation.backtab:categoryInput;KeyNavigation.tab:splitAmount;objectName:"editSplitMemo_"+index;text:memo;placeholderText:"Split memo";Layout.fillWidth:true;readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"memo",text);splitModel.setProperty(index,"memoTouched",true);dirty=true} Accessible.name:"Split memo"}
                         NavigableTextField {id:splitAmount;selectAllOnFocus:true;onEditingFinished:{if(!window.helpFocusSuspended && selected.draft){resolveAmount(splitAmount,selected.draft.currencyDefinition);splitModel.setProperty(index,"amount",text)}} KeyNavigation.backtab:splitMemo;KeyNavigation.tab:index+1<editorSplits.count?editorSplits.itemAt(index+1).categoryField:editMemo;objectName:"editSplitAmount_"+index;text:amount;placeholderText:"Split amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
-                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
+                    onAccepted:if(editEnabled)saveEditor();onTextEdited:{splitModel.setProperty(index,"amount",text);if(manualTransferEditor && splitModel.count===1)editTotal.text=text;if(index===automaticSplitIndex){manualSplitAmounts=true;automaticSplitIndex=-1};splitEditMessage="";dirty=true} Accessible.name:"Split amount"}
                         Label {objectName:"splitRemainder_"+index;visible:!manualSplitAmounts && automaticSplitIndex===index;text:"Automatic remainder"}
-                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && !category.startsWith("[");onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}
+                        Button {objectName:"removeSplit_"+index;text:"Remove";visible:editEnabled && splitModel.count>1;enabled:splitModel.count>1 && (manualTransferEditor || !category.startsWith("["));onClicked:{if(!enabled || splitModel.count<=1)return;window.removeEditorSplit(index)}}
                     }
                 }
                 NavigableTextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
-                Label {visible:transferDateOnly;text:dirty?"Press Enter to save the date, or Escape to discard your changes.":"You can correct the date and keep the transfer linked.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {visible:transferDateOnly && dirty;text:"Press Enter to save the date, or Escape to discard your changes.";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {visible:!!selected.transferDateLocked;text:"The date is locked while this transfer has a bank match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
-                Button {objectName:"editTransferDateOrigin";visible:!!selected.transferDateOrigin && !s.readOnly;text:"Edit date on original transaction";onClicked:showCounterpart(selected.transferDateOrigin,true)}
+                Button {objectName:"editTransferDateOrigin";visible:!!selected.transferDateOrigin && !s.readOnly;text:selected.transferOriginFullyEditable?"Edit original transaction":"Edit date on original transaction";onClicked:showCounterpart(selected.transferDateOrigin,true)}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
                     Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}
                     Button {objectName:"editTransactionRule";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Edit rule…";enabled:!workflow.busy && ruleChoices().length>0;onClicked:editTransactionRule()}
-                    Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true});dirty=true}}
+                    Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true,transferAccount:""});dirty=true}}
                     Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {

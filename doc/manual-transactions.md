@@ -33,8 +33,8 @@ attached original available. Restore imported values remains unavailable on a
 manual survivor; its manual allocations have no imported split identities.
 Manual creation is excluded from Review **Undo import…**;
 account-wide Discard applies to unaccepted manual work as well as imported work.
-Once linked, a New manual transaction still supports a
-[date correction](ledger-editing.md#correcting-the-date-of-a-new-transfer).
+Once linked, a New manual transaction supports
+[editing its original posting and splits](ledger-editing.md#editing-a-new-manual-transfer).
 The standard Undo shortcut (Cmd+Z on macOS, Ctrl+Z on Windows/Linux) in a clean
 editor removes the just-created row until another dataset mutation. Per the
 owner’s follow-up, there is no temporary Undo add transaction button. Subsequent edits use the

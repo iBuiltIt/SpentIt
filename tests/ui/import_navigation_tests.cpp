@@ -270,7 +270,7 @@ private slots:
         }
         if(native)QGuiApplication::styleHints()->unsetColorScheme();
     }
-    void newTransferDate() {
+    void newManualTransferEdit() {
         QTemporaryDir dir;
         ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;
@@ -287,7 +287,7 @@ private slots:
         QVERIFY(click(root,"addTransaction"));
         QTRY_VERIFY(!model.busy());
         QVERIFY(edit(root,"durablePayee","Manual transfer"));
-        QVERIFY(edit(root,"durableTotal","-10.00"));
+        QVERIFY(edit(root,"durableTotal","10.00"));
         QVERIFY(edit(root,"durableDate","2026-01-02"));
         QVERIFY(QMetaObject::invokeMethod(object(root,"durableDate"),"accepted"));
         QTRY_VERIFY(!model.busy());
@@ -307,9 +307,13 @@ private slots:
         QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));
         QTRY_VERIFY(object(root,"durableDate")->property("activeFocus").toBool());
         QVERIFY(!object(root,"durableDate")->property("readOnly").toBool());
-        QVERIFY(object(root,"durableTotal")->property("readOnly").toBool());
-        QVERIFY(object(root,"durablePayee")->property("readOnly").toBool());
+        QVERIFY(!object(root,"durableTotal")->property("readOnly").toBool());
+        QVERIFY(!object(root,"durablePayee")->property("readOnly").toBool());
+        QVERIFY(!object(root,"durableMemo")->property("readOnly").toBool());
         QVERIFY(edit(root,"durableDate","2026-01-05"));
+        QVERIFY(edit(root,"durableTotal","-10.00"));
+        QVERIFY(edit(root,"durablePayee","Corrected payee"));
+        QVERIFY(edit(root,"durableMemo","Corrected memo"));
         QTest::keyClick(window,Qt::Key_Return);
         QTRY_VERIFY(!model.busy());
         QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
@@ -320,6 +324,9 @@ private slots:
         run(model,"select_account",{{"id","2"}});
         run(model,"inspect",{{"batch",generated},{"ordinal",0}});
         QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-05"));
+        QCOMPARE(object(root,"durableTotal")->property("text").toString(),QString("10.00"));
+        QCOMPARE(object(root,"durablePayee")->property("text").toString(),QString("Corrected payee"));
+        QCOMPARE(object(root,"durableMemo")->property("text").toString(),QString("Corrected memo"));
         QVERIFY(click(root,"editTransferDateOrigin"));
         QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));
         QTRY_VERIFY(object(root,"durableDate")->property("activeFocus").toBool());
@@ -329,6 +336,24 @@ private slots:
         run(model,"inspect",{{"batch",generated},{"ordinal",0}});
         QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-02"));
         QCOMPARE(model.state().value("selected").toMap().value("transferId").toString(),QString("test-date"));
+        QCOMPARE(object(root,"durableTotal")->property("text").toString(),QString("-10.00"));
+        QVERIFY(click(root,"editTransferDateOrigin"));
+        QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));
+        QTRY_VERIFY(object(root,"durableDate")->property("activeFocus").toBool());
+        QVERIFY(edit(root,"durableTotal","0.00"));
+        QTest::keyClick(window,Qt::Key_Return);
+        auto* confirmation=object(root,"manualTransferConfirmation");
+        QVERIFY(confirmation);
+        QTRY_VERIFY(confirmation->property("visible").toBool());
+        QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("total").toString(),QString("10.00"));
+        QVERIFY(click(root,"cancelManualTransfer"));
+        QTRY_VERIFY(!confirmation->property("visible").toBool());
+        QCOMPARE(model.state().value("selected").toMap().value("transferId").toString(),QString("test-date"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableDate"),"accepted"));
+        QTRY_VERIFY(confirmation->property("visible").toBool());
+        QVERIFY(click(root,"confirmManualTransfer"));
+        QTRY_COMPARE(model.state().value("selected").toMap().value("draft").toMap().value("total").toString(),QString("0.00"));
+        QVERIFY(model.state().value("selected").toMap().value("transferId").toString().isEmpty());
     }
     void manualTransactionEntry() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());

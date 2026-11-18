@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-088. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-091. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -34,6 +34,14 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   when a generated counterpart follows the date and when each posting keeps
   its own date. Refresh any affected transfer editor pictures and captions.
   [Ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer).
+
+- **MAN-090 — Edit New manual transfers, 2026-11-18.** Update the transfer
+  editor coverage from MAN-088 to show the full original editor,
+  **Edit original transaction**, the link-break confirmation, and an amount sign
+  correction that refreshes Review. Include the effects on generated and
+  independent postings and one-step Undo. Refresh the affected transfer editor
+  and Review pictures together.
+  [Ledger editing](ledger-editing.md#editing-a-new-manual-transfer).
 
 ## Recapturing pictures
 

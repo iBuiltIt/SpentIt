@@ -240,6 +240,22 @@ void new_transfer_date(const std::filesystem::path& dir) {
         rejects([&]{save(store,"protected-match");});
         check(store.row(id).draft->date==original && !store.review_outcome("protected-match"),"An attached bank match protects the date");
         store.verify();
+        auto edit=*store.row(id).draft;
+        edit.date=corrected;
+        const auto revision=store.batches().front().revision;
+        const auto preview=store.edit_manual_transfer("preview-break-bank",id,revision,edit,{});
+        check(!preview.confirmation.empty() && store.row(id).draft->date==original,"Editing a bank-matched manual origin requires confirmation");
+        store.edit_manual_transfer("break-bank",id,revision,edit,{{},preview.generation});
+        check(store.row(id).draft->date==corrected && store.transfers().front().link.unresolved,"Confirmed edit releases the bank-matched link");
+        store.select_account(2);
+        check(store.committed_balance().units()==1000 && store.committed_entry({"bank",0}).current.draft.date==original,
+            "Releasing the link preserves the accepted bank posting");
+        store.select_account(1);
+        store.verify();
+        store.undo_transaction_edit("undo-break-bank","break-bank");
+        check(store.row(id).draft->date==original && store.transfers().front().link.destination.attached_evidence.has_value(),
+            "Undo restores the bank-matched relationship");
+        store.verify();
     }
     {
         auto store=ImportStore::open(base,"test-password");
@@ -262,6 +278,135 @@ void new_transfer_date(const std::filesystem::path& dir) {
         dates(store,corrected,original);
         store.verify();
     }
+}
+void edit_manual_transfer(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto path=dir/"edit-manual-transfer";
+    const imports::Occurrence origin{"origin",0},peer{"peer",0};
+    auto store=ImportStore::create(path,"test-password","Checking",cad,"2025-01-01");
+    store.create_account(2,"Savings",cad,"2025-01-01");
+    store.create_account(3,"Reserve",cad,"2025-01-01");
+    store.select_account(2);store.create_manual(peer.batch,manual("10.00"));
+    store.select_account(1);store.create_manual(origin.batch,manual("10.00"));
+    auto assignment=category_requests(store,{origin}).front();
+    assignment.mode=1;assignment.category_id.clear();assignment.category_path.clear();assignment.left->ledger_entry=true;
+    assignment.generated=transfers::Endpoint{2,{"~transfer-editor-original",0},"generated"};
+    assignment.generated_currency=cad.definition_id();
+    OperationContext context;
+    store.assign_transfer_batch("assign",{assignment},context);
+    const auto revision=[&]{return store.batches().front().revision;};
+    auto edit=*store.row(origin).draft;
+    auto splits=edit.transaction.allocations();
+    const Money corrected_amount(-1000,cad);
+    splits.front().amount=corrected_amount;splits.front().memo="Corrected split memo";
+    edit.transaction=edit.transaction.corrected(corrected_amount,std::move(splits));
+    edit.payee="Corrected payee";edit.memo="Corrected memo";
+    const auto has_review_match=[&]{
+        const auto sheet=store.review_sheet();
+        return std::any_of(sheet.questions.begin(),sheet.questions.end(),[&](const auto& question){
+            const auto contains=[&](const auto& identity){return std::any_of(question.rows.begin(),question.rows.end(),[&](const auto& row){return row.identity==identity;});};
+            return question.kind==ReviewKind::link && contains(origin) && contains(peer);
+        });
+    };
+    check(!has_review_match(),"Same signs must not be suggested as a transfer");
+    const auto original_revision=revision();
+    for(const int code:{SQLITE_FULL,SQLITE_IOERR_WRITE}){
+        fault_vfs::arm(1,code);
+        bool failed=false;
+        try{store.edit_manual_transfer("correct",origin,original_revision,edit,{});}
+        catch(const std::exception&){failed=true;}
+        const bool fired=fault_vfs::fired;
+        fault_vfs::disarm();
+        check(fired && failed && !store.review_outcome("correct") &&
+            store.row(origin).draft->transaction.effective_total().units()==1000 &&
+            store.transfers().front().link.destination.amount.units()==-1000,"Failed writes preserve both postings");
+    }
+    store.observer([](auto phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("Interrupted transfer edit");});
+    rejects([&]{store.edit_manual_transfer("correct",origin,original_revision,edit,{});});
+    store.observer({});
+    check(store.row(origin).draft->transaction.effective_total().units()==1000 &&
+          store.transfers().front().link.destination.amount.units()==-1000 && !store.review_outcome("correct"),
+          "Interrupted correction preserves both amounts");
+    store.observer([](auto phase){if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("Lost transfer acknowledgement");});
+    rejects([&]{store.edit_manual_transfer("correct",origin,original_revision,edit,{});});
+    store.observer({});
+    check(store.review_outcome("correct").has_value(),"The correction has one durable receipt");
+    store.edit_manual_transfer("correct",origin,original_revision,edit,{});
+    const auto corrected=store.transfers().front();
+    check(corrected.link.identity==assignment.link && corrected.link.origin.amount.units()==-1000 &&
+        corrected.link.destination.amount.units()==1000 && corrected.payee=="Corrected payee" &&
+        corrected.memo=="Corrected split memo" && has_review_match(),"One save updates the generated posting and Review");
+    store.verify();
+    const auto undo=[&](std::string_view operation){const auto head=store.action_head();store.undo_action(operation,store.preview_undo(head->id,store.action_token()));};
+    const auto redo=[&](std::string_view operation){UndoPreview pending;pending.action=store.redo_history().front();pending.token=store.action_token();store.redo_action(operation,pending);};
+    undo("undo-correct");
+    check(store.transfers().front().link.destination.amount.units()==-1000 && !has_review_match(),"One Undo restores both postings and Review");
+    redo("redo-correct");
+    check(has_review_match(),"Redo refreshes Review");
+    store.verify();
+    {
+        const auto sheet=store.review_sheet();
+        const auto suggested=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){
+            return q.kind==ReviewKind::link && q.rows.size()==2 && q.rows.front().identity==origin && q.rows.back().identity==peer;
+        });
+        check(suggested!=sheet.questions.end(),"The corrected entries have a single Review link");
+        ReviewAnswer match;
+        match.generation=sheet.generation;match.question=suggested->key;match.action=ReviewAction::link;match.selected={origin,peer};
+        store.answer_review("link-peer",match);
+        check(store.transfers().front().link.destination.endpoint.entry==peer,"Review links the two original postings");
+        auto changed=*store.row(origin).draft;
+        auto parts=changed.transaction.allocations();
+        const Money updated(-1200,cad);parts.front().amount=updated;
+        changed.transaction=changed.transaction.corrected(updated,std::move(parts));
+        const auto preview=store.edit_manual_transfer("preview-break-peer",origin,revision(),changed,{});
+        check(!preview.confirmation.empty(),"An incompatible independent posting requires confirmation");
+        store.edit_manual_transfer("break-peer",origin,revision(),changed,{{},preview.generation});
+        store.select_account(2);
+        check(store.current_ledger().size()==1 && store.balance().units()==1000,"Breaking a link preserves the independent posting");
+        store.select_account(1);
+        store.verify();
+        undo("undo-break-peer");
+        undo("undo-link-peer");
+        store.verify();
+    }
+    const auto draft=*store.row(origin).draft;
+    app::ManualTransferEdit retarget{{{0,3}},{}};
+    const auto token=store.action_token();
+    const auto proposal=store.edit_manual_transfer("preview-retarget",origin,revision(),draft,retarget);
+    check(!proposal.confirmation.empty() && store.action_token()==token && !store.review_outcome("preview-retarget"),
+        "The transfer break prompt leaves postings and Undo untouched");
+    retarget.confirmed_generation=proposal.generation-1;
+    rejects([&]{store.edit_manual_transfer("stale-retarget",origin,revision(),draft,retarget);});
+    retarget.confirmed_generation=proposal.generation;
+    store.edit_manual_transfer("retarget",origin,revision(),draft,retarget);
+    const auto links=store.transfers();
+    check(std::any_of(links.begin(),links.end(),[](const auto& view){return view.link.destination.endpoint.account==3 &&
+          view.link.destination.state==transfers::State::draft;}),"Confirmed retarget creates the replacement entry");
+    store.select_account(2);
+    check(store.current_ledger().size()==1 && store.current_ledger().front().identity==peer,"Retarget removes the old generated entry and preserves the independent posting");
+    store.select_account(1);
+    store.verify();
+    undo("undo-retarget");
+    check(has_review_match(),"Retarget Undo restores the old link and removes the replacement");
+    store.verify();
+    redo("redo-retarget");
+    store.verify();
+    auto split_edit=*store.row(origin).draft;
+    auto parts=split_edit.transaction.allocations();
+    parts.push_back({"","Extra split",Money(100,cad),{},"extra-split"});
+    split_edit.transaction=split_edit.transaction.corrected(Money(-900,cad),parts);
+    store.edit_manual_transfer("add-split",origin,revision(),split_edit,{});
+    check(store.row(origin).draft->transaction.allocations().size()==2,"A linked original accepts an additional balanced split");
+    parts.erase(parts.begin());
+    split_edit.transaction=split_edit.transaction.corrected(Money(100,cad),parts);
+    const auto remove=store.edit_manual_transfer("preview-remove-split",origin,revision(),split_edit,{});
+    check(!remove.confirmation.empty(),"Removing a linked split requires confirmation");
+    store.edit_manual_transfer("remove-split",origin,revision(),split_edit,{{},remove.generation});
+    undo("undo-remove-split");
+    store.verify();
+    test_session::close_reopen(store,path,"test-password");
+    store.select_account(3);
+    check(store.current_ledger().size()==1 && store.balance().units()==1000,"Reopen retains the generated destination");
 }
 void origin_import_undo(const std::filesystem::path& dir) {
     const Currency cad("CAD");const auto path=dir/"origin-import-undo";
@@ -413,7 +558,7 @@ void recovery(const std::filesystem::path& dir) {
 int main(){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
-        fault_vfs::install();origin_transfers(dir);new_transfer_date(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
+        fault_vfs::install();origin_transfers(dir);new_transfer_date(dir);edit_manual_transfer(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
         {auto s=ImportStore::create(path,"test-password","Checking",Currency("CAD"),"2025-01-01");
         const auto id=s.create_manual("manual-one",manual());check(id.batch=="manual-one","Identity");
         check(s.balance().units()==-1000,"Balance");check(!s.row(id).draft->transaction.original_imported_amount(),"No invented original");check(!s.imported_original(id),"No imported original");check(s.undoable_imports().empty(),"Manual is not an import");

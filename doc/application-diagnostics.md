@@ -139,6 +139,7 @@ Pending bits: 0 startup, 1 guard decision, 2 search, 3 account navigation, 4 cou
 26: importCategoriesDialog
 27: discardDialog
 28: commitDialog
+30: manualTransferConfirmation
 ```
 
 The modal stack records visibility transitions in order, using the same fixed IDs. Bit/stack code 29 represents a combo-box popup by role, without inspecting its items. Native file chooser bits identify only purpose/open state. Blocker displayed and total counts come from the existing import summary; reason text and candidate identities are excluded.

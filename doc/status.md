@@ -13,6 +13,26 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Editing New manual transfers — 2026-11-18
+
+A New manually entered transfer opens the full editor. Its eligible New
+generated counterpart follows the edited split amount, date, payee and memo.
+Review refreshes after the save. The editor asks before breaking a link and
+describes what happens to the other posting. One Undo reverses the save
+across accounts. The rules-enabled Release build at `./build/SpentIt` was
+rebuilt with database schema version 1. See
+[ledger editing](ledger-editing.md#editing-a-new-manual-transfer) and
+[MAN-090](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, four focused offscreen navigation cases and six
+Release CTest targets passed. Synthetic checks cover reversing a transfer
+amount and then linking from Review, confirmation and cancellation, split
+edits, changing the destination account, retaining an independent posting
+and an accepted bank posting, Undo, Redo, clean reopen, and injected disk-full,
+I/O and commit-boundary failures. The storage suite also passed under
+AddressSanitizer and UndefinedBehaviorSanitizer with leak detection disabled.
+Native interactive, Linux, Windows, and full repository checks were not run.
+
 ## Correcting New transfer dates — 2026-11-18
 
 The original ledger transaction can save a date correction while it is New

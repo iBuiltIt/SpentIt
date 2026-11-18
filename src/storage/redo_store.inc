@@ -130,13 +130,38 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
         frame.replay=[choice](ImportStore& store,std::string_view operation){auto fresh=choice;fresh.generation=store.ledger_edit_generation();for(auto& id:fresh.selected)id=store.redo_occurrence(id);store.impl_->selected_account=fresh.account;app::OperationContext context;store.delete_transactions(operation,fresh,context);};return frame;
     }
     if(question=="ledger-edit"){
-        Statement date_edit(impl_->db,R"SQL(SELECT m.batch,m.ordinal,v.date FROM review_members m
+        Statement date_edit(impl_->db,R"SQL(SELECT m.batch,m.ordinal,v.date,m.result,e.request FROM review_members m
+            JOIN transfer_events e ON e.operation=m.child
             JOIN ledger_operations l ON l.id=m.child AND l.kind=4
             JOIN versions v ON v.batch=m.batch AND v.ordinal=m.ordinal AND v.revision=m.result
             WHERE m.answer=? AND m.committed=0)SQL");
         date_edit.text(1,action.payload);
         if(date_edit.row()){
             const imports::Occurrence id{date_edit.bytes(0),static_cast<std::size_t>(date_edit.integer(1))};
+            const auto recipe=transfer_codec::request(date_edit.bytes(4));
+            if(recipe.origin){
+                impl_->selected_account=account_for_batch(id.batch).identity;
+                const auto draft=review_draft(id,date_edit.integer(3),true);
+                frame.replay=[id,draft,destinations=recipe.editor_destinations,original=action.payload](ImportStore& store,std::string_view operation){
+                    const auto target=store.redo_occurrence(id);
+                    store.impl_->selected_account=store.account_for_batch(target.batch).identity;
+                    auto fresh=draft;
+                    auto allocations=fresh.transaction.allocations();
+                    for(auto& split:allocations)split.identity=redo_mapped(store.impl_->redo_names,"allocation:",split.identity);
+                    fresh.remainder_allocation=redo_mapped(store.impl_->redo_names,"allocation:",fresh.remainder_allocation);
+                    fresh.transaction=fresh.transaction.corrected(fresh.transaction.effective_total(),std::move(allocations));
+                    for(const auto& [position,account]:destinations){
+                        (void)account;
+                        const auto suffix="-link-"+std::to_string(position);
+                        const auto old=original+suffix,new_link=std::string(operation)+suffix;
+                        store.impl_->redo_names["link:"+old]=new_link;
+                        store.impl_->redo_names["batch:~transfer-"+old+"-destination"]="~transfer-"+new_link+"-destination";
+                    }
+                    store.edit_manual_transfer(operation,target,batch(store.impl_->db,target.batch).revision,fresh,
+                        {destinations,store.ledger_edit_generation()});
+                };
+                return frame;
+            }
             frame.replay=[id,date=date_edit.bytes(2)](ImportStore& store,std::string_view operation){
                 const auto target=store.redo_occurrence(id);
                 store.impl_->selected_account=store.account_for_batch(target.batch).identity;

@@ -25,6 +25,13 @@ using the editor's existing Undo journal. The verifier replays the date change
 from the recorded draft revisions and checks the resulting link snapshots.
 The release schema remains version 1.
 
+A correction to a New manual ledger posting can also resize or reverse its
+purely generated New counterpart and update its text. A link change that
+detaches an existing posting requires confirmation against the same transaction
+revision and Review generation. Independent and accepted postings keep their
+financial values. The same editor journal records the draft and relationship
+changes for atomic Undo, Redo, and verification replay.
+
 ## Accepted evidence-matching and unmatched-entry policy
 
 The owner accepted provisional matching: a confirmed match from a pending import remains a proposal until that importing account explicitly commits. Discarding that import drops the proposal and retains the original evidence, leaving the existing transfer's financial state and protection unchanged.

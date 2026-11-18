@@ -948,11 +948,29 @@ struct ImportModel::Worker {
     std::optional<imports::DraftRow> newManual;
     std::string newManualId;
     std::optional<imports::Occurrence> revealManual;
+    struct PendingManualTransferEdit {
+        imports::Occurrence id;
+        std::int64_t revision;
+        imports::DraftRow draft;
+        app::ManualTransferEdit request;
+        std::string confirmation;
+    };
+    std::optional<PendingManualTransferEdit> pendingManualTransferEdit;
 
-    void acceptEdit(const imports::DraftRow& edit,app::OperationContext& context) {
+    void acceptEdit(const imports::DraftRow& edit,app::OperationContext& context,std::optional<app::ManualTransferEdit> transfer={}) {
         auto& repo=gateway->repository();const imports::Occurrence id{selectedBatch,selectedOrdinal};
         const auto operation=identity();
-        try {repo.edit_transaction(operation,id,selectedRevision,selectedCommittedToken,edit);}
+        try {
+            if(transfer){
+                const auto result=repo.edit_manual_transfer(operation,id,selectedRevision,edit,*transfer);
+                if(!result.confirmation.empty()){
+                    transfer->confirmed_generation=result.generation;
+                    pendingManualTransferEdit=PendingManualTransferEdit{id,selectedRevision,edit,std::move(*transfer),result.confirmation};
+                    diagnosticUnchanged=true;
+                    return;
+                }
+            }else repo.edit_transaction(operation,id,selectedRevision,selectedCommittedToken,edit);
+        }
         catch(...) {const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;
             try {outcome=repo.review_outcome(operation);}catch(...){throw app::OperationOutcomeUnknown();}
             if(!outcome)std::rethrow_exception(failure);
@@ -1048,11 +1066,15 @@ struct ImportModel::Worker {
                 Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
                 selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat,amountFormat)}};
                 const auto& origin=value.link.origin;
-                if(side==&value.link.destination && side->state==transfers::State::draft &&
-                   !origin.endpoint.entry.batch.starts_with("~transfer-")){
-                    if(!value.link_has_bank_match && transfers::draft_date_editable(value.link,origin))
+                if(side==&value.link.destination && !origin.endpoint.entry.batch.starts_with("~transfer-")){
+                    const bool edit_manual=origin.state==transfers::State::draft && origin.ledger_entry &&
+                        origin.manually_entered && !value.link.unresolved && !value.link.destination_released;
+                    if(edit_manual || (side->state==transfers::State::draft &&
+                       !value.link_has_bank_match && transfers::draft_date_editable(value.link,origin))){
                         selected["transferDateOrigin"]=QVariantMap{{"counterpartAccount",QString::number(origin.endpoint.account)},
                             {"counterpartBatch",text(origin.endpoint.entry.batch)},{"counterpartOrdinal",static_cast<int>(origin.endpoint.entry.ordinal)}};
+                        selected["transferOriginFullyEditable"]=edit_manual;
+                    }
                     else if(value.link_has_bank_match || origin.attached_evidence || origin.proposed_evidence || side->attached_evidence || side->proposed_evidence)
                         selected["transferDateLocked"]=true;
                 }
@@ -1168,7 +1190,7 @@ struct ImportModel::Worker {
             selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
             selected["removedDuplicate"]=repo.transaction_accepted(*row.decision.duplicate_of) && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
-        bool linked=false,endpoint=false,evidence=false,date_locked=false,bank_match=false;
+        bool linked=false,endpoint=false,evidence=false,date_locked=false,bank_match=false,live_endpoint=false;
         std::string transfer_id;const imports::Occurrence row_id{batch,ordinal};
         for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination}){
             if(side->state==transfers::State::removed)continue;
@@ -1176,6 +1198,7 @@ struct ImportModel::Worker {
             const bool hit_evidence=(side->attached_evidence && side->attached_evidence->endpoint.entry==row_id) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==row_id);
             if(!hit_endpoint && !hit_evidence)continue;
             linked=true;endpoint=endpoint||hit_endpoint;evidence=evidence||hit_evidence;transfer_id=value.link.identity;
+            live_endpoint|=hit_endpoint && !value.link.unresolved && !value.link.destination_released;
             date_locked|=hit_evidence || value.link_has_bank_match || !transfers::draft_date_editable(value.link,*side);
             bank_match|=hit_evidence || value.link_has_bank_match || value.link.origin.attached_evidence ||
                 value.link.origin.proposed_evidence || value.link.destination.attached_evidence || value.link.destination.proposed_evidence;
@@ -1183,8 +1206,10 @@ struct ImportModel::Worker {
         if(linked){
             const bool new_transfer=selected.value("editable").toBool() || (found->state==app::BatchState::protected_drafts && !committed);
             if(new_transfer && !row.excluded_by_clear){
-                selected["transferDateEditable"]=endpoint && !date_locked;
-                selected["transferDateLocked"]=bank_match;
+                const bool manual_edit=found->manual && live_endpoint && !evidence;
+                selected["manualTransferEditable"]=manual_edit;
+                selected["transferDateEditable"]=!manual_edit && endpoint && !date_locked;
+                selected["transferDateLocked"]=!manual_edit && bank_match;
             }
             selected["editable"]=false;
             if(!(committed && endpoint && !evidence && !batch.starts_with("~transfer-")))selected["canCorrect"]=false;
@@ -1525,6 +1550,7 @@ struct ImportModel::Worker {
         QVariantList selectedIds;QVariantMap selectedKeys;
         for(const auto& id:selection){QVariantMap value{{"batch",text(id.batch)},{"ordinal",static_cast<int>(id.ordinal)}};for(const auto& row:cachedView->rows)if(row.identity==id){value=draft(row.draft,categoryById,dateFormat,amountFormat);value["batch"]=text(id.batch);value["ordinal"]=static_cast<int>(id.ordinal);value["committed"]=row.committed;break;}value["manual"]=state.value("manualBatches").toMap().contains(text(id.batch));value["transferLinked"]=cachedLinkedRows.contains(id);selectedIds.push_back(value);selectedKeys[text(id.batch)+":"+QString::number(id.ordinal)]=true;}
         state["filter"]=filter;state["transferReceipt"]=transferReceipt;state["transferCandidates"]=transferCandidates;state["candidateLink"]=candidateLink;state["transferMergePreview"]=transferMergePreview;
+        if(pendingManualTransferEdit)state["manualTransferConfirmation"]=text(pendingManualTransferEdit->confirmation);
         state["selection"]=selectedIds;state["selectionKeys"]=selectedKeys;state["selectionCount"]=static_cast<int>(selection.size());
         const auto selected_rows=std::vector<imports::Occurrence>(selection.begin(),selection.end());
         const auto unmerge=repo.preview_unmerge(selected_rows);
@@ -1551,6 +1577,7 @@ struct ImportModel::Worker {
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
         diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;passwordNotice.clear();
         auto a=input;
+        if(action!="save" || !a.value("confirmManualTransfer").toBool())pendingManualTransferEdit.reset();
         if(active && a.contains("date"))a["date"]=text(parse_display_date(str(a.value("date")),dateFormat));
         if(active && action=="map_import") {
             auto mappings=a.value("mappings").toList();
@@ -2564,6 +2591,13 @@ struct ImportModel::Worker {
         }
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
+            if(a.value("confirmManualTransfer").toBool()){
+                auto pending=std::exchange(pendingManualTransferEdit,std::nullopt);
+                if(!pending || pending->id!=imports::Occurrence{selectedBatch,selectedOrdinal} || pending->revision!=selectedRevision)
+                    throw std::logic_error("The transfer changed. Review the edit again before saving.");
+                acceptEdit(pending->draft,context,pending->request);
+                return;
+            }
             auto row=repo.row({selectedBatch,selectedOrdinal});
             if(a.value("dateOnly").toBool()){
                 if(!row.draft || !selected.value("transferDateEditable").toBool())throw std::logic_error("This transfer date is locked.");
@@ -2574,7 +2608,20 @@ struct ImportModel::Worker {
             }
             if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source,amountFormat);
-            if(row.draft)acceptEdit(edit,context);
+            if(row.draft && selected.value("manualTransferEditable").toBool()){
+                app::ManualTransferEdit request;
+                const auto splits=a.value("splits").toList();
+                for(qsizetype i=0;i<splits.size();++i){
+                    const auto account=splits[i].toMap().value("transferAccount").toString();
+                    if(account.isEmpty())continue;
+                    bool parsed=false;
+                    const auto destination=account.toLongLong(&parsed);
+                    if(!parsed || destination<0)throw std::invalid_argument("Choose a transfer account.");
+                    request.destinations.emplace(static_cast<std::size_t>(i),destination);
+                }
+                acceptEdit(edit,context,std::move(request));
+            }
+            else if(row.draft)acceptEdit(edit,context);
             else {repo.save({selectedBatch,selectedOrdinal},selectedRevision,edit);observedSaved();inspect(selectedBatch,selectedOrdinal,context);}
         } else if(action=="decide") {
             imports::Decision decision{imports::Disposition::include,{}};
@@ -3347,7 +3394,7 @@ void ImportModel::observeUi(const QVariantMap& values) {
     ui.delegates=values.value("delegates").toUInt();ui.first=values.value("first",-1).toInt();ui.last=values.value("last",-1).toInt();
     ui.editor_kind=std::clamp(values.value("editorKind").toInt(),0,3);
     for(const auto& value:values.value("modalStack").toList()){
-        const int code=value.toInt();if(code<0 || code>29 || ui.modal_count==ui.modal_stack.size())continue;
+        const int code=value.toInt();if(code<0 || code>30 || ui.modal_count==ui.modal_stack.size())continue;
         ui.modal_stack[ui.modal_count++]=static_cast<unsigned>(code);
         ui.modal_mask|=1ULL<<static_cast<unsigned>(code);
     }

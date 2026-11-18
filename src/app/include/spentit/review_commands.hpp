@@ -1,6 +1,7 @@
 #pragma once
 #include <spentit/import_review.hpp>
 #include <optional>
+#include <map>
 
 namespace spentit::app {
 struct LinkExclusion {
@@ -57,5 +58,14 @@ struct ReviewAnswer {
     bool automatic=false;
 };
 struct UnmergePreview { bool available=false; std::string notice; };
-struct ReviewReceipt {std::string operation;std::size_t linked_pairs=0;};
+struct ReviewReceipt {
+    std::string operation;
+    std::size_t linked_pairs=0;
+    std::string confirmation={};
+    std::int64_t generation=-1;
+};
+struct ManualTransferEdit {
+    std::map<std::size_t,std::int64_t> destinations;
+    std::optional<std::int64_t> confirmed_generation;
+};
 }

@@ -207,6 +207,7 @@ public:
     app::DeletionPreview preview_deletion(const app::LedgerSelectionEdit&,const app::OperationContext&) override;
     app::ReviewReceipt edit_transactions(std::string_view,const app::LedgerSelectionEdit&,const app::OperationContext&) override;
     app::ReviewReceipt edit_transaction(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<app::EntryToken>&,const imports::DraftRow&) override;
+    app::ReviewReceipt edit_manual_transfer(std::string_view,const imports::Occurrence&,std::int64_t,const imports::DraftRow&,const app::ManualTransferEdit&) override;
     bool can_undo_transaction_edit(std::string_view) const override;
     app::ReviewReceipt undo_transaction_edit(std::string_view,std::string_view) override;
     app::ReviewReceipt undo_review(std::string_view) override;
@@ -305,9 +306,10 @@ private:
         std::string stamp;
     };
     EntryLinkPlan plan_entry_links(const std::vector<app::TransferView>&,const imports::Occurrence&,const imports::DraftRow&,const imports::DraftRow&,bool remove) const;
+    app::ReviewReceipt edit_transaction_impl(std::string_view,const imports::Occurrence&,std::int64_t,const std::optional<app::EntryToken>&,const imports::DraftRow&,const app::ManualTransferEdit*);
     EntryLinkPlan plan_restore(std::string_view) const;
     bool later_relationship_blocks(const imports::Occurrence&,std::string_view) const;
-    void write_entry_links(std::string_view,std::int64_t,app::TransferAction,std::int64_t,const std::vector<app::TransferView>&);
+    void write_entry_links(std::string_view,std::int64_t,app::TransferAction,std::int64_t,const std::vector<app::TransferView>&,const std::optional<imports::Occurrence>& = {},const std::map<std::size_t,std::int64_t>& = {});
     Money transfer_import_transition(std::string_view,std::string_view,bool);
     Money transfer_import_adjustment(std::string_view) const;
     std::set<std::size_t> protected_import_rows(std::string_view) const;

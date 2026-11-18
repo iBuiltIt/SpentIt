@@ -86,6 +86,14 @@ generated counterpart follows the original's correction. Independent or
 accepted counterparts keep their dates. Attached or proposed bank matches
 protect the dates.
 
+## New manual transfer edits
+
+A [New manual posting](../doc/ledger-editing.md#editing-a-new-manual-transfer)
+remains editable after linking. A generated New counterpart follows eligible
+changes to the original in the same operation. Review refreshes and one Undo
+reverses the edit across accounts. The editor asks before breaking links and
+preserves independent and accepted postings.
+
 ## Committed edits
 
 - Merging a purely generated committed duplicate with an independent row of the

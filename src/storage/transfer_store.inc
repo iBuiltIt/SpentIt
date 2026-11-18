@@ -73,6 +73,78 @@ std::vector<app::TransferView> plan_draft_transfer_date(const std::vector<app::T
     }
     return edits;
 }
+struct ManualTransferPlan {
+    std::vector<app::TransferView> changed;
+    bool breaks_link=false;
+    bool removes_generated=false;
+    bool keeps_counterpart=false;
+    bool drops_proposal=false;
+    bool creates_counterpart=false;
+};
+ManualTransferPlan plan_manual_transfer_edit(const std::vector<app::TransferView>& before,
+    std::int64_t account,const imports::Occurrence& id,const imports::DraftRow& prior,const imports::DraftRow& draft,
+    const std::map<std::size_t,std::int64_t>& destinations,std::string_view operation,std::int64_t sequence) {
+    ManualTransferPlan plan;
+    const auto& allocations=draft.transaction.allocations();
+    std::set<std::size_t> retained;
+    for(const auto& view:before){
+        const auto& link=view.link;
+        if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed)continue;
+        const bool origin=link.origin.endpoint.entry==id && link.origin.endpoint.account==account;
+        const bool destination=link.destination.endpoint.entry==id && link.destination.endpoint.account==account;
+        if(!origin && !destination)continue;
+        const auto& side=origin?link.origin:link.destination;
+        const auto& other=origin?link.destination:link.origin;
+        const auto old=std::find_if(prior.transaction.allocations().begin(),prior.transaction.allocations().end(),
+            [&](const auto& split){return split.identity==side.endpoint.allocation;});
+        if(old==prior.transaction.allocations().end() || side.amount!=old->amount || side.date!=prior.date ||
+           side.state!=transfers::State::draft || !side.ledger_entry || !side.manually_entered)
+            fail(SQLITE_CONSTRAINT,"The transfer changed. Reopen the transaction before editing.");
+        const auto next=std::find_if(allocations.begin(),allocations.end(),[&](const auto& split){return split.identity==old->identity;});
+        const auto position=static_cast<std::size_t>(next-allocations.begin());
+        const auto choice=destinations.find(position);
+        const bool bank_match=view.link_has_bank_match || other.proposed_evidence || other.attached_evidence;
+        const bool generated=origin && other.state==transfers::State::draft && local_side(other) && !other.manually_entered && !bank_match;
+        const auto amount=next==allocations.end()?side.amount:next->amount;
+        const bool same_category=next!=allocations.end() && (choice!=destinations.end()?choice->second==other.endpoint.account:
+            (next->category==old->category && next->category_binding==old->category_binding));
+        const bool breaks=!same_category || amount.units()==0 || (amount!=side.amount && !generated) ||
+            (draft.date!=prior.date && bank_match);
+        auto edited=view;
+        if(origin){
+            edited.link=transfers::correct_manual_draft_origin(link,amount,draft.date,breaks);
+            if(!breaks && generated){
+                if(draft.payee!=prior.payee)edited.payee=draft.payee;
+                if(next->memo!=old->memo || draft.memo!=prior.memo)edited.memo=next->memo.empty()?draft.memo:next->memo;
+            }
+        }else edited.link=transfers::correct_manual_draft_destination(link,draft.date,breaks);
+        if(breaks){
+            plan.breaks_link=true;
+            const bool removed_generated=origin && edited.link.destination.state==transfers::State::removed;
+            plan.removes_generated|=removed_generated;
+            plan.keeps_counterpart|=!removed_generated;
+            plan.drops_proposal|=origin && other.proposed_evidence.has_value();
+        }
+        else retained.insert(position);
+        if(transfer_codec::encode(view)!=transfer_codec::encode(edited))plan.changed.push_back(std::move(edited));
+    }
+    for(const auto& [position,destination]:destinations){
+        if(position>=allocations.size() || destination<0 || destination==account)
+            fail(SQLITE_CONSTRAINT,"Choose a different account for this transfer.");
+        if(destination==0 || retained.contains(position))continue;
+        const auto& split=allocations[position];
+        if(split.amount.units()==0)fail(SQLITE_CONSTRAINT,"Enter a nonzero split amount before choosing a transfer account.");
+        const auto identity=std::string(operation)+"-link-"+std::to_string(position);
+        const transfers::Endpoint origin{account,id,split.identity};
+        const transfers::Endpoint other{destination,{"~transfer-"+identity+"-destination",0},"generated"};
+        auto link=transfers::generate(identity,origin,draft,other,split.amount.currency(),false);
+        link.origin.ledger_entry=true;
+        plan.changed.push_back({std::move(link),draft.payee,split.memo.empty()?draft.memo:split.memo,sequence});
+        plan.creates_counterpart=true;
+    }
+    std::sort(plan.changed.begin(),plan.changed.end(),[](const auto& a,const auto& b){return a.link.identity<b.link.identity;});
+    return plan;
+}
 app::TransferView transition_transfer(app::TransferView value,const app::TransferRequest& request,std::int64_t account){
     const auto& current=value.link.origin.endpoint.account==account?value.link.origin:value.link.destination;
     if(current.endpoint.account!=account)fail(SQLITE_CONSTRAINT,"Transfer belongs to another account");
@@ -637,13 +709,26 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
                     const imports::Occurrence id{member.bytes(0),static_cast<std::size_t>(member.integer(1))};
                     auto before_draft=review_draft(id,member.integer(2),true);
                     const auto after_draft=review_draft(id,member.integer(3),true);
-                    const auto prior_date=before_draft.date;
-                    before_draft.date=after_draft.date;
-                    if(prior_date==after_draft.date || !same_draft(before_draft,after_draft) || member.row())
-                        fail(SQLITE_CORRUPT,"New transfer edit changed more than its date");
+                    if(member.row())fail(SQLITE_CORRUPT);
                     std::vector<app::TransferView> before;
                     for(const auto& [identity,value]:previous){(void)identity;before.push_back(value);}
-                    expected.changed=plan_draft_transfer_date(before,account.identity,id,prior_date,after_draft.date);
+                    if(request.origin){
+                        if(*request.origin!=id || !batch(impl_->db,id.batch).manual)fail(SQLITE_CORRUPT);
+                        for(auto& value:before){
+                            Statement match(impl_->db,"SELECT 1 FROM generated_source_matches WHERE link=? AND sequence<? LIMIT 1");
+                            match.text(1,value.link.identity);match.integer(2,sequence);value.link_has_bank_match=match.row();
+                        }
+                        const auto child=events.bytes(0);
+                        if(!child.ends_with("-edit"))fail(SQLITE_CORRUPT);
+                        expected.changed=plan_manual_transfer_edit(before,account.identity,id,before_draft,after_draft,
+                            request.editor_destinations,std::string_view(child).substr(0,child.size()-5),sequence).changed;
+                    }else{
+                        const auto prior_date=before_draft.date;
+                        before_draft.date=after_draft.date;
+                        if(prior_date==after_draft.date || !same_draft(before_draft,after_draft))
+                            fail(SQLITE_CORRUPT,"New transfer edit changed more than its date");
+                        expected.changed=plan_draft_transfer_date(before,account.identity,id,prior_date,after_draft.date);
+                    }
                 }else{
                     Statement op(impl_->db,"SELECT batch,ordinal,prior_revision,result_revision,kind FROM ledger_operations WHERE sequence=?");op.integer(1,sequence);if(!op.row())fail(SQLITE_CORRUPT);
                     const imports::Occurrence id{op.bytes(0),static_cast<std::size_t>(op.integer(1))};
@@ -959,15 +1044,18 @@ bool ImportStore::later_relationship_blocks(const imports::Occurrence& id,std::s
     newer.text(1,id.batch);newer.integer(2,integer(id.ordinal));newer.integer(3,history);
     return newer.row();
 }
-void ImportStore::write_entry_links(std::string_view operation,std::int64_t account,app::TransferAction action,std::int64_t sequence,const std::vector<app::TransferView>& changed) {
+void ImportStore::write_entry_links(std::string_view operation,std::int64_t account,app::TransferAction action,std::int64_t sequence,
+    const std::vector<app::TransferView>& changed,const std::optional<imports::Occurrence>& origin,
+    const std::map<std::size_t,std::int64_t>& destinations) {
     if(changed.empty() || sequence<=0 || (action!=app::TransferAction::relink && action!=app::TransferAction::restore))fail(SQLITE_CONSTRAINT,"Invalid transfer command");
     app::TransferRequest request{};
     request.action=action;request.link=changed.front().link.identity;request.expected_sequence=sequence-1;
+    request.origin=origin;request.editor_destinations=destinations;
     const auto encoded=transfer_codec::encode(request);
     if(transfer_codec::request(encoded).action!=action || transfer_codec::request(encoded).link!=request.link)fail(SQLITE_CORRUPT,"Transfer history does not replay");
     Statement event(impl_->db,"INSERT INTO transfer_events VALUES(?,?,?,?,?)");
     event.text(1,operation);event.integer(2,account);event.blob(3,encoded);event.integer(4,0);event.integer(5,0);event.done();
-    for(const auto& value:changed)store_transfer(impl_->db,value,sequence,false);
+    for(const auto& value:changed)store_transfer(impl_->db,value,sequence,origin && value.sequence==0);
 }
 app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& request) const {
     identifier(request.link);

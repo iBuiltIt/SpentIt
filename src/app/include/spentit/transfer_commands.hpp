@@ -1,5 +1,6 @@
 #pragma once
 #include <spentit/transfer.hpp>
+#include <map>
 
 namespace spentit::app {
 enum class TransferAction { manual, from_draft, accept, commit_local, propose_match, discard_match, clear_local, import_commit, import_discard, merge, retarget, relink, restore, review_undo, resize_generated, release_generated, delete_selection, unmerge };
@@ -26,6 +27,8 @@ struct TransferRequest {
     std::int64_t right_revision=0;
     // Identity-based category commands retain their selection revision for retry.
     std::int64_t category_generation=-1;
+    // Relink events with an origin retain the account choices from the editor.
+    std::map<std::size_t,std::int64_t> editor_destinations;
 };
 struct TransferJournalEntry {
     std::string operation,action,link;
