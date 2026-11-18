@@ -51,8 +51,9 @@ another row leaves that editor where it is.
   and moves on. **Enter** chooses a suggestion or stays in the field
   if there is none. **Escape** first closes suggestions, and
   **Shift+Tab** moves back without choosing.
-- In **Change category** from the ledger menu, type part of a name.
-  **Up/Down** moves through the matches and **Enter** chooses one.
+- In **Change category…** from the ledger or report transaction menu, type part of a name.
+  **Up/Down** moves through the matches. **Enter** or **Tab** chooses
+  the highlighted entry.
   Click a choice to use it, or press **Escape** or click outside to close.
 - **Home/End** in a text field: move to the start or end of its text.
   Hold **Shift** to select the text along the way.

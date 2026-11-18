@@ -29,7 +29,6 @@ Five other import UI cases, three navigation cases, and
 The account right-click menu drops **Undo last import…**. File-wide **Undo**
 still reverses the latest saved action. Review **Undo import…** still removes
 eligible older imports when the stack is empty. See [import Undo](import-undo.md).
-Manual work is MAN-087.
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release passed four focused
 offscreen UI cases and the import Help walkthrough. The cases cover file-wide
@@ -62,7 +61,6 @@ Review shows a pair offered in both directions on the outgoing card when
 possible. Choices offered in only one direction stay on their original cards.
 Choosing one of two indistinguishable same-day pairs checks the remaining
 exact pair. See [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
-Manual work is MAN-086.
 
 The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed the new
 offscreen UI case for the same-day and seven-day groups, partial reciprocity,
@@ -83,7 +81,6 @@ longer show those cards in Review. Candidate matches still appear. Accept
 transactions publishes the entries and the unmatched decision together.
 The setting is local to the file at its current path on this computer.
 See [Review](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
-Manual work is MAN-082.
 
 The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed the
 focused offscreen Settings, Review, acceptance and password cases and the
@@ -104,7 +101,6 @@ the generated entries. **Apply decisions** saves checked entries with any
 staged links and rejections, in one operation and one Undo. **Hide
 suggestions…** is offered on cards with candidate matches. See
 [Review](review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
-Manual work is MAN-081.
 
 On macOS arm64 with Qt 6.12.0, ten focused rules-enabled Release UI cases
 passed offscreen. The storage test applied 105 synthetic unmatched decisions
@@ -122,7 +118,6 @@ atomicity, exact retry and Undo. Changed documentation links and
 Tab chooses the highlighted entry in the shared ledger and report category
 picker, just like Enter. With no eligible entry, the picker stays open. See
 [category selection](../features/010-categories-and-selection.md).
-Manual work is MAN-080.
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release navigation tests
 `categoryPopupFiltersAndScrolls` and `categoryMenuSavesMixedRowsAndReopens`
@@ -133,7 +128,6 @@ passed offscreen, along with `./build/SpentIt --smoke`.
 The shared ledger and report context menu says Change category… to indicate
 that it opens the category picker. See
 [categories and selection](../features/010-categories-and-selection.md).
-Manual work is MAN-079.
 
 The rules-enabled Release navigation test `categoryPopupFiltersAndScrolls`
 and `./build/SpentIt --smoke` passed offscreen on macOS arm64 with Qt 6.12.0.
@@ -143,7 +137,6 @@ and `./build/SpentIt --smoke` passed offscreen on macOS arm64 with Qt 6.12.0.
 New files created with Use default categories include Home: Household as an
 expense. Existing files keep their catalogs. See
 [starter categories](../features/010-categories-and-selection.md#starter-categories).
-Manual work is MAN-078.
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release build passed
 `category.setup`, `import.replacement`, and `configuredDatesAndCategories`
@@ -156,7 +149,6 @@ The inline category picker now offers ordinary categories and Uncategorized
 for a split with an unresolved imported transfer destination. Choosing an
 account still uses the transfer-resolution command. See
 [ledger editing](ledger-editing.md#category-completion--owner-go-2026-11-01).
-Manual work is MAN-077.
 
 On macOS arm64 with Qt 6.12.0, both unresolved-destination keyboard cases
 failed before the fix and passed afterward. Six rules-enabled Release cases
@@ -888,14 +880,33 @@ included; see [Manual](#manual).
 
 ## Manual
 
-The owner-authorized 2026-11-18 pass completed MAN-057 through MAN-076 in
+The second owner-authorized 2026-11-18 pass completed MAN-077 through MAN-087
+in bundled Help. It covers unresolved transfer splits, the category picker
+and Household starter category, waiting transfers and bank-match settings,
+reciprocal transfer choices, opening amount correction, report navigation,
+and file-wide and older-import Undo. Five pictures were refreshed and one
+was added, bringing the bundle to 46 pictures. All 17 topic IDs and 153
+section IDs were preserved. The [backlog](manual-update-backlog.md) is empty
+and its next entry is MAN-088.
+
+On macOS arm64 with Qt 6.12.0, all eleven native screenshot walkthroughs
+passed and staged 46 synthetic pictures. The six installed pictures were
+visually inspected. The import walkthrough also reopened an affected account
+after Undo. Native Help passed all 16 chapter and reference reading cases
+and both continuous walkthroughs. The rules-enabled Release app was rebuilt
+and `./build/SpentIt --smoke` passed offscreen. `help.prepare`,
+`help.capture_manual_images`, `help.catalog`, changed-document links,
+and `git diff --check` passed.
+
+### Earlier pass on 2026-11-18
+
+The first owner-authorized 2026-11-18 pass completed MAN-057 through MAN-076 in
 bundled Help. It covers password and file opening, statement import, ledger
 and category editing, Review and automatic matching, account and category
-deletion, report transaction edits, and PDF export. The manual has 45
-pictures. Four were refreshed and five were added, including a PDF preview
+deletion, report transaction edits, and PDF export. That pass brought the
+manual to 45 pictures. Four were refreshed and five were added, including a PDF preview
 and both deletion confirmations. All 17 topic IDs and existing section IDs
-were preserved. The [backlog](manual-update-backlog.md) is empty and its next
-entry remains MAN-077.
+were preserved.
 
 On macOS arm64 with Qt 6.12.0, all eleven native screenshot walkthroughs
 passed and produced the full set of 45 synthetic pictures in staging. The
@@ -907,7 +918,7 @@ wording edits. The rules-enabled Release app was rebuilt and
 `help.capture_manual_images`, `help.catalog`, relative links in the changed
 documents, and `git diff --check` passed.
 
-### Previous pass
+### Pass on 2026-11-14
 
 The owner-authorized 2026-11-14 pass brings MAN-045 through MAN-056 into the
 bundled manual, including both notes previously labelled MAN-045. The earlier

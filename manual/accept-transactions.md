@@ -69,12 +69,19 @@ Choosing **Accept transactions** while questions or warnings remain opens
   file, Review lists it beside **Accept transactions** as **Warnings [n]**.
   The line names the account, the date, the payee when there is one, and
   says that destination is not an account. Choose the line to open the
-  transaction, create the account, and link the transfer. A missing
+  transaction. Create the account and link the transfer, or
+  [correct the split’s category](add-correct-transactions.md#divide-a-purchase-into-splits)
+  if it should be ordinary spending. A missing
   imported-category choice can also prevent acceptance. Complete the
   offered choices. **Accept anyway** cannot bypass them.
 - **Failed imported records:** **Accept anyway** accepts the usable new
   transactions and leaves the failed records in Review. It does not repair
   those records.
+
+For accounts listed in **Settings → Accounts that don’t need bank
+matches**, **Accept transactions** accepts the waiting entries SpentIt
+created and records that they have no bank match. Possible matches still
+appear in Review. See [how to add or remove an account](review-duplicates-transfers.md#if-spentit-created-the-other-side).
 
 **Return to review** closes the question without accepting.
 

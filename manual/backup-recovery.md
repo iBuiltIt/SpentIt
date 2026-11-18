@@ -89,7 +89,7 @@ confirm the change, close the file and open it with the new password
 before you do anything else. If it says the password was not changed,
 the file still uses the password it had.
 
-![Settings for the Household file, with amount formatting, automatic Merge and Link both checked, and password fields.](images/settings.png)
+![Settings for the Household file, with automatic Merge and Link checked, Cash under Accounts that don’t need bank matches, and password fields.](images/settings.png)
 *Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}

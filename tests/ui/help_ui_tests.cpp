@@ -674,7 +674,7 @@ private slots:
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
-            << QStringList{"review-keep.png", "review-link.png", "review-choices.png", "review-linked.png",
+            << QStringList{"review-keep.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png",
                            "review-differing-amounts.png", "review-difference.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
@@ -1656,6 +1656,9 @@ private slots:
         QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
         run(session.model, "select_account", {{"id", "1"}});
         QCOMPARE(session.model.state().value("balance").toString(), QString("2,500.00"));
+        mouse("accountNavigation_2"); wait(session.model);
+        QTRY_COMPARE(session.model.state().value("name").toString(), QString("Credit card"));
+        QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void transactionsChapterWalkthrough() {
@@ -1834,6 +1837,8 @@ private slots:
         const auto totals = session.model.state().value("reportResult").toMap().value("currencies").toList();
         QCOMPARE(totals.size(), 1);
         QCOMPARE(totals.front().toMap().value("totals").toList(), (QVariantList{"36.18"}));
+        run(session.model, "create_account", {{"id", "3"}, {"name", "Cash"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "bank_match_account_settings", {{"account", "3"}, {"optional", true}});
         mouse("sidebarSettings");
         {
             for (const auto* name : {"autoMergeReview", "autoLinkReview"}) {
@@ -1848,6 +1853,7 @@ private slots:
             auto* passwordField = qobject_cast<QQuickItem*>(object(session.root, "currentPassword"));
             QVERIFY(passwordField);
             QVERIFY(passwordField->isVisible());
+            QTRY_VERIFY(object(session.root, "removeBankMatchOptional_3"));
             auto* changePassword = qobject_cast<QQuickItem*>(object(session.root, "changePassword"));
             QVERIFY(changePassword);
             QVERIFY(changePassword->isVisible());
@@ -2638,9 +2644,31 @@ private slots:
             QCOMPARE(rows.size(), 2);
             QVERIFY(QMetaObject::invokeMethod(session.root, "selectReviewLink",
                 Q_ARG(QVariant, rows.front().toMap().value("key")), Q_ARG(QVariant, QVariant(1))));
+            QTRY_COMPARE(object(session.root, "transferDecisionSummary")->property("text").toString(),
+                QString("2 links, 0 not transfers"));
             const auto chapterSize = session.window->size();
             session.window->resize(chapterSize.width(), 1040);
             capture("review-choices");
+            session.window->resize(chapterSize);
+
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("waiting-picture.spentit")},
+                {"protected", false}, {"name", "Chequing"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "create_account", {{"id", "2"}, {"name", "Savings"},
+                {"currency", "CAD"}, {"date", "2026-01-01"}});
+            import("!Type:Bank\nD2026-02-01\nT-10.00\nPWeekly savings\nL[Savings]\n^\n"
+                   "D2026-02-08\nT-10.00\nPWeekly savings\nL[Savings]\n^\n", "1");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "acceptMissingMatch"));
+            QVERIFY(!object(session.root, "acceptMissingMatch")->property("checked").toBool());
+            auto* waitingAccount = object(session.root, "waitingTransferAccount");
+            QVERIFY(waitingAccount);
+            QCOMPARE(waitingAccount->property("currentValue").toString(), QString("2"));
+            mouse("selectWaitingTransfers");
+            QTRY_COMPARE(object(session.root, "transferDecisionSummary")->property("text").toString(),
+                QString("2 without bank match"));
+            session.window->resize(chapterSize.width(), 1040);
+            capture("review-waiting");
             session.window->resize(chapterSize);
 
             // Show an automatic result on an already accepted purchase.

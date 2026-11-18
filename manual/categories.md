@@ -68,11 +68,11 @@ Categories first, then return to the transaction.
 
 ## Change selected transactions {#change-selected-transactions}
 
-Select one or more rows, right-click, and choose **Change category**.
+Select one or more rows, right-click, and choose **Change category…**.
 The filter is ready for typing. Type any part of a name, using upper-
 or lowercase, or leave it empty to see the whole list. Click a choice
-or use **Up/Down** and **Enter**. If there are no matches, nothing is
-assigned. Press **Escape** or click outside to close the picker.
+or move with **Up/Down** and choose with **Enter** or **Tab**. If there
+are no matches, the picker stays open. Press **Escape** or click outside to close the picker.
 
 For ordinary entries with one split each, the change saves for the
 whole selection. New and accepted transactions can be selected together.
@@ -147,7 +147,9 @@ start with Income checked and appear in the Income group: Income:
 Business / Self-Employment, Income: Investment & Interest, Income:
 Other, Income: Pension & Retirement, and Income: Salary & Wages.
 Taxes: Income is an expense. Every other starter category starts
-unchecked. Category pickers use the same grouped A–Z order.
+unchecked. Home: Household is an expense category for things like
+household supplies or alarm monitoring. Category pickers use the same
+grouped A–Z order.
 
 **File → SpentIt Export…** can copy the category list, including the
 Income check. See [Copy transactions or saved definitions](backup-recovery.md#copy-transactions-or-saved-definitions).

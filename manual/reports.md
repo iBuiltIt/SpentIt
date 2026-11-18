@@ -155,7 +155,7 @@ there are no nonzero category amounts to draw.
 Double-click a **category amount** in the period you want to inspect.
 Double-click a **Total amount** for all selected categories in that period.
 
-![January Groceries transactions with Account and In report columns, and Corner shop’s two splits open for editing.](images/reports-transactions.png)
+![January Groceries transactions with a top-bar Back button, Account and In report columns, and Corner shop’s two splits open for editing.](images/reports-transactions.png)
 *Corner shop’s full withdrawal is 20.00, but only its 12.00 Groceries split belongs in this cell.*
 
 Each transaction appears once. **Withdrawal** and **Deposit** describe the
@@ -170,14 +170,14 @@ the selected dates or categories, it stays in this opened list as **No longer
 included**, so you can check your change. Deleted transactions disappear unless
 restored with Undo.
 
-Choose **Back to report** to return to the results. Opening an amount again
-uses its updated transaction list. An unfinished edit asks for Save, Discard
-or Stay before you leave.
+Use **Back** in the top bar to return to the results. Use **Forward**
+to reopen the same report amount with the transactions that match it now.
+An unfinished edit asks for Save, Discard or Stay before you leave.
 
 Search here only narrows the transactions you opened. Click the
 **Account** heading to sort by account.
 
-**Change category**, **Rename payee**, and **Set memo** can update
+**Change category…**, **Rename payee…**, and **Set memo…** can update
 entries from several accounts together, with one save and one Undo.
 You can also choose an account destination for that selection. Each
 entry gets its own opposite posting. If an entry is already in the
@@ -195,7 +195,7 @@ then choose **Save, apply and back** to return to these transactions with
 the report refreshed. The rule starts with All accounts selected, so narrow
 that choice if you intend to change only one account.
 
-![Report transaction menu with Create rule available and account-only commands in grey.](images/reports-menu.png)
+![Report transaction list with top-bar Back and an open menu showing Change category… and Create rule.](images/reports-menu.png)
 *Create a rule from a report transaction without opening its editor.*
 
 You can drag the right edge of a column heading to make more room, just as

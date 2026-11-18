@@ -208,14 +208,13 @@ file into the correct account.
 
 If that import is the newest saved action in the file, press
 **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux. SpentIt
-asks before it undoes. Right-click an account and choose **Undo last
-import…** for its newest eligible import. To choose one, open
-**Review** and choose **Undo import…**, select the account, then the
-import.
-The list is newest first and uses file type, dates, and record counts
-to help identify it. An older import waits until Undo is empty. The
-message is **Undo the current actions, or close and reopen the file
-first.**
+asks before it undoes. Undo works across the whole file, so you can
+use it from any account.
+
+To remove an eligible older import, first empty the Undo stack by undoing
+the newer actions or closing and reopening the file. Open **Review**,
+choose **Undo import…**, then choose the account and import. The list is
+newest first and shows file type, dates, and record counts.
 
 ![Undo this import confirmation showing three new transactions to remove and Credit card and Cash as affected accounts.](images/import-undo.png)
 *Check the removal counts and affected accounts before choosing Undo import.*
@@ -227,6 +226,9 @@ import may remain. Accounts, categories and opening balances created
 for the import stay, including a new account’s chosen opening.
 
 Check the preview, then choose **Undo import**, or **Cancel** to keep it.
+After Undo, you can open an affected account right away. For example,
+open **Credit card** to check its balance even if the purchase you last
+selected there was removed.
 An import containing accepted transactions is not eligible. Later
 conflicting edits or links can also prevent Undo. An import held by another
 import is left out of the list until that other import is undone.
@@ -237,7 +239,7 @@ file again if you want to bring those transactions back.
 work across imports in the selected account, not just one file import.
 Its confirmation lists affected accounts, including generated matching
 transactions that may also be removed. Accepted transactions remain.
-It also waits until Undo is empty, with the same message.
+It also waits until Undo is empty.
 Use it only when you intend that wider removal. There is no Undo for
 the removal itself.
 

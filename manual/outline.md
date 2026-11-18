@@ -99,7 +99,7 @@ already open elsewhere. Link to recovery when the next step needs more explanati
 - Find the imported transactions and understand the next step.
 - Import another period or an overlapping export. Explain recognized repeats
   versus possible duplicates that still need a decision.
-- Correct a mistaken import: distinguish Undo last import, choosing an import
+- Correct a mistaken import: distinguish file-wide Undo, choosing an older import
   to undo, and account-wide Discard. Explain affected accounts and restrictions
   before the reader confirms anything.
 
@@ -186,7 +186,8 @@ up, unavailable original values and unavailable Undo.
 - Create, rename and manage categories using the available category controls.
 - Explain names such as Food:Groceries without implying a parent category
   automatically includes other categories.
-- Assign a category through the editor's suggestions or right-click Change category.
+- Assign a category through the editor’s suggestions or the right-click
+  **Change category…** picker.
 - Change several selected transactions; choose the relevant split where required.
 - Distinguish an ordinary category from an account destination: choosing an
   account makes a transfer, with consequences for its other posting.

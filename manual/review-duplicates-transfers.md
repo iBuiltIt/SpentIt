@@ -98,9 +98,11 @@ The bank might date it January 28 and the card provider January 29.
 These are two postings of one transfer, not a duplicate purchase.
 
 When that payment is in both imported files, Review asks once. The
-question starts from the withdrawal, and the deposit is the other line.
-The number in **Review (n)** includes it once. A different payment has
-its own section in Review.
+question appears on the withdrawal’s card when both sides offer the
+same choice. The number in **Review (n)** includes it once. If only
+the deposit offers a choice, it stays on the deposit’s card. For
+example, a card payment received may point back to Chequing even
+when the withdrawal has no transfer destination.
 
 In a transfer question, check both account names, the signs and the dates.
 Straightforward pairs with equal amounts start checked at the top.
@@ -119,15 +121,15 @@ the other choice to make the entry available again.
   Choosing a partner can suggest new checks on related cards. Review
   those changes before saving. Your own rejections and deferrals stay
   in place.
-- To save the displayed counts of links and rejections together, choose
+- To save the pending links, rejections, and unmatched decisions together, choose
   **Apply decisions** beside **Undo import**. One **Undo** reverses the
   batch. Cards that still need a split or amount choice wait for you.
 - To save just one card, use its **Link** or **Not this transfer** button.
   Your other pending choices stay. If a choice is flagged after a change,
   check the card and choose again.
 
-![Two related transfer cards. Deposit one is checked on the first card and its checkbox is dimmed on the second.](images/review-choices.png)
-*The second card suggests Deposit two. To make Deposit one available there, release it on the first card.*
+![Two withdrawal cards. Deposit one is checked for Withdrawal one and Deposit two is checked for Withdrawal two.](images/review-choices.png)
+*When two same-day withdrawals could each match either deposit, checking one pair can check the only remaining exact pair. Verify both before saving.*
 
 An unanswered card stays out of the batch. **Inspect** and **Back** keep
 pending choices. Leaving Review by another route clears them.
@@ -158,15 +160,33 @@ entry where eligible. Read the question’s explanation before confirming;
 this is why an account balance may change when a generated duplicate
 is removed.
 
-If you have checked the transfer and the bank posting has not arrived,
-choose **Accept without bank match** when the card shows only the
-transfer. That records the missing match. It is separate from
-**Accept transactions**. You can match an imported posting later.
-Don’t add another transfer just to clear the question.
+When the card shows only the transfer, **Accept without bank match**
+starts unchecked. Check it to mark that transfer. To check all waiting
+transfers in an account, use **Unmatched transfers in** to pick the
+account that holds the entries SpentIt created, then choose **Select
+all**. Use **Clear selection** to uncheck that account’s waiting transfers.
 
-When the other imported line is already on the card, **Accept without
-bank match** is not offered. Use **Link** or **Not this transfer** for
-that pair.
+![Review showing Savings selected under Unmatched transfers in, with two transfers checked and Apply decisions available.](images/review-waiting.png)
+*Check the account and the pending count before choosing Apply decisions.*
+
+**Apply decisions** saves the checked entries with any pending links
+and rejections. One **Undo** reverses the batch. Use **Accept
+transactions** separately when you’re ready to accept New transactions.
+You can still match the transfers to a later bank import.
+
+Cards with possible bank matches offer **Link**, **Not this transfer**,
+and **Hide suggestions…**. If the split’s imported destination is wrong,
+[edit its category](add-correct-transactions.md#divide-a-purchase-into-splits) in the ledger
+or report transaction list.
+
+For an account where you don’t import bank transactions, open
+**Settings → Accounts that don’t need bank matches**. Choose the account
+that holds the entries SpentIt creates and select **Add account**. Use
+**Remove** beside an account to bring its waiting transfers back to Review.
+[Accept transactions](accept-transactions.md#when-review-still-has-questions)
+handles waiting transfers in listed accounts. Possible bank matches still
+appear in Review. This setting applies to the file at its current location
+on this computer. See the [Settings picture](backup-recovery.md#change-or-remove-the-password).
 
 ## When the amounts differ {#when-the-amounts-differ}
 

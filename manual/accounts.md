@@ -57,7 +57,8 @@ the first purchase, leave the opening at zero. Zero needs no confirmation.
 *Use the balance before your recorded transactions begin.*
 
 You can correct these values later in the same way, or use
-**Correct opening…** in the account’s right-click menu. The opening
+**Correct opening…** in the account’s right-click menu. The whole amount
+is selected when the dialog opens. Type or paste to replace it. The opening
 date must be on or before the earliest accepted transaction. Use a
 valid date and an amount with the decimal places your currency supports.
 

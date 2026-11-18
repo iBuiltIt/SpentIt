@@ -107,6 +107,11 @@ that split from the edit, not the whole transaction. Transfer splits cannot
 be removed with this button. Save the balanced
 result when you’re finished.
 
+If an imported split names a transfer account you can’t resolve, edit the
+split’s category in the account ledger or the report transaction list.
+Choose an ordinary category or **Uncategorized** to record it without a
+transfer. Choose an account when the split should go to that account.
+
 SpentIt initially chooses the largest eligible split for the remainder,
 preferring one with the same sign as the total. That split stays chosen
 even if another becomes larger. Transfer splits are not used for this.
@@ -175,7 +180,7 @@ One Undo reverses the whole deletion. An unresolved import match can
 refuse it; settle that match, then try again.
 
 For an entire mistaken import, use
-[Undo last import…](import-transactions.md#undo-a-mistaken-import)
+[Undo a mistaken import](import-transactions.md#undo-a-mistaken-import)
 instead of deleting its rows one by one.
 
 ### Take care with transfers
@@ -245,7 +250,7 @@ transactions has its own row; Undo separates them and leaves both in place.
 
 A successful **File → Close file**, switching files, or quit clears both
 Undo and Redo. Your saved changes stay, including transactions left new.
-**Undo last import…** and [Unmerge](review-duplicates-transfers.md#undo-a-mistaken-answer)
+**Undo import…** in Review and [Unmerge](review-duplicates-transfers.md#undo-a-mistaken-answer)
 may still be available after reopening.
 
 If closing fails or you cancel it, both Undo and Redo remain available.

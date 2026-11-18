@@ -65,7 +65,7 @@ Most controls appear after you open a file.
   [Correct an entry](add-correct-transactions.md#correct-an-entry) or
   [divide a purchase into splits](add-correct-transactions.md#divide-a-purchase-into-splits).
 - **Change categories for selected entries:** right-click the selection
-  and use **Change category**. Choosing an account destination makes a
+  and use **Change category…**. Choosing an account destination makes a
   transfer. [Change selected transactions](categories.md#change-selected-transactions)
   or [record a transfer](categories.md#an-account-destination-makes-a-transfer).
 - **Create or rename a category:** choose **Categories** in the sidebar.
@@ -104,8 +104,9 @@ Undo works newest first across all accounts in the file.
   [Undo a mistaken answer](review-duplicates-transfers.md#undo-a-mistaken-answer).
 - **See changes since you opened the file:** choose **Change history**
   in the sidebar.
-- **Undo an import:** right-click the account for **Undo last import…**,
-  or use **Undo import…** in Review. Accepted transactions can prevent it.
+- **Undo an import:** use file-wide **Undo** if the import is the latest
+  saved action. For an eligible older import, empty the Undo stack and use
+  **Undo import…** in Review. Accepted transactions can prevent it.
   [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import).
 - **Read a long status message:** choose **Status** beside the bottom
   status line when available. [When a change needs attention](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
