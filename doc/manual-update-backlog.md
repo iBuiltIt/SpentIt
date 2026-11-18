@@ -18,12 +18,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-076. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-077. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-076 (2026-11-18) — Review transfer choices already reserved by another
+  pending link are disabled and dimmed, remaining visible with readable details
+  and Inspect. Availability returns when the conflicting choice is released;
+  automatic partner switching remains available. Update the Review chapter and
+  its candidate-selection picture in the next authorized manual pass. Contract:
+  [Review](review-sheet.md#unavailable-transfer-choices--owner-go-2026-11-18).
+  Manual text and pictures have not been edited.
 
 - MAN-075 (2026-11-17) — Delete formerly used empty accounts and categories. Include cleanup after
   Unmerge: imported transfer destinations can become categories or Uncategorized,

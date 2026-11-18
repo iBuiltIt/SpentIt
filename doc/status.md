@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 SpentIt is the local rules-enabled application. The release rules database is
 version 1, and the application version is 1.0.1. A file whose number is not 1
@@ -12,6 +12,28 @@ Build and launch are in the [README](../README.md) and [building](building.md).
 macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
+
+## Disabled Review transfer choices — 2026-11-18
+
+Owner Go covers dimming and disabling partner checkboxes that the existing
+pending-link conflict check refuses. Rows and Inspect remain available, and
+releasing a conflict immediately re-enables the choice. Checked partners can still
+be unchecked, and automatic mirrors still permit partner replacement.
+Selection and availability share the conflict predicate; storage and matching
+policy are unchanged. See [Review](review-sheet.md#unavailable-transfer-choices--owner-go-2026-11-18).
+Manual work is MAN-076; manual text and pictures have not been edited.
+
+The rules-enabled Release application and UI test executable were rebuilt on
+macOS arm64 with Qt 6.12.0. The four existing focused functions
+`reviewMultipleLinkCandidates` (four cases), `reviewLinkCardButtons`,
+`unifiedReviewLinkDifference`, and `reviewLinkSelected` passed. The expanded
+`reviewPendingDecisions` passed after adjusting the test's delegate lookup and
+window size; it verifies disabled opacity, re-enabling after release, checked
+partner availability and automatic partner switching. A synthetic screenshot was
+inspected. The initial sandboxed run could not access application-data locks;
+the successful runs had that access. `./build/SpentIt --smoke` passed offscreen.
+Changed-document file links and `git diff --check` passed. No full suite,
+native pointer interaction, sanitizer, Linux or Windows run is claimed.
 
 ## Delete empty accounts and unused categories — 2026-11-17
 

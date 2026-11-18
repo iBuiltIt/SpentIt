@@ -3652,6 +3652,27 @@ ApplicationWindow {
         // a subsequent positive partner choice can infer new mirrors.
         reviewLinkChoices=choices
     }
+    function reviewLinkConflict(q, index, choices) {
+        const origin=reviewRowId(q.rows[0]), partner=reviewRowId(q.rows[index])
+        for(const other of (s.reviewQuestions||[])) {
+            const choice=choices[other.key]
+            if(other.key===q.key || !choice || choice.action!=="link")continue
+            const otherOrigin=reviewRowId(other.rows[0])
+            if(otherOrigin===origin || otherOrigin===partner || choice.partner===origin || choice.partner===partner) {
+                return true
+            }
+        }
+        return false
+    }
+    function reviewLinkAvailable(q, index) {
+        if(!q || q.kind!=="link" || index<1 || index>=q.rows.length)return false
+        if(linkChoiceIndex(q)===index)return true
+        const choices=Object.assign({},reviewLinkChoices)
+        // Automatic mirrors are released when switching partners, so they
+        // must not make a switch appear unavailable.
+        releaseRelatedMirrors(choices,q.key)
+        return !reviewLinkConflict(q,index,choices)
+    }
     function selectReviewLink(key, index) {
         const q=(s.reviewQuestions||[]).find(q=>q.key===key)
         if(!q || index<1 || index>=q.rows.length)return
@@ -3661,14 +3682,8 @@ ApplicationWindow {
         }
         const choices=Object.assign({},reviewLinkChoices)
         releaseRelatedMirrors(choices,key)
-        const origin=reviewRowId(q.rows[0]), partner=reviewRowId(q.rows[index])
-        for(const other of (s.reviewQuestions||[])) {
-            const choice=choices[other.key]
-            if(other.key===key || !choice || choice.action!=="link")continue
-            const otherOrigin=reviewRowId(other.rows[0])
-            if(otherOrigin===origin || otherOrigin===partner || choice.partner===origin || choice.partner===partner) {
-                workspaceFeedback="That transaction already has a pending link. Change that decision first.";return
-            }
+        if(reviewLinkConflict(q,index,choices)) {
+            workspaceFeedback="That transaction already has a pending link. Change that decision first.";return
         }
         choices[key]=makeLinkDecision(q,index,false);reviewLinkChoices=choices
         recomputeLinkMirrors(true)
@@ -4220,7 +4235,7 @@ ApplicationWindow {
                         Layout.fillWidth:true
                         Item {Layout.preferredWidth:32;Layout.preferredHeight:36
                         CheckBox {objectName:"reviewRowSelect_"+reviewRow.index;anchors.centerIn:parent;enabled:!workflow.busy;checked:questionCard.chosen.some(row=>row.key===reviewRow.modelData.key);visible:questionCard.modelData.kind==="same" && questionCard.modelData.rows.length>2;onClicked:questionCard.toggle(reviewRow.modelData,checked);Accessible.name:"Select transaction "+reviewRow.modelData.payee}
-                        CheckBox {anchors.centerIn:parent;enabled:!workflow.busy;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee;onClicked:{selectReviewLink(questionCard.modelData.key,reviewRow.index);checked=Qt.binding(function(){return questionCard.counterpart===reviewRow.index})}}
+                        CheckBox {anchors.centerIn:parent;enabled:!workflow.busy && reviewLinkAvailable(questionCard.modelData,reviewRow.index);opacity:enabled?1:0.35;objectName:"reviewLinkCandidate_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0;checked:questionCard.counterpart===reviewRow.index;Accessible.name:"Link to "+reviewRow.modelData.accountName+" "+reviewRow.modelData.payee;onClicked:{selectReviewLink(questionCard.modelData.key,reviewRow.index);checked=Qt.binding(function(){return questionCard.counterpart===reviewRow.index})}}
                         }
                         Label {text:reviewRow.modelData.committed?"Accepted":"New";Layout.preferredWidth:65}
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}

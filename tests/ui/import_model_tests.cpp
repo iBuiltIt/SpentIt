@@ -763,13 +763,37 @@ private slots:
         QCOMPARE(initialOrder,beforeSelection);
         const auto generationBeforeSwitch=m.state().value("reviewGeneration");
         QCOMPARE(choices().value(mirrorKey).toMap().value("index").toInt(),2);
+        const auto candidate=[&](const QString& key,int index) -> QQuickItem* {
+            const auto find=[&](auto&& self,QQuickItem* item) -> QQuickItem* {
+                const auto value=item->property("modelData");
+                const auto data=value.metaType()==QMetaType::fromType<QJSValue>()?value.value<QJSValue>().toVariant().toMap():value.toMap();
+                if(item->property("counterpart").isValid() && data.value("key").toString()==key)
+                    return visualItem(item,QString("reviewLinkCandidate_%1").arg(index));
+                for(auto* child:item->childItems())if(auto* found=self(self,child))return found;
+                return nullptr;
+            };
+            return find(find,window->contentItem());
+        };
+        window->resize(1500,1400);
+        QTRY_VERIFY(candidate(mirrorKey,1));
+        QVERIFY(!candidate(mirrorKey,1)->isEnabled());
+        QVERIFY(candidate(mirrorKey,1)->opacity()<0.5);
+        QVERIFY(candidate(mirrorKey,2)->isEnabled()); // Checked partner can still be unchecked.
+        QVERIFY(candidate(multiKey,2)->isEnabled()); // An inferred mirror does not block a switch.
+        QCOMPARE(candidate(multiKey,2)->opacity(),1.0);
+        if(qEnvironmentVariableIsSet("SPENTIT_DISABLED_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_DISABLED_CAPTURE")));}
         QVERIFY(choose(multi,2)); // Directly replace the partner claimed by the inferred mirror.
         QCOMPARE(choices().value(multiKey).toMap().value("index").toInt(),2);
         QCOMPARE(choices().value(mirrorKey).toMap().value("index").toInt(),1);
+        QVERIFY(candidate(mirrorKey,1)->isEnabled());
+        QVERIFY(!candidate(mirrorKey,2)->isEnabled());
         QCOMPARE(orderKeys(),initialOrder);
         QVERIFY(choose(multi,2)); // Uncheck, then choose the other partner.
         QCOMPARE(choices().value(multiKey).toMap().value("action").toString(),QString("not_linked"));
         QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("undecided"));
+        QVERIFY(candidate(mirrorKey,1)->isEnabled());
+        QVERIFY(candidate(mirrorKey,2)->isEnabled());
+        QCOMPARE(candidate(mirrorKey,2)->opacity(),1.0);
         QVERIFY(QMetaObject::invokeMethod(window,"reconcileReviewDecisions"));
         QCOMPARE(choices().value(mirrorKey).toMap().value("action").toString(),QString("undecided"));
         QVERIFY(choose(multi,1));

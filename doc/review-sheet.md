@@ -741,3 +741,12 @@ remaining card is flagged for a new choice and excluded from Apply decisions.
 Resolved cards leave the pending set. Inspect preserves the pending set;
 leaving Review by another route clears it. These are in-memory choices, not
 saved drafts that survive closing or restarting.
+
+## Unavailable transfer choices — owner Go, 2026-11-18
+
+A partner checkbox that conflicts with another pending link stays visible but
+is disabled and dimmed. Releasing that choice immediately restores availability.
+Transaction details and Inspect remain available. The checked partner can still
+be unchecked, and switching partners can still release and recalculate automatic
+suggestions. The visual state follows the same conflict check as selection;
+matching and saving behavior are unchanged.
