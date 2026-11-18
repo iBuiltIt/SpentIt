@@ -174,8 +174,18 @@ Choose **Back to report** to return to the results. Opening an amount again
 uses its updated transaction list. An unfinished edit asks for Save, Discard
 or Stay before you leave.
 
-Search here only narrows the transactions you opened. Group edits must concern
-one account at a time. To add transactions, Merge duplicates or Link transfers,
+Search here only narrows the transactions you opened. Click the
+**Account** heading to sort by account.
+
+**Change category**, **Rename payee**, and **Set memo** can update
+entries from several accounts together, with one save and one Undo.
+You can also choose an account destination for that selection. Each
+entry gets its own opposite posting. If an entry is already in the
+destination account, or uses another currency, the whole change is
+refused. Edit transactions with more than one split one at a time.
+**Delete** and **Restore** work within one account at a time.
+
+To add transactions, Merge duplicates or Link transfers,
 return to an ordinary account ledger. Those commands, and Unmerge, appear
 in grey here.
 
@@ -190,6 +200,31 @@ that choice if you intend to change only one account.
 
 You can drag the right edge of a column heading to make more room, just as
 in an account ledger. Report transactions remember their own column widths.
+
+## Save a report as PDF
+
+With the report results open, choose **Save as PDF…** beside
+**Refresh report**, or **File → Save report as PDF…**. If the report
+has changed since it was generated, refresh it first.
+
+Use **Previous page** and **Next page** to read the preview. Choose
+**Letter** or **A4** and **Automatic**, **Portrait** or **Landscape**.
+**Readable pages** gives a large report room to continue on later
+pages. **Fit on one page** puts the whole report on one sheet. If the
+preview warns that the text is small, try **Readable pages**.
+
+![Save report as PDF preview with paper, orientation and layout choices, page controls, and the Save to field.](images/reports-pdf.png)
+*Check the preview and where the PDF will be saved.*
+
+Different currencies appear separately. When comparisons need more
+room across the page, each group repeats the main period so you can
+read it beside those comparisons.
+
+SpentIt suggests the report name with `.pdf` beside your open SpentIt
+file. Use **Browse…** to pick a different name or folder. Choose
+**Save** and confirm only if you want to replace an existing PDF.
+The PDF is readable by anyone who has it, even if your SpentIt file
+has a password.
 
 ## Keep and change your reports {#keep-and-change-your-reports}
 

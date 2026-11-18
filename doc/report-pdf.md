@@ -85,5 +85,5 @@ possible. Closing the dialog releases its preview and page plan.
 Automated synthetic coverage lives in
 [PDF tests](../tests/ui/report_pdf_tests.cpp) and
 [report UI tests](../tests/ui/report_ui_tests.cpp). Actual run results and
-platform limitations are recorded in [status](status.md). The manual update is
-queued in [the backlog](manual-update-backlog.md).
+platform limitations are recorded in [status](status.md). See [Save a report as PDF](../manual/reports.md#save-a-report-as-pdf)
+for the bundled Help instructions.

@@ -50,7 +50,9 @@ Most controls appear after you open a file.
 
 ## Transactions and categories
 
-- **Bring in a bank export:** choose **Import…** in the sidebar.
+- **Bring in a bank export:** choose **Import…** in the sidebar, open
+  the statement with SpentIt, or drop it on the window. Drop it on an
+  account or its ledger to import through that account.
   [Bring in transactions](import-transactions.md#choose-an-export).
 - **Find a purchase:** select its account, enter a search above the
   transaction list, then choose **Apply**.
@@ -58,7 +60,8 @@ Most controls appear after you open a file.
 - **Enter a transaction yourself:** choose **+ New transaction** beside
   search **Apply**, or right-click the list and choose **Add transaction…**.
   [Add a missing purchase](add-correct-transactions.md#add-a-missing-purchase).
-- **Correct a transaction or edit its splits:** double-click the row.
+- **Correct a transaction or edit its splits:** double-click the row,
+  the **Saved splits** line, or a visible split.
   [Correct an entry](add-correct-transactions.md#correct-an-entry) or
   [divide a purchase into splits](add-correct-transactions.md#divide-a-purchase-into-splits).
 - **Change categories for selected entries:** right-click the selection

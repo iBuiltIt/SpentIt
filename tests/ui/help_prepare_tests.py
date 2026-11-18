@@ -76,7 +76,7 @@ Literal `**`, `*`, `\*`, escaped \*, and file_name.
             self.assertIn("2026-01-15", text)
             self.assertNotIn("sample-", text)
             self.assertNotIn("https://", text)
-            self.assertEqual(len(manifest["images"]), 40)
+            self.assertEqual(len(manifest["images"]), 45)
             recovery = next(topic["markdown"] for topic in manifest["topics"] if topic["id"] == "look-after-your-work")
             self.assertIn("Change password", recovery)
             self.assertIn("help-image:settings.png", recovery)

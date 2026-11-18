@@ -39,7 +39,10 @@ including saved transactions you haven’t accepted yet.
 A category marked **2 splits**, or another count, means the transaction
 is divided into parts. Click that label to show their categories,
 memos and amounts; click it again to hide them. Close the row’s editor
-first if the split label is unavailable.
+first if the split label is unavailable. Double-click **Saved splits**
+or one of its lines to open the editor. A single click selects the
+transaction, and a right-click opens its menu. Double-click the top
+line to close the editor.
 
 An arrow beside a transfer category takes you to its transaction in
 the other account. For a split transfer, expand the splits to find
@@ -55,7 +58,10 @@ accept a transaction just to keep it when you close the file.
 
 ## Select without editing
 
-Click once to select a row. Double-click to open or close its editor.
+Click once to select a row. Double-click its top line to open or close
+the editor. With the account ledger or report transaction list focused,
+**Page Up** and **Page Down** move one screen. Hold **Shift** to extend
+the selection. A text field keeps those keys while you type.
 Selecting another row leaves an open editor where it is; check which
 transaction you are editing before typing.
 

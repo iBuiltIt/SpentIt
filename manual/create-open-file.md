@@ -39,7 +39,8 @@ and use another name if you want to keep it.
 
 ### Choose password protection
 
-With **Password protection** checked, enter your password twice.
+With **Password protection** checked, enter a password of 1 to 64
+characters, then type it again.
 Keep it somewhere safe. There is no way to open the file if you forget
 the password. A copy of the file opens with the password it had when
 you copied it. You can change the password, add one, or remove it later
@@ -79,10 +80,12 @@ file. If the right file is already shown, you can leave it selected.
 Enter the password if asked, then choose **Open file**. A file without
 a password may open automatically when you next start SpentIt.
 
-You can also open the file itself. On Windows and Linux, open the
-`.spentit` file in your files. SpentIt starts and opens that file.
-Enter the password if it asks. The file you opened last time stays
-closed, so check that this is the one you wanted.
+You can also double-click a `.spentit` file in Finder on a Mac or in
+your file manager on Windows or Linux. SpentIt starts and opens that
+file. If it asks for a password, the welcome screen shows the selected
+file while you enter it. The file you opened last time stays closed.
+If SpentIt already has a file open, its window comes forward and you
+can keep working in that file.
 
 ![Welcome screen with the Household file selected, a password field, and the Open file button.](images/create-file-unlock.png)
 *Check the selected file, enter its password, and choose Open file.*

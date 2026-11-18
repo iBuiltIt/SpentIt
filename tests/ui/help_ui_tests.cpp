@@ -665,7 +665,7 @@ private slots:
             << QStringList{"create-file-setup.png", "create-file-workspace.png", "create-file-unlock.png"}
             << QString("open-your-file") << QString("Open your file");
         QTest::newRow("accounts") << QString("set-up-accounts")
-            << QStringList{"accounts-new.png", "accounts-opening.png", "accounts-menu.png"}
+            << QStringList{"accounts-new.png", "accounts-opening.png", "accounts-menu.png", "accounts-delete.png"}
             << QString("choose-the-currency") << QString("Choose the currency");
         QTest::newRow("imports") << QString("bring-in-transactions")
             << QStringList{"import-destination.png", "import-mapping.png", "import-categories.png", "import-results.png", "import-undo.png"}
@@ -674,13 +674,14 @@ private slots:
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
-            << QStringList{"review-keep.png", "review-link.png", "review-linked.png", "review-difference.png", "review-automatic.png"}
+            << QStringList{"review-keep.png", "review-link.png", "review-choices.png", "review-linked.png",
+                           "review-differing-amounts.png", "review-difference.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
             << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png", "change-history.png"}
             << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
         QTest::newRow("categories") << QString("organize-categories")
-            << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png"}
+            << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png", "categories-delete.png"}
             << QString("change-selected-transactions") << QString("Change selected transactions");
         QTest::newRow("rules") << QString("use-rules")
             << QStringList{"rules-editor.png", "rules-preview.png", "rules-leave.png"}
@@ -689,7 +690,7 @@ private slots:
             << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
             << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
         QTest::newRow("reports") << QString("answer-with-reports")
-            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png"}
+            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png", "reports-pdf.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
             << QStringList{"settings.png"}
@@ -1505,6 +1506,18 @@ private slots:
         mouse("reactivateAccount");
         wait(session.model);
         QVERIFY(!session.model.state().value("readOnly").toBool());
+
+        run(session.model, "create_account", {{"id", "3"}, {"name", "Savings"},
+            {"currency", "CAD"}, {"date", "2026-01-01"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "25.00"}});
+        run(session.model, "correct_opening", {{"date", "2026-01-01"}, {"amount", "0.00"}});
+        run(session.model, "preview_account_deletion");
+        auto* deletion = object(session.root, "deleteAccountDialog");
+        QVERIFY(deletion);
+        QTRY_VERIFY(deletion->property("visible").toBool());
+        QVERIFY(session.model.state().value("accountDeletionClearsHistory").toBool());
+        capture("accounts-delete");
+        mouse("cancelDeleteAccount");
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void importChapterWalkthrough() {
@@ -1748,6 +1761,7 @@ private slots:
         const auto original = session.path("Household.spentit");
         const auto backup = session.path("Household-backup-2026-02-28.spentit");
         const auto recovered = session.path("Household-recovered.spentit");
+        const ObserveAutomaticReviewDefault observeDefaults;
         run(session.model, "create", {{"path", original}, {"protected", true},
             {"password", "synthetic-guide-password"}, {"confirmation", "synthetic-guide-password"},
             {"name", "Credit card"}, {"currency", "CAD"}, {"defaultCategories", false}});
@@ -1787,6 +1801,11 @@ private slots:
         QCOMPARE(totals.front().toMap().value("totals").toList(), (QVariantList{"36.18"}));
         mouse("sidebarSettings");
         {
+            for (const auto* name : {"autoMergeReview", "autoLinkReview"}) {
+                auto* checkbox = object(session.root, name);
+                QVERIFY(checkbox);
+                QVERIFY(checkbox->property("checked").toBool());
+            }
             auto* settingsView = qobject_cast<QQuickItem*>(object(session.root, "activeSettings"));
             QVERIFY(settingsView);
             auto* flick = settingsView->property("contentItem").value<QQuickItem*>();
@@ -2016,6 +2035,14 @@ private slots:
         QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
         QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00"}));
         capture("reports-pie");
+        mouse("saveReportPdf");
+        auto* pdf = object(session.root, "reportPdfDialog");
+        QVERIFY(pdf);
+        QTRY_VERIFY(pdf->property("ready").toBool());
+        QVERIFY(pdf->setProperty("destination", "/Users/example/Documents/Household spending.pdf"));
+        capture("reports-pdf");
+        QVERIFY(QMetaObject::invokeMethod(pdf, "close"));
+        wait(session.model);
         mouse("navigationBack");
         QVERIFY(edit(session.root, "reportName", "Unfinished report name"));
         mouse("accountNavigation");
@@ -2279,7 +2306,7 @@ private slots:
         QCOMPARE(savedSplits.front().toMap().value("category").toString(),QString("Groceries"));
         mouse("ledgerRow_1",Qt::LeftButton,true);
         {
-            // Open the menu toward the right, so Change category has room to cascade.
+            // Open the ledger menu where the picker can remain beside the selected row.
             auto* row = qobject_cast<QQuickItem*>(object(session.root, "ledgerRow_1"));
             QVERIFY(row);
             const auto menuPoint = row->mapToScene(QPointF(qMax(100.0, row->width() - 80), 15)).toPoint();
@@ -2287,25 +2314,40 @@ private slots:
             wait(session.model);
         }
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
+        mouse("openLedgerCategoryFilter");
         QTRY_VERIFY(object(session.root,"ledgerCategoryMenu")->property("visible").toBool());
-        // Change category is the cascade. Close it if a duplicate menu is still open.
-        auto* duplicateMenu = object(session.root, "ledgerDuplicateMenu");
-        if (duplicateMenu && duplicateMenu->property("visible").toBool())
-            QVERIFY(QMetaObject::invokeMethod(duplicateMenu, "close"));
-        QTest::qWait(200);
         capture("categories-menu");
         mouse("ledgerCategoryChoice_0");
         QVERIFY(session.model.state().value("canUndoTransferAssignment").toBool());
         QVERIFY(undoLatest());
         mouse("ledgerRow_3",Qt::RightButton);
         QTRY_VERIFY(object(session.root,"ledgerContext")->property("visible").toBool());
-        QVERIFY(QMetaObject::invokeMethod(object(session.root,"ledgerCategoryMenu"),"open"));
+        mouse("openLedgerCategoryFilter");
         mouse("ledgerCategoryChoice_0");
         QTRY_VERIFY(object(session.root,"bulkCategoryDialog")->property("visible").toBool());
         capture("categories-split");mouse("ledgerCategorySplit_1");
         QVERIFY(undoLatest());
         QCOMPARE(session.model.state().value("balance").toString(),QString("-56.18"));
+
+        // Assign and clear a category so deleting it needs the history warning.
+        mouse("ledgerRow_1", Qt::LeftButton, true);
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openCategoryPicker", Q_ARG(QVariant, 0)));
+        QVERIFY(edit(session.root, "categoryPickerSearch", "Food: Eating out"));
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "categoryPickerSearch"), "accepted"));
+        wait(session.model);
+        QVERIFY(QMetaObject::invokeMethod(session.root, "openCategoryPicker", Q_ARG(QVariant, 0)));
+        QVERIFY(click(session.root, "chooseUncategorized"));
+        wait(session.model);
+        mouse("categoryNavigation");
+        QVERIFY(edit(session.root, "catalogSearch", "Food: Eating out"));
+        mouse("catalogList", Qt::RightButton);
+        mouse("deleteCategory");
+        auto* deletion = object(session.root, "deleteCategoryDialog");
+        QVERIFY(deletion);
+        QTRY_VERIFY(deletion->property("visible").toBool());
+        capture("categories-delete");
+        QVERIFY(QMetaObject::invokeMethod(deletion, "reject"));
+        wait(session.model);
     }
     void editingChapterWalkthrough() {
         HelpCatalog catalog;
@@ -2520,6 +2562,23 @@ private slots:
             QTRY_COMPARE(session.model.state().value("name").toString(), QString("Chequing"));
             QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
 
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("pending-picture.spentit")},
+                {"protected", false}, {"name", "Chequing"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "create_account", {{"id", "2"}, {"name", "Savings"},
+                {"currency", "CAD"}, {"date", "2026-01-01"}});
+            import("!Type:Bank\nD2026-02-01\nT10.00\nPDeposit one\n^\nD2026-02-01\nT10.00\nPDeposit two\n^\n", "2");
+            import("!Type:Bank\nD2026-02-01\nT-10.00\nPWithdrawal one\n^\nD2026-02-01\nT-10.00\nPWithdrawal two\n^\n", "1");
+            mouse("reviewNavigation");
+            const auto rows = session.root->property("orderedReviewRows").value<QJSValue>().toVariant().toList();
+            QCOMPARE(rows.size(), 2);
+            QVERIFY(QMetaObject::invokeMethod(session.root, "selectReviewLink",
+                Q_ARG(QVariant, rows.front().toMap().value("key")), Q_ARG(QVariant, QVariant(1))));
+            const auto chapterSize = session.window->size();
+            session.window->resize(chapterSize.width(), 1040);
+            capture("review-choices");
+            session.window->resize(chapterSize);
+
             // Show an automatic result on an already accepted purchase.
             run(session.model, "close");
             run(session.model, "create", {{"path", session.path("automatic-picture.spentit")}, {"protected", false},
@@ -2547,6 +2606,8 @@ private slots:
             import("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\n^\n", "2");
             mouse("reviewNavigation");
             QTRY_VERIFY(object(session.root, "reviewLinkCandidate_1"));
+            QVERIFY(!object(session.root, "reviewLinkCandidate_1")->property("checked").toBool());
+            capture("review-differing-amounts");
             mouse("reviewLinkCandidate_1");
             QTRY_VERIFY(object(session.root, "reviewYes") && object(session.root, "reviewYes")->property("enabled").toBool());
             mouse("reviewYes");

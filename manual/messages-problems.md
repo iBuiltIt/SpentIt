@@ -33,6 +33,15 @@ A copy opens with the password it had when you made it, which may differ from
 the password the working file uses now.
 [If the file won’t open](create-open-file.md#if-it-won-t-open).
 
+**“Enter a password.”**
+
+Type the password you want to use, then enter it again to confirm.
+
+**“Use a password of 1 to 64 characters.”**
+
+Choose a shorter password and type it in both fields. SpentIt uses
+UTF-8 text for your password.
+
 **“Password changed. This file asks for the new password the next time it is opened.”**
 
 The change is saved. Use the new password the next time you open this file.

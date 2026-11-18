@@ -73,8 +73,9 @@ There are two ways to add transactions:
 
 Once you have some transactions, take a look through them. Do you
 recognize the purchases? Is there anything that needs correcting?
-If the same purchase came in twice, maybe from a second import,
-those two entries need reviewing.
+SpentIt can match straightforward duplicates and transfers as you
+import, unless you turn those choices off in Settings. Open **Review**
+for matches that still need your attention.
 
 A transfer between your accounts is different: it belongs in both
 accounts, as the card payment did in our example.

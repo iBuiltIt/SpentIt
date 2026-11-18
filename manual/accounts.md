@@ -101,16 +101,22 @@ review the new transactions and use **Accept transactions** when
 ready. Acceptance covers new transactions across your accounts.
 Discard only if you intend to remove the new transactions.
 
-### Delete an unused account {#delete-an-unused-account}
+### Delete an empty account {#delete-an-unused-account}
 
-**Delete…** is for an unused account created by mistake. It must have
-no transactions, imports, or transfers, an unchanged zero opening and date,
-and another account must remain. A zero current balance alone is
-not enough; restoring an edited opening to zero does not make the
-account unused again.
+Use **Delete…** when an account has no transactions and its opening
+balance is zero. You can delete a formerly used account if it is now
+empty. At least one account must remain. Resolve any import problems,
+current transfers, or saved reports that use the account first. If an
+import could still put transactions back through **Undo import**, SpentIt
+keeps the account. You can use **Archive** to put it aside.
 
-Choose **Delete…**, then **OK** to remove it. If it is ineligible,
-use **Archive** to put it aside instead.
+Choose **Delete account** to confirm. If an earlier action needs this
+account for Undo or Redo, the confirmation tells you that deleting it
+clears both for the whole file. Choose **Cancel** to keep the account
+and your history.
+
+![Delete empty account confirmation with Cancel and Delete account buttons and a warning about clearing Undo and Redo.](images/accounts-delete.png)
+*Read the confirmation before deleting the account.*
 
 ### Choose the currency {#choose-the-currency}
 

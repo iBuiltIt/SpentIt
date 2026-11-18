@@ -56,7 +56,10 @@ you open it again. That check tells you what it found. It does not repair
 the file.
 
 For automatic duplicate and transfer matching, use the two checkboxes above
-**Hidden transfer matches…**. Both start off. See
+**Hidden transfer matches…**. Both boxes start checked. SpentIt
+remembers your choices for this file’s location. A copy opened from
+another location starts with both checked. Turning either box off
+affects later imports. See
 [Let SpentIt handle straightforward matches](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches)
 to decide whether either would suit your imports.
 
@@ -68,12 +71,12 @@ is **not** running. A copy keeps the password it had when you made it.
 There is no way to open a file whose password you have forgotten.
 
 Open **Settings** while the file is open. To change the password, enter
-the current password, then type the new password twice, and choose
-**Change password**. The next time you open this file, use the new
-password.
+the current password. Type the new password twice, using 1 to 64
+characters, and choose **Change password**. The next time you open
+this file, use the new password.
 
-A file with no password says **This file has no password.** Type the new
-password twice and choose **Change password** to start protecting it.
+A file with no password says **This file has no password.** Type your
+new password twice and choose **Change password** to start protecting it.
 
 To remove password protection, leave both new-password fields empty and
 choose **Change password**. Confirm **Remove password protection**.
@@ -86,7 +89,7 @@ confirm the change, close the file and open it with the new password
 before you do anything else. If it says the password was not changed,
 the file still uses the password it had.
 
-![Settings for the Household file, with amount formatting, automatic Merge and Link both unchecked, and password fields.](images/settings.png)
+![Settings for the Household file, with amount formatting, automatic Merge and Link both checked, and password fields.](images/settings.png)
 *Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}

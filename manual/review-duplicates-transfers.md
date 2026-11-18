@@ -48,7 +48,9 @@ dates. Two purchases on neighboring days can still be separate.
   when you still need to choose which one to keep. Three or more checks
   in that group are left as they are.
 - **Show in ledger** opens one of the entries in its account.
-- **Inspect** opens a row so you can read it. It does not answer the question.
+- **Inspect** opens the entry in its account ledger, among the
+  surrounding transactions. Use **Back** to return to the same question
+  with your choices still in place.
 
 If asked **Choose the transaction to keep**, choose the entry whose
 current details you want to retain. Its payee, memo, categories and
@@ -100,18 +102,39 @@ question starts from the withdrawal, and the deposit is the other line.
 The number in **Review (n)** includes it once. A different payment has
 its own section in Review.
 
-In a transfer question, check both account names, the signs and the
-dates. Select the matching candidate’s round button if there is more
-than one. A preselected candidate is only a suggestion.
+In a transfer question, check both account names, the signs and the dates.
+Straightforward pairs with equal amounts start checked at the top.
+Other cards start undecided. Check the partner that belongs with the
+payment. If another pending link already uses that entry, its checkbox
+is dimmed. You can still read the details or use **Inspect**. Release
+the other choice to make the entry available again.
 
-![Review transfer question connecting a 36.18 Credit card deposit with the 36.18 Chequing withdrawal dated one day earlier.](images/review-link.png)
-*Link connects the selected pair. Not this transfer leaves both lines in their accounts. Neither choice merges them into one account.*
+![Review with a checked transfer partner, pending counts and Apply decisions beside Undo import.](images/review-link.png)
+*Check the pending decisions before saving them.*
 
-Choose **Link** for the selected pair. Choose **Not this transfer** when
-that pair is not the same payment. Both imported lines stay in their
-accounts, and neither becomes ordinary spending. If either transaction
-has several splits, use **Split to link** to choose the relevant part
-on each side. Check any preselected split before proceeding.
+- Uncheck the selected partner to set **Not this transfer**. Use
+  **Mark not a transfer** to set that answer for every partner on the card.
+- Choose **Decide later** to leave the card out. Unchecking, rejecting,
+  or setting a card aside can clear checks that depended on that choice.
+  Choosing a partner can suggest new checks on related cards. Review
+  those changes before saving. Your own rejections and deferrals stay
+  in place.
+- To save the displayed counts of links and rejections together, choose
+  **Apply decisions** beside **Undo import**. One **Undo** reverses the
+  batch. Cards that still need a split or amount choice wait for you.
+- To save just one card, use its **Link** or **Not this transfer** button.
+  Your other pending choices stay. If a choice is flagged after a change,
+  check the card and choose again.
+
+![Two related transfer cards. Deposit one is checked on the first card and its checkbox is dimmed on the second.](images/review-choices.png)
+*The second card suggests Deposit two. To make Deposit one available there, release it on the first card.*
+
+An unanswered card stays out of the batch. **Inspect** and **Back** keep
+pending choices. Leaving Review by another route clears them.
+
+If either transaction has several splits, use **Split to link** where
+shown. Check the parts before linking. A rejected pair stays in its two
+accounts, with neither line treated as ordinary spending.
 
 Suggestions use the same currency, opposite signs, and dates no more
 than seven calendar days apart. Ordinary spending categories can
@@ -151,9 +174,15 @@ Suppose Chequing shows **37.18 paid** but Credit card received **36.18**.
 If the extra **1.00** is a real fee, it belongs in an ordinary category,
 not in the amount transferred.
 
-Choose **Link**. When the amounts differ, **Link the matching amount**
-opens. Choose the category for the difference, then **Link**. **Cancel**
-leaves the question unanswered.
+The partner starts unchecked and may say **Amounts differ — review before
+linking**.
+
+![Review shows an unchecked 36.18 deposit as a possible match for a 37.18 withdrawal, with the differing-amount message.](images/review-differing-amounts.png)
+*Check the partner you want to review before choosing Link.*
+
+Check it and choose the card’s **Link** button.
+In **Link the matching amount**, choose a category for the difference,
+then choose **Link** to save. **Cancel** leaves the question open.
 
 ![Link the matching amount dialog offering to link 36.18 and categorise the 1.00 difference, with Link and Cancel buttons.](images/review-difference.png)
 *Choose a suitable fee category if the statement confirms a fee. Uncategorized leaves it to categorize later.*
@@ -194,6 +223,14 @@ If Review shows **Import problems**, choose **Review…** on that line.
 A line that names a transaction opens it. A line that does not opens
 that account’s ledger.
 
+With automatic linking on, confirming **Merge this payment?** in the
+ledger can also link remaining pairs that have just one clear match
+in the same group. Check the summary for any additional pairs.
+The links save together and one Undo reverses them. Cancelling while
+the links are being prepared leaves the whole group as it was.
+Redo puts back the same pairs. Any ambiguous pairs still need your
+attention, and you still choose when to accept transactions.
+
 For suggestions you do not want to see again, choose **Hide suggestions…**
 on a transfer row. **Don’t suggest links** asks for payee or memo text.
 By default that text must match the whole field, ignoring capitalization
@@ -204,23 +241,27 @@ matches…**.
 
 ## Let SpentIt handle straightforward matches
 
-Once you are comfortable with Review, you can let SpentIt resolve simple
-pairs after each import. In **Settings**, above **Hidden transfer matches…**,
-choose either or both:
+SpentIt checks for straightforward matches after an import finishes
+its category choices and rules. Both settings start checked. In
+**Settings**, above **Hidden transfer matches…**, you can turn off either
+one for later imports:
 
 - **Automatically merge one-to-one duplicate suggestions**
 - **Automatically link one-to-one transfer suggestions**
 
-Both start off. Your choices apply to this file on this computer; a copy
-opened from another location starts with both off. Turning them on does not
-resolve existing questions immediately. They run after a later import has
-finished its category choices and rules.
+SpentIt remembers these choices for this file’s location. A copy opened
+from another location starts with both checked.
 
-Each entry must have only the other as a possible match. Duplicate dates and
-amounts must agree, and SpentIt must be able to choose which entry to keep.
-Dates a day apart and groups with a third candidate still need your attention.
-Automatic links need equal, opposite amounts in the same currency, with one
-split on each side. Split choices and amount differences stay in Review.
+SpentIt looks for clear same-day pairs involving the new import
+first. Then it checks the remaining pairs. A duplicate can be a day apart if each entry has
+only the other as a match, their amounts agree, and SpentIt can
+tell which entry to keep. Transfers can be up to seven calendar days
+apart. One pair of equal and opposite splits in the same currency can
+link while other splits stay as they are. When more than one pair of
+splits fits, or the amounts differ, choose what to do in Review.
+
+While this runs you’ll see **Checking duplicate and transfer
+suggestions**, followed by counts as SpentIt merges or links them.
 
 Check the import summary for how many pairs were merged or linked, then
 look over the marked transactions. An indigo edge means Merged; a green edge
@@ -231,16 +272,18 @@ too, and stay if you close and reopen the file.
 *The accepted purchase stays, with a mark to help you check the automatic result.*
 
 You still choose **Accept transactions** when you are ready. It clears those
-marks, even when there are no new transactions left. If automatic review
-stops with an error, check the completed counts and the remaining Review
-questions before trying again; the import and earlier completed pairs may
-already be saved.
+marks, even when there are no new transactions left. If automatic
+matching is cancelled or fails, the import stays and none of those
+pairs are saved. The summary
+asks you to review the remaining matches.
 
 ## Undo a mistaken answer
 
 If Merge or Link was your latest saved action, choose **Edit → Undo**, or
 press **Command+Z** on a Mac or **Ctrl+Z** on Windows and Linux. A batch of
-merges is one step. Each automatic pair is a separate step after its import.
+decisions is one step. Matches made during import are saved with that
+import. **Undo import** removes them together with the imported entries.
+Use **Unmerge** to break one link or merge on its own.
 To undo an earlier answer, undo the newer actions first. You can inspect
 that order in **Change history** and put an undone answer back with **Redo**.
 See [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
@@ -258,7 +301,14 @@ link kept both transactions, Unmerge leaves both in place and separates them.
 Accepted payments stay accepted. Restored extra transfer entries return as
 new transactions, with blue marks where the payment is shown twice again.
 You can use Merge to join the payment again, or answer its Link question in
-Review. If a later transfer correction, including a date change, prevents
+Review. If the imported destination was wrong, open the original
+transaction and choose a category or **Uncategorized**. Choose
+**Correct** on a Review problem to open the transaction editor, even
+if you previously closed it. An independent posting in the other
+account stays. After cleanup, you can [delete an empty account](accounts.md#delete-an-unused-account)
+if it meets the deletion requirements.
+
+If a later transfer correction, including a date change, prevents
 Unmerge, undo that correction first.
 
 A refused Merge or Link leaves a message explaining what needs attention.

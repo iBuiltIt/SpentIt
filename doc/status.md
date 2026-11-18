@@ -733,6 +733,27 @@ included; see [Manual](#manual).
 
 ## Manual
 
+The owner-authorized 2026-11-18 pass completed MAN-057 through MAN-076 in
+bundled Help. It covers password and file opening, statement import, ledger
+and category editing, Review and automatic matching, account and category
+deletion, report transaction edits, and PDF export. The manual has 45
+pictures. Four were refreshed and five were added, including a PDF preview
+and both deletion confirmations. All 17 topic IDs and existing section IDs
+were preserved. The [backlog](manual-update-backlog.md) is empty and its next
+entry remains MAN-077.
+
+On macOS arm64 with Qt 6.12.0, all eleven native screenshot walkthroughs
+passed and produced the full set of 45 synthetic pictures in staging. The
+nine pictures used in this pass were visually inspected before installation.
+Native Help passed all 16 chapter and reference reading cases and both
+continuous walkthroughs. Review and Recovery passed again after the final
+wording edits. The rules-enabled Release app was rebuilt and
+`./build/SpentIt --smoke` passed offscreen. `help.prepare`,
+`help.capture_manual_images`, `help.catalog`, relative links in the changed
+documents, and `git diff --check` passed.
+
+### Previous pass
+
 The owner-authorized 2026-11-14 pass brings MAN-045 through MAN-056 into the
 bundled manual, including both notes previously labelled MAN-045. The earlier
 selective History guidance was replaced by the current file-wide Undo/Redo

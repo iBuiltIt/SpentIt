@@ -25,6 +25,9 @@ Click a row to select it without opening its editor.
   current list, including rows that are off screen. It leaves out Opening
   Balance. **Command+Shift+A**, or **Ctrl+Shift+A**, clears the selection.
   In a text field those shortcuts act on the text.
+- **Page Up / Page Down:** move one screen in the account ledger or
+  report transaction list. Hold **Shift** to extend the selection.
+  A text field keeps these keys while you type.
 - **Enter:** open the focused transaction.
 - **Right-click:** open the actions for the selection. Check the selected
   rows before changing or deleting them.
@@ -37,12 +40,20 @@ Click a row to select it without opening its editor.
 another row leaves that editor where it is.
 
 - **Tab / Shift+Tab:** move forward or backward between editor fields.
+- **Amount:** Tab, Shift+Tab or click into the field to select the
+  amount. Type to replace it, or click again to place the cursor.
 - **Enter** in the date, payee, amount or memo: save the complete edit.
 - **Escape:** discard changes since the last save. In an unsaved new
   entry, it cancels the entry.
-- In a category field, type to find choices. Use **Up/Down**, then
-  **Enter** or **Tab** to choose. **Escape** first closes the suggestions.
-  **Shift+Tab** abandons an unchosen category search and moves back.
+- In a category field, **Tab** moves to the memo if you leave the
+  category alone. After typing or pressing **Up/Down**, **Tab** chooses
+  the highlighted suggestion. With no match it restores the category
+  and moves on. **Enter** chooses a suggestion or stays in the field
+  if there is none. **Escape** first closes suggestions, and
+  **Shift+Tab** moves back without choosing.
+- In **Change category** from the ledger menu, type part of a name.
+  **Up/Down** moves through the matches and **Enter** chooses one.
+  Click a choice to use it, or press **Escape** or click outside to close.
 - **Home/End** in a text field: move to the start or end of its text.
   Hold **Shift** to select the text along the way.
 

@@ -23,6 +23,16 @@ Choose **Import…** in the sidebar, then select the downloaded file.
 If you know which account it belongs to, you can instead right-click
 that account and choose **Import…**.
 
+On a Mac, you can also double-click a statement set to open with SpentIt,
+choose **Open With → SpentIt**, or drop it on SpentIt in the Dock. Those routes work like the
+sidebar’s **Import…**. Drop a statement on an account in the sidebar
+or on its open ledger to import through that account. A drop on a
+report or another page works like the sidebar’s **Import…**.
+
+Open or drop one statement at a time. If no SpentIt file is open, the
+statement waits until you open one. If the destination is archived,
+SpentIt asks you to reactivate it. Files in other formats are refused.
+
 SpentIt uses a recognized account when it can. If the file does not
 identify an account, the sidebar route asks you to choose a destination.
 Select it and choose **OK**. Importing from an account’s right-click
@@ -131,9 +141,8 @@ is covered later in the guide.
 The bottom status line reports how many records were **added**,
 **already present**, or **failed**. Select each affected account and
 check its transactions and balance. A category choice may replace
-the completion message with “Imported categories applied.” If you enabled
-[automatic Merge or Link](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches),
-the summary also reports the pairs resolved. Check their marks in the ledger
+the completion message with “Imported categories applied.” The summary
+also reports any pairs resolved by [automatic Merge or Link](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches). Check their marks in the ledger
 and any questions left in Review.
 
 ![Credit card ledger with the 42.18 Market purchase, the 6.00 refund, and an opening dated the day before the purchase. The balance is -36.18.](images/import-results.png)

@@ -34,6 +34,9 @@ reports; you can accept it later. **Escape** cancels an unsaved new entry.
 
 You can choose an existing category by typing part of its name, then
 clicking a suggestion or using **Up/Down** and **Enter** or **Tab**.
+If you Tab through without typing or moving through suggestions, you
+keep the category and move on to the memo. To change several rows,
+use the [searchable Change category picker](categories.md#change-selected-transactions).
 For a new entry, press Enter in the date, payee, amount or memo to save.
 On an existing transaction, choosing a category also saves the complete
 valid edit, so fill in the other fields first. A blank category means **Uncategorized**. Typing a
@@ -68,6 +71,9 @@ Choosing a date changes the field; press Enter in the editor to save it.
 *The calendar uses the date already in the field. Correct an invalid date before opening it.*
 
 ### Enter an amount or a calculation
+
+Tab, Shift+Tab or click into an amount field to select the whole
+amount. Start typing to replace it, or click again to place the cursor.
 
 Use your file’s amount style. Our examples use `1,234.56`; your file may
 use a different grouping or decimal mark. With amount formatting off,
@@ -200,7 +206,11 @@ Saving a new change clears the waiting Redo actions. Saving a rule, category,
 report or setting clears Redo too, though those saves are not Undo steps. Selecting rows, searching and previewing a rule leave
 Redo available.
 
-One import is one action, including rules that ran during the import.
+When linking a payment also links other clear matches, one Undo
+reverses all those links. Redo puts the same links back. See
+[Linking payments](review-duplicates-transfers.md#if-there-is-no-suitable-question).
+
+One import is one action, including rules and automatic matches.
 Undoing it removes those transaction changes. Accounts, categories and
 opening balances created for the import stay. **Import Undo cannot be
 redone**, and it clears any waiting Redo actions. Import the original file
