@@ -5143,9 +5143,9 @@ ApplicationWindow {
                             Accessible.name:"Split category"
                             savedText:index>=0 && index<splitModel.count ? (splitModel.get(index).categoryDisplay==="Uncategorized" ? "" : splitModel.get(index).categoryDisplay||"") : ""
                             property bool unresolvedTransfer:category.startsWith("[") && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
-                            allowUncategorized:!unresolvedTransfer
+                            allowUncategorized:true
                             model:sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){
-                                return (!unresolvedTransfer || c.account) && (!selected.newManual || !c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable)
+                                return (!selected.newManual || !c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable)
                             }))
                             onChoiceAccepted:function(choice) {
                                 // Move first so durable acceptance restores the intended next field.

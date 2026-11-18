@@ -25,6 +25,115 @@ class ReportUiTests:public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItReportsTests");QCoreApplication::setApplicationName("Reports");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
     void init(){QSettings().clear();}
+    void importedSplitKeyboardEditing_data() {
+        QTest::addColumn<bool>("report");
+        QTest::addColumn<bool>("accepted");
+        QTest::addColumn<bool>("unresolved");
+        QTest::newRow("account-new") << false << false << false;
+        QTest::newRow("account-accepted") << false << true << false;
+        QTest::newRow("report-new") << true << false << false;
+        QTest::newRow("report-accepted") << true << true << false;
+        QTest::newRow("account-unresolved") << false << false << true;
+        QTest::newRow("report-unresolved") << true << false << true;
+    }
+    void importedSplitKeyboardEditing() {
+        QFETCH(bool, report);
+        QFETCH(bool, accepted);
+        QFETCH(bool, unresolved);
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow", &model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model, "create", {{"path", dir.filePath("document")}, {"protected", false},
+                              {"name", "Checking"}, {"currency", "CAD"}});
+        run(model, "preview_category", {{"action", "create"}, {"name", "Books"},
+                                        {"revision", model.state().value("catalogRevision")}});
+        const auto category = model.state().value("categorySelected").toMap().value("id");
+        QVERIFY(!category.toString().isEmpty());
+        QFile file(dir.filePath("splits.qif"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("D2026-01-15\nT-40.00\nPSynthetic splits\nS\nEFirst\n$-30.00\n");
+        file.write(unresolved ? "S[Missing savings]\n" : "S\n");
+        file.write("ESecond\n$-10.00\n^\n");
+        file.close();
+        run(model, "import", {{"path", file.fileName()}, {"account", "1"}});
+        const auto selection = [&] { return model.state().value("selected").toMap(); };
+        const auto batch = selection().value("batch").toString();
+        QVERIFY(!batch.isEmpty());
+        if (accepted)
+            run(model, "commit");
+        if (report) {
+            const QVariantMap definition{{"id", "spending"}, {"name", "Synthetic spending"},
+                {"graph", "bar"}, {"accounts", QVariantList{"1"}}, {"categories", QVariantList{""}},
+                {"periods", QVariantList{QVariantMap{{"preset", "custom"},
+                    {"start", "2026-01-01"}, {"end", "2026-01-31"}}}}};
+            run(model, "report_save", {{"revision", model.state().value("reportRevision")},
+                                       {"reports", QVariantList{definition}}});
+            run(model, "report_show", {{"id", "spending"}});
+            window->setProperty("currentPage", "reports");
+            run(model, "report_drill", {{"currency", 0}, {"period", 0}, {"row", 0}});
+            QVERIFY(QMetaObject::invokeMethod(object(window, "reportsWorkspace"), "load"));
+        }
+        QCOMPARE(window->property("reportLedger").toBool(), report);
+        run(model, "inspect", {{"batch", batch}, {"ordinal", 0}});
+        QCOMPARE(selection().value("committed").toBool(), accepted);
+        const auto original = selection().value("sourceFields");
+        const auto field = [&](const char* name) { return qobject_cast<QQuickItem*>(object(window, name)); };
+        const auto focus = [&] {
+            auto* item = window->activeFocusItem();
+            return item ? item->objectName() : QString();
+        };
+        const auto splits = [&] { return selection().value("draft").toMap().value("splits").toList(); };
+        QTRY_VERIFY(field("durableTotal") && field("durableTotal")->isVisible());
+        field("durableTotal")->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_COMPARE(focus(), "splitCategory_0");
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_COMPARE(focus(), "editSplitMemo_0");
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_COMPARE(focus(), "editSplitAmount_0");
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_COMPARE(focus(), "splitCategory_1");
+        if (unresolved)
+            QTRY_VERIFY(field("splitCategory_1")->property("selectedText").toString().contains("Missing savings"));
+        QTest::keyClick(window, Qt::Key_B);
+        QTest::keyClick(window, Qt::Key_O);
+        QTRY_COMPARE(field("splitCategory_1")->property("text").toString(), "bo");
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(), qPrintable(model.error()));
+        QTRY_COMPARE(splits().at(1).toMap().value("categoryId"), category);
+        QTRY_COMPARE(focus(), "editSplitMemo_1");
+        QTest::keyClick(window, Qt::Key_End);
+        QTest::keyClick(window, Qt::Key_X);
+        QTRY_COMPARE(field("editSplitMemo_1")->property("text").toString(), "Secondx");
+        QTest::keyClick(window, Qt::Key_Tab);
+        QTRY_COMPARE(focus(), "editSplitAmount_1");
+        QTRY_COMPARE(field("editSplitAmount_1")->property("selectedText").toString(), "-10.00");
+        for (const auto key : {Qt::Key_Minus, Qt::Key_1, Qt::Key_2})
+            QTest::keyClick(window, key);
+        QTRY_COMPARE(field("editSplitAmount_1")->property("text").toString(), "-12");
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(), qPrintable(model.error()));
+        QTRY_COMPARE(splits().at(1).toMap().value("memo").toString(), "Secondx");
+        QCOMPARE(splits().at(1).toMap().value("amount").toString(), "-12.00");
+        QCOMPARE(splits().at(0).toMap().value("amount").toString(), "-28.00");
+        run(model, "close");
+        run(model, "open", {{"path", dir.filePath("document")}});
+        run(model, "inspect", {{"batch", batch}, {"ordinal", 0}});
+        QCOMPARE(splits().at(1).toMap().value("categoryId"), category);
+        QCOMPARE(splits().at(1).toMap().value("memo").toString(), "Secondx");
+        QCOMPARE(splits().at(1).toMap().value("amount").toString(), "-12.00");
+        QCOMPARE(selection().value("draft").toMap().value("total").toString(), "-40.00");
+        QCOMPARE(selection().value("sourceFields"), original);
+        run(model, "close");
+    }
     void pdfWorkflow(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

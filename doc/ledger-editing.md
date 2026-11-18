@@ -1,6 +1,6 @@
 # Ledger editing and session Undo
 
-Last updated: 2026-11-16
+Last updated: 2026-11-18
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. Rules match imported fields. The release rules database is version 1.
@@ -86,8 +86,10 @@ available category names and account names/aliases. Empty text shows all choices
 including an explicit Uncategorized choice first so clearing can remove an
 assignment. Archived/deleted categories and the current account are excluded.
 Existing retained classifications remain visible until deliberately replaced.
-Unresolved imported transfer allocations offer account destinations only and use
-the existing explicit transfer-resolution command.
+For a split with an unresolved imported transfer destination, choose an
+ordinary category or Uncategorized to replace the destination. Choosing an
+account uses the explicit transfer-resolution command. The original imported
+destination remains available.
 
 Typing highlights the first match; Up/Down changes that selection. Click or
 Enter chooses the highlighted row, using the existing complete-edit acceptance

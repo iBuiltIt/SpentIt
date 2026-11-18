@@ -13,6 +13,24 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Keyboard edits on imported splits — 2026-11-18
+
+The inline category picker now offers ordinary categories and Uncategorized
+for a split with an unresolved imported transfer destination. Choosing an
+account still uses the transfer-resolution command. See
+[ledger editing](ledger-editing.md#category-completion--owner-go-2026-11-01).
+Manual work is MAN-077.
+
+On macOS arm64 with Qt 6.12.0, both unresolved-destination keyboard cases
+failed before the fix and passed afterward. Six rules-enabled Release cases
+used Tab and keystrokes to edit and save the category, split memo, and split
+amount in the account ledger and report transaction list. The cases covered
+ordinary New and Accepted QIF transactions and New transactions with an
+unresolved transfer split. Reopening confirmed the edits, exact total, and
+retained original fields. The report and category UI suites, transfer
+assignment, and transfer cleanup passed. The rebuilt `./build/SpentIt --smoke`
+passed offscreen. Changed documentation links and `git diff --check` passed.
+
 ## Delete-account confirmation layout — 2026-11-18
 
 Owner Go balances the empty-account confirmation. The dialog is at most 520

@@ -21,14 +21,21 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-077. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-078. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
 
-None.
+### MAN-077 — Correct an unresolved transfer split · 2026-11-18
+
+In [Add or correct transactions](../manual/add-correct-transactions.md) and
+[Review duplicates and transfers](../manual/review-duplicates-transfers.md),
+explain that the inline category field can replace an unresolved imported
+transfer destination with an ordinary category or Uncategorized. Cover the
+account ledger and report transaction list. Existing pictures show ordinary
+split editing and linked transfers. See [ledger editing](ledger-editing.md#category-completion--owner-go-2026-11-01).
 
 ## Recapturing pictures
 
