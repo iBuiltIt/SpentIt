@@ -106,11 +106,9 @@ Choose **File → Close file** to return to the welcome screen. From
 there, open another file or create a new one. If an unfinished edit
 needs a decision, SpentIt asks before leaving.
 
-Saved transactions stay in your file, including those you haven’t
-accepted yet. An edit still waiting for **Save** or **Enter** is not
-saved yet. A successful close also clears Undo and Redo. If closing fails or
-you cancel it, both are still there when you return.
-[When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
+A successful close clears Undo and Redo. See
+[what you can still undo after reopening](add-correct-transactions.md#when-undo-is-no-longer-offered)
+and [how to leave new transactions for later](accept-transactions.md#leave-them-new-and-return-later).
 
 You now have a place for your transactions. Next comes setting up
 your accounts and their starting balances.

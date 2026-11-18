@@ -57,19 +57,12 @@ current details you want to retain. Its payee, memo, categories and
 splits stay; Merge does not combine everyone’s edited fields.
 
 ![Choose the transaction to keep dialog offering the Market groceries and Market entries for the same 42.18 purchase.](images/review-keep.png)
-*Here both copies are new, so you choose which one to keep. Cancel leaves them separate.*
+*Choose the Market entry with the details you want to keep.*
 
 With one accepted entry, SpentIt normally keeps that entry without
 asking. A manually entered transaction takes priority when matching
 it to an import: the manual entry stays and gains its imported original.
 Without automatic Merge enabled, you still choose whether to merge the pair.
-
-For these examples, we return to the original Market purchase and
-refund, without the extra Corner shop purchase from the previous
-chapter. Keeping one 42.18 purchase and the 6.00 refund leaves the
-card balance at **-36.18**. If you kept Corner shop too, the balance is
-**-56.18** before the payment and **-20.00** afterward. Keep that purchase;
-these pictures show only the Market example.
 
 ### Merge several matches
 
@@ -147,7 +140,7 @@ After linking, the category names the other account. Click its arrow
 to visit the related posting, then use **Back** to return.
 
 ![Credit card ledger after linking the payment, showing Chequing as the payment category with a navigation arrow and a zero balance.](images/review-linked.png)
-*The payment clears the 36.18 card debt. Chequing still contains its withdrawal.*
+*In this example, the card holds just the Market purchase and refund. Linking the 36.18 payment clears that debt.*
 
 ### If SpentIt created the other side {#if-spentit-created-the-other-side}
 
@@ -230,14 +223,11 @@ the first entry, right-click and choose **Link to other account…**. Switch
 accounts, select the other entry, then choose **Link to other account…** again.
 The same steps work when the accounts use different currencies. One
 amount should be money going out and the other money coming in.
-SpentIt keeps both amounts. It does not look up a rate or change
-either posting. If a fee should stay visible on its own, give it a
-split before you link, then link the transfer amount rather than the
-whole purchase. If you see **Choose which split to transfer**, the
-entry has more than one part and Link could not tell which one you
-meant. In a Review question, use **Split to link** when it is offered.
-Read the confirmation before you apply the link. The command still
-checks whether the two postings can be linked.
+SpentIt keeps the amount from each account. For a payment with several
+splits, use **Split to link** when Review offers it. If the two bank
+amounts differ because of a fee, see [When the amounts differ](#when-the-amounts-differ).
+
+Read the confirmation before applying the link.
 
 If Review shows **Import problems**, choose **Review…** on that line.
 A line that names a transaction opens it. A line that does not opens
@@ -299,14 +289,10 @@ asks you to review the remaining matches.
 
 ## Undo a mistaken answer
 
-If Merge or Link was your latest saved action, choose **Edit → Undo**, or
-press **Command+Z** on a Mac or **Ctrl+Z** on Windows and Linux. A batch of
-decisions is one step. Matches made during import are saved with that
-import. **Undo import** removes them together with the imported entries.
-Use **Unmerge** to break one link or merge on its own.
-To undo an earlier answer, undo the newer actions first. You can inspect
-that order in **Change history** and put an undone answer back with **Redo**.
-See [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+If Merge or Link was your latest saved action, choose **Edit → Undo**.
+A batch of decisions is one step. Matches made during an import are undone
+[with that import](import-transactions.md#undo-a-mistaken-import). For an
+earlier answer, see [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 
 For a joined transaction, you can also select its row in the account ledger,
 right-click and choose **Unmerge**. This can remain available after acceptance
@@ -334,5 +320,5 @@ Unmerge, undo that correction first.
 A refused Merge or Link leaves a message explaining what needs attention.
 Different current totals or existing transfer relationships can prevent
 a merge. Refresh your comparison and correct only values you know are
-wrong. If SpentIt cannot confirm whether an operation was saved, reopen
-the file and inspect the result before trying again.
+wrong. If the message says the result is uncertain, [check before
+retrying](backup-recovery.md#a-change-failed-or-its-result-is-unclear).

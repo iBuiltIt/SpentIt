@@ -33,8 +33,6 @@ To look at a copy, start SpentIt and use **Browse…** on the welcome
 screen. Select the copy and enter its password if asked. Check the
 accounts, balances and recent transactions.
 
-Work added after the copy was made will not be in it.
-
 ## Adjust how you read and enter amounts {#adjust-how-you-read-and-enter-amounts}
 
 Settings shows the file’s **Date format**. That format was chosen when the
@@ -50,18 +48,11 @@ Changing presentation does not change the amounts or convert currencies.
 See [Enter an amount or a calculation](add-correct-transactions.md#enter-an-amount-or-a-calculation)
 for examples.
 
-**Remember window size and position** controls how the application window
-opens next time. If SpentIt stops unexpectedly, it checks the file when
-you open it again. That check tells you what it found. It does not repair
-the file.
+Turn on **Remember window size and position** to reopen SpentIt with the
+same window size and position.
 
-For automatic duplicate and transfer matching, use the two checkboxes above
-**Hidden transfer matches…**. Both boxes start checked. SpentIt
-remembers your choices for this file’s location. A copy opened from
-another location starts with both checked. Turning either box off
-affects later imports. See
-[Let SpentIt handle straightforward matches](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches)
-to decide whether either would suit your imports.
+For the automatic matching options in Settings, see
+[Let SpentIt handle straightforward matches](review-duplicates-transfers.md#let-spentit-handle-straightforward-matches).
 
 ### Change or remove the password {#change-or-remove-the-password}
 
@@ -155,38 +146,28 @@ cuts it short.
   to write. Reopen and inspect the affected work before deciding what to repeat.
 
 After an interruption, reopen the file and check Review. If SpentIt says an
-incomplete import was removed, you can import that export again. Completed
-imports and saved new transactions do not need accepting merely to survive
-closing the app. See [Check the result](import-transactions.md#check-the-result)
-for records that still need attention.
+incomplete import was removed, you can import that export again. For a
+completed import, [check which records still need attention](import-transactions.md#check-the-result).
 
 ### Checking could not finish on quit {#checking-could-not-finish-on-quit}
 
 While SpentIt is closing, wait for **Closing SpentIt…** to finish.
 
-If **Couldn’t finish checking the file** appears, **Return** brings you back
-to the app. **Quit anyway** closes it; SpentIt will check the file again the
-next time you open it. Neither choice repairs a damaged file.
-
-If closing itself cannot finish, the title is **Couldn’t close the file**.
-**Return** brings you back so you can try again. **Quit anyway** closes
-SpentIt and checks the file the next time you open it. Neither repairs
-damage. Undo remains until a close succeeds. See
-[When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
+If you see **Couldn’t finish checking the file** or **Couldn’t close the
+file**, choose **Return** to go back and try again. **Quit anyway** closes
+SpentIt and defers the check until you next open the file. If the file
+fails verification then, [open a backup copy](#the-file-will-not-open).
+For Undo after a failed close, see [When Undo is no longer
+offered](add-correct-transactions.md#when-undo-is-no-longer-offered).
 
 ### If you still need help
 
 Note the exact message, the action you took, and your operating system.
 On a Mac, choose **About SpentIt** in the application menu. On Windows and
 Linux, choose **Help → About SpentIt**. **Copy version information** copies
-the version and build. **License and terms…** and **Third-party software…**
-open in that window, without a network connection. **Back** returns from
-those pages. **Close** leaves About. **Provided as is, without warranty**
-is not a promise that a file cannot be damaged. Make and keep a backup copy
-of the file after a successful close.
+the version and build so you can include them in your report.
 
-A small made-up example can help explain
-the problem. Remove names, account details and amounts from screenshots you
+A small made-up example can help explain the problem. Remove names, account details and amounts from screenshots you
 share; do not send passwords, your financial file or bank exports.
 
 ## Find a particular problem

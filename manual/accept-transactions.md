@@ -17,28 +17,19 @@ in balances and reports. Accepting marks them as checked; it isn’t needed to s
 
 ## Accept the transactions you’ve checked
 
-Open **Review** in the sidebar. The button and the heading read
-**Review (n)** for the questions still open. With nothing waiting, that
-is **Review (0)**, as in the picture. When a transfer names an account
-that is not in the file, they add **[w]** for those warnings. Look
-through any remaining questions, then choose **Accept transactions**
-at the bottom.
+Open **Review** in the sidebar and look through any remaining questions.
+When you’re ready, choose **Accept transactions** at the bottom.
 
 ![Review (0), with Accept transactions at the bottom and no questions open.](images/accept-ready.png)
 *Accept transactions covers the new entries in both Chequing and Credit card.*
 
-These screenshots show the purchases and refund before recording the card payment.
-The Market purchase, refund and Corner shop split leave the
-card balance at **-56.18**. Accepting them leaves that balance unchanged.
-The example file also contains a **2,000.00** payday in Chequing; that entry is accepted
-at the same time.
+In our example, that means the card purchases and refund, plus a
+**2,000.00** payday in Chequing. The card balance is already **-56.18**.
 
 Wait for the status line to confirm acceptance. It tells you how many new
 transactions were accepted across all accounts and whether import problems
-remain. Accept also clears the indigo Merge and green Link marks you have
-checked, including automatic results on already accepted transactions. It
-stays available when only those marks remain. With neither new transactions
-nor marks to clear, it is disabled, as it is while SpentIt is busy.
+remain. Accept also clears the indigo Merge and green Link marks, including
+automatic results on already accepted transactions.
 
 Accepted transactions can still be [corrected](add-correct-transactions.md).
 However, an import containing accepted transactions can no longer be undone
@@ -58,12 +49,9 @@ Choosing **Accept transactions** while questions or warnings remain opens
 - **Warnings you may proceed with:** **Accept anyway** is available when
   there is no problem that must be fixed first. If a transfer has no
   matching transaction from the bank, the question names the account and
-  the count. One reads **Chequing. There is 1 unmatched transfer
-  transaction.** Several read **Chequing. There are 3 unmatched transfer
-  transactions.** Use **Accept anyway** only if you understand the
-  warnings. Suspected duplicates are kept as separate transactions. An unresolved
-  already-imported entry still needs its Review answer; Accept anyway does
-  not add it again.
+  the count. Check the account before choosing **Accept anyway**.
+  Suspected duplicates count as separate transactions. An entry that
+  might already be imported still needs its own Review answer.
 - **Problems that must be resolved first:** the warning says **Must be fixed
   before accepting**. When a transfer names an account that is not in the
   file, Review lists it beside **Accept transactions** as **Warnings [n]**.
@@ -96,9 +84,8 @@ value from your statement. If the import itself was a mistake, check whether
 [Undo import…](import-transactions.md#undo-a-mistaken-import) is still available
 before accepting any of it.
 
-If acceptance fails, read the message before trying again. When SpentIt cannot
-confirm whether the change was saved, reopen the file and check the transactions
-first. Do the same if acceptance succeeded but the screen could not update.
+If SpentIt reports a save or display problem, [check the result before
+trying again](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
 
 ## Leave them new and return later {#leave-them-new-and-return-later}
 
@@ -130,13 +117,9 @@ Undoing **Accept transactions** returns those transactions to New. See
 | --- | --- |
 | Save or Enter in a transaction editor | Saves a validated edit. It does not accept all new transactions. |
 | Accept transactions | Marks valid new transactions across all accounts as accepted. |
-| Undo import… | Reverses one eligible file import, including its other accounts. Check the preview; accepted transactions make the import ineligible. An import held by another import is omitted until that other import is undone. This clears Redo and cannot be redone. |
-| Delete selected… | Removes selected transactions that are not linked, after confirmation. Linked transactions stay. |
-| Discard new transactions… | Removes eligible new work across imports in the selected account. The confirmation lists affected accounts; accepted transactions remain. |
-
-Use [Undo import or Discard](import-transactions.md#undo-a-mistaken-import)
-only when you want to remove work. Neither is needed to leave transactions
-for another day.
+| [Undo a mistaken import](import-transactions.md#undo-a-mistaken-import) | Reverses one eligible file import, including its other accounts. |
+| [Delete selected…](add-correct-transactions.md#change-a-selection-or-delete-entries) | Removes the selected entries that can be deleted. |
+| [Discard new transactions…](import-transactions.md#undo-a-mistaken-import) | Removes eligible new work across imports in the selected account. |
 
 With the entries checked and categorized, you’re ready to explore what your
 spending adds up to in Reports.

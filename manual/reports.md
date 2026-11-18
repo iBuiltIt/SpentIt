@@ -229,11 +229,10 @@ has a password.
 ## Keep and change your reports {#keep-and-change-your-reports}
 
 **New report** is at the top of the list. It stays unavailable while a new
-report is still unfinished. An empty list says **No reports yet.**
+report is still unfinished.
 
-Each report’s row has **Show report**. While that report has unsaved
-changes, the button reads **Save and show**. It saves that report and
-opens it. Other unfinished reports stay unfinished.
+Choose **Show report** on the report’s row. If you’ve edited the report,
+choose **Save and show** to save it and open the results.
 
 **Save report** keeps the selected report without opening it. **Discard
 changes** drops that report’s unsaved edits. A new report uses **Discard
@@ -243,10 +242,9 @@ before starting another.
 
 Select a report to rename it in **Report details**, then **Save report**.
 
-**Delete report…** asks **Delete report “name”?** **Delete report** removes
-the saved report now and does not change transactions. **Cancel** keeps
-the report. There is no Undo for removing the report. If a new draft is
-still open, that draft is selected afterward.
+Choose **Delete report…** and check the name before confirming
+**Delete report**. This removes the saved report settings. The deletion
+has no Undo.
 
 When leaving with unfinished report changes, the question is **Save
 changes before leaving Reports?** **Save all changes** saves every
@@ -267,8 +265,6 @@ the saved report. It does not copy the transactions.
   **Refresh report**. Do not repeat the financial edit just to refresh the screen.
 - **A selected account or category is no longer available:** return to the
   report’s settings and correct the selection.
-- **An empty or unexpected result:** check accounts, categories, currency and
-  the resolved dates. Open an amount to see which parts of which transactions
-  count. Check Review for imported records needing repair.
-
-The result names the accounts it used.
+- **An empty or unexpected result:** check the accounts and dates shown in
+  the results, then check the selected categories and currency. Open an amount
+  to see which splits count. Check Review for imported records needing repair.

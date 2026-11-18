@@ -85,8 +85,8 @@ While the import runs, **Importing transactions…** replaces the mapping.
 **Applying imported categories…** does the same for a category choice.
 **Cancel** is there only while the step can still be cancelled. If you
 cancel or the step fails, choices that are still pending come back.
-Cancelling a category choice does not undo transactions already saved.
-A finished import stays until you undo it.
+Cancelling the category step leaves the imported transactions available
+for you to review. To remove them, see [Undo a mistaken import](#undo-a-mistaken-import).
 
 ## Choose which categories to keep {#choose-which-categories-to-keep}
 
@@ -117,17 +117,17 @@ ordinary spending category.
 
 When a transfer names an account that is not in your file, open
 **Review**. Beside **Accept transactions** you will see
-**Warnings [n]**, with one line for each missing account. The line
-names your account, the date, the payee when there is one, and says
-that destination is not an account. Choose the line to open the
-transaction.
+**Warnings [n]**. Look for the warning that names your account and the
+missing destination. Choose it to open the transaction.
 
-Create or reactivate the account first. Then, in the transaction’s
-category field, choose that account. For a split, choose the field
-for the part that is the transfer. The other account has to be active
-and use the same currency. Choosing it creates the transfer posting
-there. **Accept transactions** waits until the account exists and the
-transfer is linked.
+If the money did move between your accounts, create or reactivate
+the destination, then choose it in the category field for the transfer.
+Choose an active account in the same currency. SpentIt records the other
+side there.
+
+If the export called something a transfer by mistake, choose an ordinary
+category or **Uncategorized** for that split. Either way, resolve the
+destination before accepting. See [how to edit a split](add-correct-transactions.md#divide-a-purchase-into-splits).
 
 For mapped imports, **Set up imported transfers?** can use the account
 names you confirmed. **Set up transfers** links matching postings and
@@ -146,10 +146,9 @@ also reports any pairs resolved by [automatic Merge or Link](review-duplicates-t
 and any questions left in Review.
 
 ![Credit card ledger with the 42.18 Market purchase, the 6.00 refund, and an opening dated the day before the purchase. The balance is -36.18.](images/import-results.png)
-*The purchase and refund are saved. The opening sorts ahead of that day’s transactions. They do not need accepting before you leave.*
+*The purchase and refund leave the card balance at -36.18.*
 
-Saved new transactions stay when you close the file and already
-count in balances and reports. You can review them at your own pace.
+You can [review and accept the new entries later](accept-transactions.md#leave-them-new-and-return-later).
 
 ### When something needs attention
 

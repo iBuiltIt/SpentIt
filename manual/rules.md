@@ -77,21 +77,13 @@ transaction row. Preview does not change your transactions.
 ![Rules preview listing the Market purchase for -42.18 in Credit card, with All accounts selected.](images/rules-preview.png)
 *All accounts checks every active account. The preview names the account for each match.*
 
-**Save rule** keeps the selected rule without changing transactions.
-**Discard changes** restores that rule. A new unsaved rule uses
-**Discard draft** instead. While the selected rule still has unsaved edits,
-the other button reads **Save and apply rule**. After the rule is saved, it
-reads **Apply rule**. **New rule**, **Copy into new rule**, and an
-existing rule all leave you in Rules. A rule you started from the ledger
-with **Create rule…** shows **Save, apply and back** instead. Choosing
-it saves the rule, applies it, and returns you to the ledger. You can
-apply without previewing, but a preview is useful while learning a
-pattern.
+Choose **Save rule** to keep the rule for later. To use it now, choose
+**Save and apply rule**, or **Apply rule** if it’s already saved. A preview
+helps you check a new pattern before you use it.
 
-These buttons concern the selected rule. Other unfinished rule edits stay
-unfinished. Saved enabled rules run during later imports, after any
-missing-category choices are resolved. They can match in any account.
-The Transactions choice applies only when you run the rule yourself.
+Saved, enabled rules run during later imports in any account, after you
+resolve any missing-category choices. The Account and Transactions
+choices apply when you preview or run a rule yourself.
 
 To undo a rule you just applied, press **Command+Z** on a Mac, or
 **Ctrl+Z** on Windows and Linux, while that application is still the
@@ -145,8 +137,6 @@ the one new rule before starting another.
 Select the rule before changing it. Uncheck **Enabled** to stop using it.
 **Delete rule…** asks **Delete rule “name”?** Choose **Delete rule** to
 remove it now, or **Keep rule**. The removal is saved immediately.
-Afterward, an unfinished new rule opens if you have one. Otherwise the
-nearest remaining rule opens, or the list is empty.
 
 Check **Removed rules (N)** to see rules you have deleted. **Copy into new
 rule** starts a new draft from one of them.

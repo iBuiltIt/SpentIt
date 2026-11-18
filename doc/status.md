@@ -880,6 +880,21 @@ included; see [Manual](#manual).
 
 ## Manual
 
+### Focused editing pass on 2026-11-18
+
+Ten bundled Help topics were edited to reduce repetition around acceptance,
+Undo, and recovery while keeping the household example. The guide now explains
+both ways to correct an unresolved transfer destination, directs split links
+to Review, and describes what Accept transactions clears.
+
+On macOS arm64 with Qt 6.12.0, the rebuilt rules-enabled Release passed all
+16 native Help reading cases, both continuous walkthroughs, and the offscreen
+`./build/SpentIt --smoke` check. `help.prepare`, `help.capture_manual_images`,
+`help.catalog`, relative links, and `git diff --check` passed. All 17 topic
+IDs, 153 section IDs, and 46 pictures were preserved.
+
+### MAN-077 through MAN-087
+
 The second owner-authorized 2026-11-18 pass completed MAN-077 through MAN-087
 in bundled Help. It covers unresolved transfer splits, the category picker
 and Household starter category, waiting transfers and bank-match settings,

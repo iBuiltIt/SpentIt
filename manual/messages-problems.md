@@ -39,8 +39,7 @@ Type the password you want to use, then enter it again to confirm.
 
 **“Use a password of 1 to 64 characters.”**
 
-Choose a shorter password and type it in both fields. SpentIt uses
-UTF-8 text for your password.
+Enter a password within that range in both fields.
 
 **“Password changed. This file asks for the new password the next time it is opened.”**
 
@@ -49,11 +48,11 @@ The change is saved. Use the new password the next time you open this file.
 
 **“Password protection removed. Anyone with this file can open it.”**
 
-The file no longer asks for a password. Anyone who has it can open it.
+[Add password protection again](backup-recovery.md#change-or-remove-the-password) if you removed it by mistake.
 
 **“That is already the password for this file.”**
 
-The new password matches the one the file already uses. Nothing was changed.
+If you meant to change it, enter a different password in both new-password fields.
 
 **“The password was changed, but SpentIt could not confirm the file. Close it and open it with the new password before continuing.”**
 
@@ -168,27 +167,16 @@ It may already have completed. Reopen the file and check the affected
 transactions before trying again.
 [Check an uncertain result](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
 
-**“Couldn’t finish checking the file”**
+**“Couldn’t finish checking the file”** / **“Couldn’t close the file”**
 
-Choose **Return** to go back to the app. **Quit anyway** closes it;
-SpentIt checks again next time you open the file. Neither choice repairs damage.
-[Checking on quit](backup-recovery.md#checking-could-not-finish-on-quit).
-
-**“Couldn’t close the file”**
-
-Closing did not finish. **Return** keeps you in the file so you can try
-again. **Quit anyway** closes SpentIt and checks the file the next time
-you open it. Neither choice repairs damage. Undo remains until a close
-succeeds.
-[Checking on quit](backup-recovery.md#checking-could-not-finish-on-quit).
+Choose **Return** to go back and try again. See
+[what happens if you quit anyway](backup-recovery.md#checking-could-not-finish-on-quit).
 
 **“Undo the current actions, or close and reopen the file first.”**
 
-**Discard new transactions…**, and undoing an import that is not the
-newest action, wait until Undo is empty. Undo the newest saved actions
-with **Command+Z** or **Ctrl+Z**, or close the file successfully, then
-try again.
-[When Undo is no longer offered](add-correct-transactions.md#undo-a-saved-change).
+If you want to keep your recent changes, close and reopen the file before
+trying again. See [how to clear Undo and what that
+means](add-correct-transactions.md#when-undo-is-no-longer-offered).
 
 **“Statement contains conflicting fields; no import was saved. Obtain a corrected export and try again.”**
 

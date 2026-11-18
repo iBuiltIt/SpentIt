@@ -50,11 +50,8 @@ the arrow for the part you want.
 
 ### Is it accepted?
 
-Row shading distinguishes new transactions, but selection can cover
-that shading. Double-click a row to show or hide its details.
-
-Both kinds already count in the account balance. You do not need to
-accept a transaction just to keep it when you close the file.
+New transactions are shaded. Selecting a row can hide that shading.
+[When to accept new transactions](accept-transactions.md#leave-them-new-and-return-later).
 
 ## Select without editing
 

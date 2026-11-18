@@ -215,11 +215,9 @@ When linking a payment also links other clear matches, one Undo
 reverses all those links. Redo puts the same links back. See
 [Linking payments](review-duplicates-transfers.md#if-there-is-no-suitable-question).
 
-One import is one action, including rules and automatic matches.
-Undoing it removes those transaction changes. Accounts, categories and
-opening balances created for the import stay. **Import Undo cannot be
-redone**, and it clears any waiting Redo actions. Import the original file
-again if you need those transactions back.
+An import and its automatic matches and rule changes are one Undo step.
+[Undoing an import](import-transactions.md#undo-a-mistaken-import) clears
+Redo. Import the original file again if you need those transactions back.
 
 A rule you run yourself later is its own action. Undo reverses its changes
 across the chosen accounts and keeps the saved rule. Undoing **Accept
@@ -230,9 +228,8 @@ Merge or Link marks it cleared.
 
 Choose **Change history** in the sidebar to see saved actions across all
 accounts, newest first. Open a row to read the transactions it changed.
-Only the newest action offers **Undo**. To reach an earlier action, undo
-the newer ones first. Waiting **Redo** actions appear separately, with the
-next one first.
+Only the newest action offers **Undo** here. Pending **Redo** actions appear
+in a separate list, with the next one first.
 
 ![Change history showing saved actions across the file, newest first.](images/change-history.png)
 *Use History to check what the next Undo will change, including work in other accounts.*
@@ -249,8 +246,7 @@ transactions has its own row; Undo separates them and leaves both in place.
 ### When Undo is no longer offered
 
 A successful **File → Close file**, switching files, or quit clears both
-Undo and Redo. Your saved changes stay, including transactions left new.
-**Undo import…** in Review and [Unmerge](review-duplicates-transfers.md#undo-a-mistaken-answer)
+Undo and Redo. **Undo import…** in Review and [Unmerge](review-duplicates-transfers.md#undo-a-mistaken-answer)
 may still be available after reopening.
 
 If closing fails or you cancel it, both Undo and Redo remain available.
@@ -263,5 +259,4 @@ actions, or close and reopen the file first**, either undo those actions
 or close successfully and reopen to keep the changes and clear Undo.
 Then try again.
 
-If SpentIt cannot confirm that a change was saved, reopen the file and
-check the transaction before trying again.
+For an uncertain save, [check the result before trying again](backup-recovery.md#a-change-failed-or-its-result-is-unclear).
