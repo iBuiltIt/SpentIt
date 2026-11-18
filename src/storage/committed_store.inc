@@ -301,7 +301,9 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         if(expected_stamp!=reviews.integer(3) || expected_active!=(reviews.integer(4)!=0))fail(SQLITE_CORRUPT,"Invalid review target history");
     }
     std::map<imports::Occurrence,std::int64_t> heads;std::map<std::int64_t,Money> balances;std::map<std::int64_t,std::vector<OpeningDelta>> deltas;std::map<std::int64_t,std::size_t> applied;
-    Statement live_accounts(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=account.singleton) ORDER BY singleton");
+    // Retirement hides an empty account, not its financial proof. Reconcile
+    // retained imports/corrections for retired identities too.
+    Statement live_accounts(impl_->db,"SELECT singleton FROM account ORDER BY singleton");
     while(live_accounts.row()){
         const auto id=live_accounts.integer(0);auto opening=account_by_id(id).opening;
         // Undo only account commands subsequent to the baseline to obtain its
@@ -454,7 +456,7 @@ AND (a.operation=?3 OR EXISTS(
     if(accepted.row())fail(SQLITE_CORRUPT,"Transaction acceptance does not match its financial reference");
     Statement extra_dependencies(impl_->db,"SELECT 1 FROM change_dependencies d JOIN ledger_operations o ON o.id=d.operation WHERE o.kind=0");if(extra_dependencies.row())fail(SQLITE_CORRUPT);
     for(const auto& [account,balance]:balances)apply_openings(account,INT64_MAX);
-    Statement end_accounts(impl_->db,"SELECT singleton FROM account WHERE NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=account.singleton)");
+    Statement end_accounts(impl_->db,"SELECT singleton FROM account");
     while(end_accounts.row()){
         const auto acct=account_by_id(end_accounts.integer(0));
         std::vector<Money> values{acct.opening,local_transfer_total(acct.identity,false)};

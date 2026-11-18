@@ -257,7 +257,8 @@ public:
     virtual AccountCommandReceipt rename_account(std::string_view,std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual AccountCommandReceipt archive_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual AccountCommandReceipt reactivate_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
-    virtual AccountCommandReceipt delete_account(std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
+    virtual bool preview_account_deletion() const { return false; }
+    virtual AccountCommandReceipt delete_account(std::string_view,std::optional<ActionToken> = {}) { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual AccountCommandReceipt reassign_currency(std::string_view,const Currency&) { throw std::logic_error("Account changes are not supported by this dataset"); }
     virtual AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) { throw std::logic_error("Account changes are not supported by this dataset"); }
@@ -393,7 +394,7 @@ public:
     virtual bool categories_supported() const { return false; }
     virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories are not supported by this dataset"); }
-    virtual CategoryReceipt apply_category_change(std::string_view,const CategoryRequest&,std::int64_t) { throw std::logic_error("Categories are not supported by this dataset"); }
+    virtual CategoryReceipt apply_category_change(std::string_view,const CategoryRequest&,std::int64_t,std::optional<ActionToken> = {}) { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual std::optional<CategoryReceipt> category_change_outcome(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual std::vector<CategoryReceipt> category_history(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual CategoryDisplay resolve_category(std::string_view) const { throw std::logic_error("Categories are not supported by this dataset"); }

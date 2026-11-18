@@ -1050,7 +1050,7 @@ ApplicationWindow {
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"renameAccount";text:"Rename…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){renameField.text=s.name||"";renameDialog.open()})}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"archiveAccount";text:"Archive";visible:!!s.accountSelected && !s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("archive_account",{operation:workflow.newIdentity()})})}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"reactivateAccount";text:"Reactivate";visible:!!s.archived;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("reactivate_account",{operation:workflow.newIdentity()})})}
-        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){deleteAccountDialog.open()})}
+        LedgerMenuItem {height:visible?implicitHeight:0;objectName:"deleteAccount";text:"Delete…";visible:!!s.accountSelected;enabled:!workflow.busy;onTriggered:guard(function(){workflow.command("preview_account_deletion")})}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"correctOpening";text:"Correct opening…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:editOpening()}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"reassignCurrency";text:"Reassign currency…";visible:!!s.accountSelected && !s.readOnly;enabled:!workflow.busy;onTriggered:guard(function(){currencySearch.text="";currencyDialog.open()})}
         LedgerMenuItem {height:visible?implicitHeight:0;objectName:"undoAccountCommand";text:"Undo opening or currency…";visible:!!s.undoableAccountOperation;enabled:!workflow.busy;onTriggered:undoEdit()}
@@ -1246,7 +1246,7 @@ ApplicationWindow {
         if (reportsWorkspace.leaving) return "help:answer-with-reports#keep-and-change-your-reports"
         // Qt Quick dialogs share the main window. Read the visible dialog,
         // never its text, selected values, or an error payload.
-        const dialogs = [bulkCategoryDialog, selectedEditDialog, deleteSelectionDialog, overwriteDialog, importCategories, importMapping, importDateOrder, importDestinationDialog, splitMismatch, unsaved, changePreview, mergePreview, bulkDialog, reapplyDialog, transferSuggestionSettings, ruleSplitDialog, matchedRuleDialog, categoryPicker, renameDialog, deleteAccountDialog, correctOpeningDialog, currencyDialog, acceptanceDialog, mappedTransferConfirm, importUndoPicker, importUndoConfirm, discardDialog, closeAuditFailure, quitCommit, linkExclusionDialog, statusExplanationDialog, statusDetails, reviewSurvivor, reviewDifference]
+        const dialogs = [bulkCategoryDialog, selectedEditDialog, deleteSelectionDialog, overwriteDialog, importCategories, importMapping, importDateOrder, importDestinationDialog, splitMismatch, unsaved, changePreview, mergePreview, bulkDialog, reapplyDialog, transferSuggestionSettings, ruleSplitDialog, matchedRuleDialog, categoryPicker, renameDialog, deleteAccountDialog, deleteCategoryDialog, correctOpeningDialog, currencyDialog, acceptanceDialog, mappedTransferConfirm, importUndoPicker, importUndoConfirm, discardDialog, closeAuditFailure, quitCommit, linkExclusionDialog, statusExplanationDialog, statusDetails, reviewSurvivor, reviewDifference]
         for (const dialog of dialogs) if (dialog.visible) return dialog.helpTarget
         if (!s.active) return "help:create-open-file"
         if (addingAccount) return "help:set-up-accounts#add-an-account"
@@ -2230,7 +2230,7 @@ ApplicationWindow {
                     if(switchingRulesAccount) {currentPage="rules";let accounts=navigationAccounts.slice();accounts[navigationIndex]=s.accountId;navigationAccounts=accounts}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
                     else {let entries=navigation.slice(0,navigationIndex+1);entries.push("ledger");navigation=entries;let accounts=navigationAccounts.slice(0,navigationIndex+1);accounts.push(s.accountId);navigationAccounts=accounts;navigationIndex=entries.length-1;currentPage="ledger"}
-                    if(pendingReviewInspection){currentPage="review";pendingReviewInspection=false}
+                    if(pendingReviewInspection){currentPage="review";editorClosed=false;pendingReviewInspection=false}
                     loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
                     if(pendingReviewLedger){
                         const request=pendingReviewLedger;pendingReviewLedger=null
@@ -2265,7 +2265,11 @@ ApplicationWindow {
                 if(action==="apply_bulk"){bulkDialog.close();loadEditor()}
                 if(action==="rules_reapply_preview")reapplyDialog.open()
                 if(action==="rules_reapply_apply"){reapplyDialog.close();loadEditor()}
-                if(action==="preview_category") workflow.command("apply_category",{preview:s.categoryPreview.id})
+                if(action==="preview_account_deletion")deleteAccountDialog.open()
+                if(action==="preview_category") {
+                    if(s.categoryPreview.clearsHistory)deleteCategoryDialog.open()
+                    else workflow.command("apply_category",{preview:s.categoryPreview.id})
+                }
                 if(action==="apply_category" && categoryAction==="create")categoryVisitAdditions=categoryVisitAdditions.concat([(s.categorySelected||{}).id])
                 if(action==="apply_category" && categoryAction==="set_income")categoryVisitAdditions=categoryVisitAdditions.filter(id=>id!==categoryFormId)
                 if(action==="category_select" || action==="apply_category")loadCategoryForm()
@@ -3002,8 +3006,18 @@ ApplicationWindow {
     HelpDialog {
         helpTarget: "help:set-up-accounts#delete-an-unused-account"
         id:deleteAccountDialog;objectName:"deleteAccountDialog";title:"Delete empty account?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-48,640);standardButtons:Dialog.Ok|Dialog.Cancel
-        Label {width:deleteAccountDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Delete this empty account?"}
-        onAccepted:workflow.command("delete_account",{operation:workflow.newIdentity()})
+        Label {width:deleteAccountDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:s.accountDeletionClearsHistory?"Deleting this account will clear Undo and Redo for this file. This cannot be undone.":"Delete this empty account? This cannot be undone."}
+        onOpened:standardButton(Dialog.Ok).text="Delete account"
+        onAccepted:workflow.command("delete_account",{operation:workflow.newIdentity(),confirmedHistory:!!s.accountDeletionClearsHistory})
+    }
+    HelpDialog {
+        id:deleteCategoryDialog;objectName:"deleteCategoryDialog";title:"Delete category?";modal:true;anchors.centerIn:parent
+        width:Math.min(window.width-48,640);standardButtons:Dialog.Ok|Dialog.Cancel
+        helpTarget:"help:organize-categories"
+        Label {width:deleteCategoryDialog.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:"Deleting this category will clear Undo and Redo for this file. This cannot be undone."}
+        onOpened:standardButton(Dialog.Ok).text="Delete category"
+        onAccepted:workflow.command("apply_category",{preview:s.categoryPreview.id,confirmedHistory:true})
+        onRejected:{categorySaving=false;workflow.command("cancel_category_preview")}
     }
     HelpDialog {
         helpTarget: "help:set-up-accounts#set-the-starting-balance"

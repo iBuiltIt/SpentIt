@@ -147,7 +147,9 @@ These are the current rules. The linked documents are the full contracts.
   is one source-owned rollback and creates no ordinary edit record for its new rows. Import-created accounts,
   categories, aliases, and the explicit opening remain after that rollback.
   Definition and settings saves are not Undo steps. They preserve Undo and
-  clear pending Redo.
+  clear pending Redo, except unused category/empty account deletion: preserve
+  unrelated Undo/Redo, and require confirmation to atomically expire dependent
+  history with deletion. Historical identities remain internal.
   Save and apply is atomic; Undo restores the transactions and keeps the saved
   rule. Older-import removal and account Discard require an empty chain and are
   not themselves undoable. Do not resume generic per-row storage capture.

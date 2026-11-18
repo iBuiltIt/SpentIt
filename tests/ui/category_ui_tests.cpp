@@ -67,6 +67,57 @@ class CategoryUiTests : public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("CategoryUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();}
+    void correctImportedTransfer() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Main"},{"currency","CAD"}});
+        run(model,"create_account",{{"id","2"},{"name","Spare"},{"currency","USD"},{"date","2026-01-01"}});
+        run(model,"select_account",{{"id","1"}});
+        QFile file(dir.filePath("synthetic.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-10.00\nPSynthetic\nL[Spare]\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        const auto questions=model.state().value("reviewQuestions").toList();QVERIFY(!questions.empty());
+        const auto question=questions.front().toMap();QCOMPARE(question.value("kind").toString(),"correction");
+        // Close the ledger editor, then Correct must explicitly reopen it.
+        root->setProperty("editorClosed",true);
+        QVERIFY(click(root,"reviewNavigation"));wait(model);QTRY_VERIFY(object(root,"reviewCorrect"));
+        QVERIFY(click(root,"reviewCorrect"));wait(model);
+        QCOMPARE(root->property("currentPage").toString(),"review");QVERIFY(root->property("reviewInspecting").toBool());
+        QVERIFY(!root->property("editorClosed").toBool());QTRY_VERIFY(object(root,"editorScroll")->property("visible").toBool());
+        QCOMPARE(selected(model).value("ordinal"),question.value("ordinal"));QCOMPARE(selected(model).value("batch"),question.value("batch"));
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(click(root,"chooseUncategorized"));wait(model);
+        QVERIFY(model.state().value("reviewQuestions").toList().empty());
+        QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("category").toString(),QString());
+    }
+    void deletionConfirmations() {
+        QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());auto* root=engine.rootObjects().first();auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Main"},{"currency","CAD"}});
+        QVERIFY(click(root,"categoryNavigation"));wait(model);const auto used=createCategory(model,root,"Deletion example");
+        QFile file(dir.filePath("synthetic.qif"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("D1/1/2026\nT-10.00\nPSynthetic\n^\n");file.close();
+        run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));
+        QVERIFY(edit(root,"categoryPickerSearch","Deletion example"));QVERIFY(QMetaObject::invokeMethod(object(root,"categoryPickerSearch"),"accepted"));wait(model);
+        QCOMPARE(selected(model).value("draft").toMap().value("splits").toList().front().toMap().value("categoryId").toString(),used);
+        QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(click(root,"chooseUncategorized"));wait(model);
+        QVERIFY(click(root,"categoryNavigation"));wait(model);menu(model,root,used,"deleteCategory");wait(model);
+        auto* dialog=object(root,"deleteCategoryDialog");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(model.state().value("canUndoAction").toBool());QVERIFY(!model.state().value("categoryById").toMap().value(used).toMap().value("deleted").toBool());
+        QVERIFY(QMetaObject::invokeMethod(dialog,"reject"));wait(model);QVERIFY(model.state().value("canUndoAction").toBool());
+        menu(model,root,used,"deleteCategory");wait(model);QTRY_VERIFY(dialog->property("visible").toBool());
+        if(qEnvironmentVariableIsSet("SPENTIT_DELETION_SCREENSHOT")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_DELETION_SCREENSHOT")));}
+        QVERIFY(QMetaObject::invokeMethod(dialog,"accept"));wait(model);QVERIFY(!model.state().value("canUndoAction").toBool());QVERIFY(model.state().value("categoryById").toMap().value(used).toMap().value("deleted").toBool());
+        run(model,"create_account",{{"id","2"},{"name","Empty"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"correct_opening",{{"operation",model.newIdentity()},{"date","2026-01-01"},{"amount","1.00"}});
+        run(model,"correct_opening",{{"operation",model.newIdentity()},{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"preview_account_deletion");auto* accountDialog=object(root,"deleteAccountDialog");QTRY_VERIFY(accountDialog->property("visible").toBool());QVERIFY(model.state().value("accountDeletionClearsHistory").toBool());
+        QVERIFY(QMetaObject::invokeMethod(accountDialog,"reject"));wait(model);QVERIFY(model.state().value("canUndoAction").toBool());
+        run(model,"preview_account_deletion");QVERIFY(QMetaObject::invokeMethod(accountDialog,"accept"));wait(model);
+        QVERIFY(!model.state().value("canUndoAction").toBool());QCOMPARE(model.state().value("accountId").toString(),"1");
+    }
     void incomeRefreshWorkload() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

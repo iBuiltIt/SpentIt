@@ -86,7 +86,8 @@ public:
     app::AccountCommandReceipt rename_account(std::string_view,std::string_view) override;
     app::AccountCommandReceipt archive_account(std::string_view) override;
     app::AccountCommandReceipt reactivate_account(std::string_view) override;
-    app::AccountCommandReceipt delete_account(std::string_view) override;
+    bool preview_account_deletion() const override;
+    app::AccountCommandReceipt delete_account(std::string_view,std::optional<app::ActionToken> = {}) override;
     app::AccountCommandReceipt correct_opening(std::string_view,std::string_view,const Money&) override;
     app::AccountCommandReceipt reassign_currency(std::string_view,const Currency&) override;
     app::AccountCommandReceipt undo_account_operation(std::string_view,std::string_view) override;
@@ -128,7 +129,7 @@ public:
     std::optional<std::int64_t> resolve_account_name(std::string_view) const override;
     app::CategoryCatalog category_catalog() const override;
     app::CategoryPreview preview_category_change(const app::CategoryRequest&) const override;
-    app::CategoryReceipt apply_category_change(std::string_view,const app::CategoryRequest&,std::int64_t) override;
+    app::CategoryReceipt apply_category_change(std::string_view,const app::CategoryRequest&,std::int64_t,std::optional<app::ActionToken> = {}) override;
     std::optional<app::CategoryReceipt> category_change_outcome(std::string_view) const override;
     std::vector<app::CategoryReceipt> category_history(std::string_view) const override;
     app::CategoryDisplay resolve_category(std::string_view) const override;
@@ -213,6 +214,11 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    std::set<std::string> action_categories(const app::ActionSummary&,bool) const;
+    bool deletion_affects_action(const app::ActionSummary&,std::int64_t,std::string_view,bool) const;
+    bool deletion_clears_history(std::int64_t,std::string_view) const;
+    void expire_deletion_history();
+    void require_unused_category(std::string_view) const;
     struct RedoFrame;
     RedoFrame capture_redo(const app::ActionSummary&) const;
     imports::Occurrence redo_occurrence(imports::Occurrence) const;

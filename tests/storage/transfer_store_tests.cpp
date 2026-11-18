@@ -41,7 +41,7 @@ void import_flow(){Directory d;const auto path=d.path/"doc";
  {auto s=ImportStore::create(path,password,"Checking",cad,"2026-10-26");s.create_account(2,"Visa",cad,"2026-10-26");s.opening(0,"2026-10-26",Money(20000,cad));
  s.ingest("origin","D26/10/2026\nT-100\nPTransfer\nL[Old Visa export]\n^\nD26/10/2026\nT-5\nPDiscard me\nL[Unresolved discarded destination]\n^\n",qif::DateOrder::dmy);
  rejected([&]{s.commit("origin",0,"unresolved");});check(s.committed_balance()==Money(20000,cad));
- auto edit=*s.row({"origin",0}).draft;auto parts=edit.transaction.allocations();parts[0].category="Food";edit.transaction=edit.transaction.corrected(edit.transaction.effective_total(),parts);rejected([&]{s.save({"origin",0},0,edit);});
+ auto edit=*s.row({"origin",0}).draft;auto parts=edit.transaction.allocations();parts[0].category="[Invented destination]";edit.transaction=edit.transaction.corrected(edit.transaction.effective_total(),parts);rejected([&]{s.save({"origin",0},0,edit);});
  auto r=command(s,app::TransferAction::from_draft,"imported");r.origin=imports::Occurrence{"origin",0};r.allocation="source-0";r.destination=2;s.apply_transfer("assign",r);
  rejected([&]{s.save({"origin",0},0,*s.row({"origin",0}).draft);});
  s.select_account(2);s.opening(0,"2026-10-26",Money(0,cad));s.apply_transfer("accept",command(s,app::TransferAction::accept,"imported"));s.apply_transfer("commit-local",command(s,app::TransferAction::commit_local,"imported"));

@@ -80,7 +80,18 @@ distinct.
   and ends the link. A date-only correction keeps the link and does not change
   the other side.
 - A link that still has attached or proposed evidence refuses the correction.
-- Bulk category or removal of a live linked row is refused. Edit those rows
-  one at a time.
+- Category assignment, including Uncategorized, releases selected live links
+  atomically through the transfer-aware command, including imported bracketed
+  destinations. Original imported allocations remain available. Bulk deletion
+  skips live linked rows; break or release the links first.
 - A later edit, a newer transfer relationship, or a newer source association
   blocks Undo. The entry's own publication association does not.
+
+## Empty account cleanup — owner Go 2026-11-17
+
+Released and unresolved relationship snapshots remain historical identities. They
+do not by themselves block deletion of an account with an empty current ledger
+and zero opening. Current transfer dependencies and eligible import inverses
+that would refill the account still block deletion. Dependent ordinary Undo/Redo
+requires confirmation before its atomic expiry with account deletion. Review
+**Correct** opens the affected transaction even when its ledger editor was closed.

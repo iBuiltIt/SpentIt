@@ -750,8 +750,11 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
     while(committed.row()) {
         const imports::Occurrence id{committed.bytes(0),static_cast<std::size_t>(committed.integer(1))};
         if(retained_member(impl_->db,id.batch,id.ordinal)) {
-            const auto row=load_row(id,false);
-            for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) && !resolved.contains({id.batch,id.ordinal,allocation.identity}))fail(SQLITE_CORRUPT,"Committed QIF transfer destination has no retained link");
+            // Accepted edits live in entry snapshots, not the last import draft.
+            // A manual category correction may have released this destination.
+            Statement head(impl_->db,"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?");head.text(1,id.batch);head.integer(2,integer(id.ordinal));if(!head.row())fail(SQLITE_CORRUPT,"Accepted transaction has no current revision");
+            const auto entry=entry_snapshot(id,head.integer(0));
+            if(entry.active)for(const auto& allocation:entry.draft.transaction.allocations())if(qif::transfer_destination(allocation.category) && !resolved.contains({id.batch,id.ordinal,allocation.identity}))fail(SQLITE_CORRUPT,"Committed QIF transfer destination has no retained link");
         }
     }
     Statement extra(impl_->db,"SELECT 1 FROM ledger_operations o WHERE kind=4 AND NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=o.id)");if(extra.row())fail(SQLITE_CORRUPT);

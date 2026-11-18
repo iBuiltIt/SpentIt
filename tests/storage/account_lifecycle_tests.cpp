@@ -18,7 +18,6 @@ constexpr auto password="synthetic-account-password";
 const Currency cad("CAD"),gbp("GBP"),jpy("JPY"),bhd("BHD");
 const char* date="2026-01-01";
 const std::string bytes="D1/1/2026\nT-10.00\nPSYNTHETIC-LIFECYCLE\n^\n";
-const char* empty_deletion="Empty-account deletion requires an untouched zero opening, the creation opening date, no imports, no transfer participation, and another account remaining in the document.";
 struct Directory {
     fs::path path;
     explicit Directory(const char* name){auto s=(fs::temp_directory_path()/name).string();auto* p=mkdtemp(s.data());if(!p)throw std::runtime_error("Temporary directory failed");path=fs::canonical(p);}
@@ -144,21 +143,21 @@ void behavior(){
     }
     {
         auto store=ImportStore::open(path,password);
-        rejects([&]{store.delete_account("last");},empty_deletion);
+        rejects([&]{store.delete_account("last");},"Set the opening balance to zero before deleting this account.");
         store.create_account(3,"Untouched",cad,date);store.select_account(3);store.opening(0,date,Money(0,cad));const auto confirmed=store.delete_account("confirmed-zero");
         check(confirmed.retired && confirmed.identity==3 && !store.account_selected() && store.accounts().size()==2);
         check(store.delete_account("confirmed-zero").operation=="confirmed-zero");
-        rejects([&]{store.delete_account("again");},empty_deletion);
+        rejects([&]{store.delete_account("again");},"Account identity was retired");
         rejects([&]{store.select_account(3);},"Account identity was retired");
         rejects([&]{store.create_account(3,"Untouched",cad,date);},"Account identity was retired");
         check(store.next_account_identity()==4);
-        store.create_account(4,"Dated",cad,date);store.select_account(4);store.opening(0,"2026-01-02",Money(0,cad));rejects([&]{store.delete_account("dated");},empty_deletion);check(store.account().identity==4);
-        store.create_account(5,"Funded",cad,date);store.select_account(5);store.opening(0,date,Money(1,cad));rejects([&]{store.delete_account("funded");},empty_deletion);
-        store.create_account(6,"Imported",cad,date);store.select_account(6);store.opening(0,date,Money(0,cad));store.ingest("imported",bytes,qif::DateOrder::dmy);test_session::close_reopen(store,path,password);store.discard("imported",0);rejects([&]{store.delete_account("imported");},empty_deletion);
-        store.create_account(7,"Corrected",cad,date);store.select_account(7);store.opening(0,date,Money(0,cad));store.correct_opening("same-opening",date,Money(0,cad));rejects([&]{store.delete_account("corrected");},empty_deletion);
+        store.create_account(4,"Dated",cad,date);store.select_account(4);store.opening(0,"2026-01-02",Money(0,cad));check(store.delete_account("dated").retired);
+        store.create_account(5,"Funded",cad,date);store.select_account(5);store.opening(0,date,Money(1,cad));rejects([&]{store.delete_account("funded");},"Set the opening balance to zero before deleting this account.");
+        store.create_account(6,"Imported",cad,date);store.select_account(6);store.opening(0,date,Money(0,cad));store.ingest("imported",bytes,qif::DateOrder::dmy);test_session::close_reopen(store,path,password);store.discard("imported",0);check(store.delete_account("imported").retired);
+        store.create_account(7,"Corrected",cad,date);store.select_account(7);store.opening(0,date,Money(0,cad));store.correct_opening("same-opening",date,Money(0,cad));check(store.delete_account("corrected").retired);
         store.create_account(8,"Renamed empty",cad,date);store.select_account(8);const auto revision=store.account().revision;store.rename_account("rename-empty","Renamed empty");check(store.account().revision==revision);
         store.archive_account("archive-empty");const auto removed=store.delete_account("remove-empty");check(removed.retired && removed.identity==8 && store.next_account_identity()==9);
-        store.select_account(1);store.create_account(9,"Visa",cad,date);auto request=transfer_command(store,app::TransferAction::manual);request.destination=9;request.amount=Money(-100,cad);request.date=date;request.payee="Synthetic transfer";store.apply_transfer("link-delete",request);store.select_account(9);rejects([&]{store.delete_account("linked");},empty_deletion);
+        store.select_account(1);store.create_account(9,"Visa",cad,date);auto request=transfer_command(store,app::TransferAction::manual);request.destination=9;request.amount=Money(-100,cad);request.date=date;request.payee="Synthetic transfer";store.apply_transfer("link-delete",request);store.select_account(9);rejects([&]{store.delete_account("linked");},"Delete the remaining transactions before deleting this account.");
         store.verify();
     }
     {

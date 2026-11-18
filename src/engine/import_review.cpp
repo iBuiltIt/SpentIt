@@ -124,11 +124,14 @@ void validate_draft(const qif::Record& source,const DraftRow& edit,bool reassign
     if (qif::date(edit.date.substr(8,2)+"/"+edit.date.substr(5,2)+"/"+edit.date.substr(0,4),qif::DateOrder::dmy)!=edit.date) invalid();
     text(edit.payee,true); text(edit.memo,true);
     if (edit.transaction.allocations().size()>qif::max_allocations) invalid();
-    // Source transfer intent cannot disappear through an ordinary category/split edit.
+    // Retain the original allocation association. An explicit manual category
+    // correction may replace the imported destination; source fields stay immutable.
     for(std::size_t ordinal=0;ordinal<source.source_allocation_fields.size();++ordinal){const auto& original=source.source_allocation_fields[ordinal];if(!qif::transfer_destination(original.category))continue;
         const auto& allocations=edit.transaction.allocations();
         const auto found=std::find_if(allocations.begin(),allocations.end(),[&](const auto& a){return a.identity=="source-"+std::to_string(ordinal);});
-        if(found==allocations.end() || found->source_ordinal!=ordinal || found->category!=original.category)throw std::invalid_argument("Preserve imported transfer allocations; resolve their destinations in Transfers");
+        if(found==allocations.end() || found->source_ordinal!=ordinal ||
+           (found->category!=original.category && (found->category_owner!=FieldOwnership::manual || found->category_rule || qif::transfer_destination(found->category))))
+            throw std::invalid_argument("Keep the imported transfer split. To change its destination, choose an account, category or Uncategorized.");
     }
     std::size_t size=edit.payee.size()+edit.memo.size();
     for (const auto& allocation:edit.transaction.allocations()) {

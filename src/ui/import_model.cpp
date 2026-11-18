@@ -707,6 +707,9 @@ struct ImportModel::Worker {
     QVariantList categories,categoryHistory;
     QVariantMap categoryById,categorySelected,categoryPreview,categoryReceipt;
     std::optional<app::CategoryPreview> preparedCategory;
+    std::optional<app::ActionToken> categoryDeletionToken,accountDeletionToken;
+    std::int64_t accountDeletionIdentity=0;
+    bool accountDeletionClears=false;
     std::string categoryOperation;
     std::int64_t catalogRevision=0;bool catalogLoaded=false;
     QVariantList rules,ruleTombstones;
@@ -807,7 +810,7 @@ struct ImportModel::Worker {
     std::optional<app::ChangePreview> preparedChange;
     std::string preparedOperation;
     void clearRules(){rules.clear();ruleTombstones.clear();rulePreview.clear();ruleReceipt.clear();rulePrefill.clear();preparedApply.reset();preparedAccountApply.reset();ruleApplyOperation.clear();preparedReapply.reset();reapplyOperation.clear();reapplyPreview.clear();reapplyReceipt.clear();ruleRevision=0;rulesLoaded=false;}
-    void clearChanges() {cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyMore=false;historyLoaded=false;}
+    void clearChanges() {categoryDeletionToken.reset();accountDeletionToken.reset();accountDeletionIdentity=0;accountDeletionClears=false;cachedUndo.reset();cachedUndoLabel.clear();cachedUndoChange.clear();newManual.reset();newManualId.clear();revealManual.reset();reviewLinkPreview.clear();linkExclusionPreview.clear();preparedLinkExclusion.reset();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();bulkPreview.clear();bulkReceipt.clear();deletionPreview.clear();preparedBulk.reset();bulkOperation.clear();categories.clear();categoryById.clear();categorySelected.clear();categoryHistory.clear();categoryPreview.clear();categoryReceipt.clear();preparedCategory.reset();categoryOperation.clear();catalogLoaded=false;clearRules();selectedCommittedToken.reset();preparedChange.reset();preparedOperation.clear();changePreview.clear();changeReceipt.clear();history.clear();entryHistory.clear();historyTitle.clear();historyCursor.clear();historyFocus.clear();historyFocusBatch.clear();historyFocusOrdinal=-1;historyNotice.clear();historyMore=false;historyLoaded=false;}
     QString historyMoney(const app::HistoryMoney& value) const {
         if(value.definition.empty())return {};
         return money(Money(value.units,Currency::from_definition(value.definition)),amountFormat);
@@ -1322,7 +1325,7 @@ struct ImportModel::Worker {
         state["accountAliases"]=aliasList;
         state["accountCategories"]=categoryById.value("@accounts");
         state["categories"]=categories;state["categoryById"]=categoryById;state["catalogRevision"]=QString::number(catalogRevision);
-        state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
+        state["accountDeletionClearsHistory"]=accountDeletionClears;state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
         if(repo.rules_supported() && !rulesLoaded) loadRules();
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
         state["canUndoRules"]=repo.can_undo_account_rules();state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
@@ -1885,6 +1888,12 @@ struct ImportModel::Worker {
             try {if(!selectedBatch.empty())inspect(selectedBatch,selectedOrdinal,context);} catch(...) {gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("Transfer operation was saved, but its selection could not be refreshed. Reopen and inspect transfers before retrying.");}
             return;
         }
+        if(action=="preview_account_deletion") {
+            accountDeletionToken.reset();accountDeletionIdentity=0;
+            accountDeletionClears=repo.preview_account_deletion();
+            accountDeletionToken=repo.action_token();accountDeletionIdentity=repo.account().identity;
+            return;
+        }
         if(action=="rename_account" || action=="archive_account" || action=="reactivate_account" || action=="delete_account" || action=="correct_opening" || action=="reassign_currency" || action=="undo_account") {
             auto operation=str(a.value("operation"));if(operation.empty()) operation=identity();
             const bool move=action=="archive_account" || action=="delete_account";
@@ -1914,7 +1923,10 @@ struct ImportModel::Worker {
                 if(action=="rename_account") repo.rename_account(operation,str(a.value("name")));
                 else if(action=="archive_account") repo.archive_account(operation);
                 else if(action=="reactivate_account") repo.reactivate_account(operation);
-                else if(action=="delete_account") repo.delete_account(operation);
+                else if(action=="delete_account") {
+                    if(a.value("confirmedHistory").toBool() && (!accountDeletionToken || repo.account().identity!=accountDeletionIdentity))throw std::logic_error("Review account deletion again before confirming.");
+                    repo.delete_account(operation,a.value("confirmedHistory").toBool()?accountDeletionToken:std::nullopt);
+                }
                 else if(action=="correct_opening") {const auto acct=repo.account();repo.correct_opening(operation,str(a.value("date")),evaluate_amount(str(a.value("amount")),acct.currency,amountFormat));}
                 else if(action=="reassign_currency") repo.reassign_currency(operation,Currency(str(a.value("currency"))));
                 else repo.undo_account_operation(operation,str(a.value("undoOf")));
@@ -1989,8 +2001,8 @@ struct ImportModel::Worker {
             else if(actionName=="delete")actionType=app::CategoryAction::erase;
             else throw std::invalid_argument("Unknown category action");
             app::CategoryRequest request{actionType,actionType==app::CategoryAction::create?identity():str(a.value("id")),str(a.value("name")),str(a.value("parent")),a.value("group").toBool()?CategoryKind::group:CategoryKind::leaf,a.value("income").toBool()};
-            auto preview=repo.preview_category_change(request);preparedCategory=preview;categoryOperation=identity();
-            categoryPreview={{"id",text(categoryOperation)},{"summary",actionName+" · "+(preview.before?text(preview.before->name):"(new)")+" → "+text(preview.after.name)+"\nParent: "+(preview.after.parent.empty()?QString("Standalone"):categoryById.value(text(preview.after.parent)).toMap().value("path",text(preview.after.parent)).toString())+"\n"+(preview.after.deleted?"Deleted":preview.after.archived?"Archived":"Active")}};
+            auto preview=repo.preview_category_change(request);preparedCategory=preview;categoryOperation=identity();categoryDeletionToken=repo.action_token();
+            categoryPreview={{"id",text(categoryOperation)},{"clearsHistory",preview.clears_history},{"summary",actionName+" · "+(preview.before?text(preview.before->name):"(new)")+" → "+text(preview.after.name)+"\nParent: "+(preview.after.parent.empty()?QString("Standalone"):categoryById.value(text(preview.after.parent)).toMap().value("path",text(preview.after.parent)).toString())+"\n"+(preview.after.deleted?"Deleted":preview.after.archived?"Archived":"Active")}};
         } else if(action=="apply_category") {
             categoryReceipt.clear();
             if(a.contains("income")) {
@@ -2004,7 +2016,7 @@ struct ImportModel::Worker {
             }
             if(!preparedCategory || str(a.value("preview"))!=categoryOperation)throw std::logic_error("Review a category change first");
             const auto preview=*preparedCategory;std::optional<app::CategoryReceipt> result;
-            try {result=repo.apply_category_change(categoryOperation,preview.request,preview.catalog_revision);}
+            try {result=repo.apply_category_change(categoryOperation,preview.request,preview.catalog_revision,a.value("confirmedHistory").toBool()?categoryDeletionToken:std::nullopt);}
             catch(...) {
                 const auto failure=std::current_exception();
                 try {result=repo.category_change_outcome(categoryOperation);}

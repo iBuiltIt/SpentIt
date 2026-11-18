@@ -1,6 +1,6 @@
 # QIF transfer destinations
 
-Last updated: 2026-10-31
+Last updated: 2026-11-17
 
 The release rules database is version 1. The parser is bank-v6. A different number is refused, and the file bytes stay the same. There is no migrator. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
 
@@ -10,13 +10,22 @@ Current extension (2026-10-29): [account names and confirmed aliases](../feature
 
 ## Review and resolution
 
-A bracketed destination remains exact source text, attached to its stable source allocation. Parsing neither chooses an account nor creates a movement. The Transfers dialog shows each allocation's amount, source destination and identity. The destination selector starts with an unselected placeholder; account labels include name, currency and stable identity to distinguish duplicate names. Outside the complete mapped-export exception below, names are never matched automatically or normalized. An old export name can be explicitly mapped to a differently named account. Create missing accounts through the existing account workflow first.
+A bracketed destination remains exact source text, attached to its stable source allocation. Parsing neither chooses an account nor creates a movement. The ledger shows the imported destination. Use the category selector to choose an account or an ordinary category; Review **Correct** opens the affected transaction. Exact account names and confirmed aliases can generate a same-currency counterpart during import; they are not fuzzy matched or normalized. An old export name can be explicitly mapped to a differently named account. Create missing accounts through the existing account workflow first.
 
-For an unresolved allocation, explicitly choose the destination account and use **Use as transfer**, or select the existing transfer and **Match selected allocation** after reviewing its counterpart. The category selector also lists real accounts. Choosing one stores that account identity and uses the same generation or replacement command. It does not search for an existing independent row, and account names/confirmed aliases are reserved transfer destinations. Renaming the account leaves the stored identity in place. Bracketed source text still opens the Transfers dialog when the user is resolving that source label. Creation, matching, Merge, and replacement use complete atomic commands and durable operation receipts. Matching remains provisional until that importing account commits. Equal amounts alone do not authorize a match. Repeated equal allocations retain distinct identities and must be resolved separately. Cross-currency, self-account and nonexistent destinations are rejected.
+For an unresolved allocation, explicitly choose the destination account in its category selector, or use Review to link existing counterparts. The category selector also lists real accounts. Choosing one stores that account identity and uses the same generation or replacement command. It does not search for an existing independent row, and account names/confirmed aliases are reserved transfer destinations. Renaming the account leaves the stored identity in place. An explicit category or Uncategorized choice replaces the current destination without changing the imported source label. Creation, matching, Merge, and replacement use complete atomic commands and durable operation receipts. Matching remains provisional until that importing account commits. Equal amounts alone do not authorize a match. Repeated equal allocations retain distinct identities and must be resolved separately. Cross-currency, self-account and nonexistent destinations are rejected.
 
 Included bracketed allocations cannot commit without a live origin link or a provisional/attached evidence link. Partial resolution of a split does not satisfy this check. Storage enforces it independently of the UI and checks committed relationships again on authenticated open. Explicit ordinary duplicate review remains available; excluded duplicates do not create a second transfer. Drafts and unresolved source names survive restart.
 
-Ordinary editing cannot delete an imported transfer allocation, replace its bracketed destination with a spending category, or invent a bracketed destination on an unrelated allocation. Use transfer commands for account assignment. Before linking, rules may update descriptive fields and ordinary fee categories, but preserve transfer destinations even when replacing manual values; previews explain that protection. Source bytes, allocation associations, money and rule provenance remain independently validated. Financial corrections before linking retain the existing exact-money validation; linked edits remain guarded by the existing repair/reversal boundary.
+An explicit category correction may replace an imported bracketed destination
+with an ordinary category or Uncategorized. The stable split identity and source
+ordinal remain, and the original imported fields are unchanged. A live link is
+released through the atomic transfer-aware command: an independently imported
+counterpart remains, and only a disposable generated draft is removed. Undo and
+Redo restore the row and relationship together. Rules cannot perform this
+replacement; uncorrected imported transfer destinations stay protected, even
+when replacing manual values. Editing cannot invent a bracketed destination on
+an unrelated allocation or discard the imported transfer split's association.
+Money and rule provenance remain independently validated. Owner Go: 2026-11-17.
 
 Per-account commit, draft protection, discard, later evidence attachment, independent posting dates and counterpart navigation retain the existing [transfer contract](transfer-engine.md). Neither resolution nor matching commits the opposite account. Source-first and destination-first imports use the same explicit workflow.
 

@@ -21,20 +21,6 @@ CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t cata
 }
 app::CategoryDisplay category_display(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX){const auto category=category_at(db,id,catalog);if(category.deleted)fail(SQLITE_CONSTRAINT,"Category was deleted");if(category.kind!=CategoryKind::leaf || !category.parent.empty())fail(SQLITE_CORRUPT);return {category.identity,category.name,!category.archived,category.archived};}
 void validate_binding(sqlite3* db,const Allocation& allocation){if(!allocation.category_binding)return;const auto& binding=*allocation.category_binding;if(binding.catalog_revision<1 || binding.catalog_revision>catalog_sequence(db))fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");const auto at=category_display(db,binding.identity,binding.catalog_revision);if(!at.assignable || at.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");}
-bool category_referenced(sqlite3* db,std::string_view id){Statement used(db,"SELECT 1 FROM (SELECT category_id FROM draft_allocation_meta WHERE category_id IS NOT NULL UNION ALL SELECT category_id FROM entry_allocation_meta WHERE category_id IS NOT NULL) WHERE category_id=? LIMIT 1");used.text(1,id);if(used.row())return true;
-    // Publication pins identities for other accounts whose source assignments
-    // remain drafts. These references also prevent deletion/name reuse.
-    Statement groups(db,"SELECT g.id,l.catalog_revision,s.bytes FROM import_groups g JOIN ledger_operations l ON l.id=g.publication JOIN sources s ON s.id=g.id JOIN source_headers h ON h.source_id=g.id WHERE g.state=2 AND h.format='qif'");
-    while(groups.row()) {
-        Statement existed(db,"SELECT 1 FROM category_versions WHERE id=? AND catalog_revision<=?");existed.text(1,id);existed.integer(2,groups.integer(1));if(!existed.row())continue;
-        const auto definition=category_at(db,id,groups.integer(1));if(definition.deleted)continue;
-        const auto catalog=qif::index_document(groups.bytes(2)).categories;
-        if(std::none_of(catalog.begin(),catalog.end(),[&](const auto& c){return app::category_name_matches(c.name,definition.name);}))continue;
-        Statement labels(db,"SELECT DISTINCT a.category FROM allocations a JOIN draft_allocation_meta m USING(batch,ordinal,revision,position) JOIN import_group_accounts g ON g.batch=a.batch WHERE g.group_id=? AND m.category_owner=1 AND m.category_id IS NULL");labels.text(1,groups.bytes(0));
-        while(labels.row()) {try {if(app::category_name_matches(labels.bytes(0),definition.name))return true;}catch(const std::invalid_argument&) {}}
-    }
-    if(!rules_format(db))return false;
-    Statement rules(db,"SELECT 1 FROM rule_definitions WHERE category_id=? LIMIT 1");rules.text(1,id);return rules.row();}
 bool source_category_equal(const Allocation& allocation,const qif::SourceAllocation* original) {
     if(!original)return false;
     if(!allocation.category_binding)return allocation.category==original->category;
@@ -128,7 +114,7 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
     case app::CategoryAction::unarchive:after.archived=false;break;
     case app::CategoryAction::erase:{
         for(const auto& category:catalog.categories)if(category.parent==request.identity && !category.deleted)fail(SQLITE_CONSTRAINT,"Delete requires an empty category");
-        if(category_referenced(impl_->db,request.identity))fail(SQLITE_CONSTRAINT,"Transactions use this category. Archive it instead.");
+        require_unused_category(request.identity);
         after.deleted=true;break;}
     default:fail(SQLITE_CONSTRAINT,"Unknown category action");}
     after.name=canonical_category_name(after.name);if(after.kind!=CategoryKind::leaf || !after.parent.empty())fail(SQLITE_CONSTRAINT,"Create an assignable category using one optional colon, without a parent object");
@@ -136,7 +122,7 @@ app::CategoryPreview ImportStore::preview_category_change(const app::CategoryReq
         for(const auto& alias:account_aliases())if(app::account_name_matches(alias.name,after.name))fail(SQLITE_CONSTRAINT,"That name belongs to an account or account alias. Select the account as a transfer destination instead.");
     if(!after.deleted)for(const auto& category:catalog.categories)if(!category.deleted && category.identity!=after.identity && app::category_name_matches(category.name,after.name))fail(SQLITE_CONSTRAINT,"That category name already exists (case-insensitive)");
     if(catalog.revision==INT64_MAX)fail(SQLITE_FULL);
-    return {request,catalog.revision,before,after};
+    return {request,catalog.revision,before,after,request.action==app::CategoryAction::erase && deletion_clears_history(0,request.identity)};
 }
 std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::string_view operation) const {
     if(!categories_supported())fail(SQLITE_SCHEMA,"Categories are not supported by this dataset");
@@ -144,12 +130,18 @@ std::optional<app::CategoryReceipt> ImportStore::category_change_outcome(std::st
     Statement row(impl_->db,"SELECT action,category,name,parent,kind,catalog_before,catalog_after,before_revision,after_revision,income FROM category_operations WHERE id=?");row.text(1,operation);if(!row.row()){Statement existing(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");existing.text(1,operation);if(existing.row())fail(SQLITE_CONSTRAINT,"Operation identity belongs to another command");return {};}
     std::optional<CategoryDefinition> before;if(!row.null(7)){before=category_at(impl_->db,row.bytes(1),row.integer(5));if(before->revision!=row.integer(7))fail(SQLITE_CORRUPT);}if(category_at(impl_->db,row.bytes(1),row.integer(6)).revision!=row.integer(8))fail(SQLITE_CORRUPT);return app::CategoryReceipt{std::string(operation),{static_cast<app::CategoryAction>(row.integer(0)),row.bytes(1),row.bytes(2),row.bytes(3),static_cast<CategoryKind>(row.integer(4)),row.integer(9)!=0},row.integer(5),row.integer(6),before,category_at(impl_->db,row.bytes(1),row.integer(6))};
 }
-app::CategoryReceipt ImportStore::apply_category_change(std::string_view operation,const app::CategoryRequest& request,std::int64_t expected) {
+app::CategoryReceipt ImportStore::apply_category_change(std::string_view operation,const app::CategoryRequest& request,std::int64_t expected,std::optional<app::ActionToken> consent) {
     identifier(operation);if(const auto prior=category_change_outcome(operation)){if(prior->request!=request || prior->catalog_before!=expected)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");return *prior;}
     const auto preview=preview_category_change(request);if(preview.catalog_revision!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");Atomic transaction(impl_->db);if(catalog_sequence(impl_->db)!=expected)fail(SQLITE_CONSTRAINT,"Catalog changed; refresh before applying");
     const auto changes=sqlite3_total_changes64(impl_->db);
     const bool reviewsCurrent=impl_->review_changes==changes;
     const bool sheetCurrent=impl_->sheet_cache && impl_->sheet_changes==changes;
+    if(preview.clears_history) {
+        if(!consent)fail(SQLITE_CONSTRAINT,"Deleting this category will clear Undo and Redo for this file. Confirm deletion to continue.");
+        ActionChain(impl_->db).require_current(*consent);
+        expire_deletion_history();
+    }
+    const bool preserveRedo=request.action==app::CategoryAction::erase && !preview.clears_history;
     write_category_change(operation,preview);
     if(request.action==app::CategoryAction::set_income) {
         // This flag cannot change import completion, matching, transfers or amounts.
@@ -164,7 +156,7 @@ app::CategoryReceipt ImportStore::apply_category_change(std::string_view operati
             impl_->sheet_changes=savedChanges;
         }
         if(impl_->observer)impl_->observer(ImportPhase::after_commit);
-    } else finish([&]{transaction.commit();},true);
+    } else finish([&]{transaction.commit();if(preserveRedo)impl_->redo_epoch=ledger_edit_generation();},true);
     return *category_change_outcome(operation);
 }
 void ImportStore::write_category_change(std::string_view operation,const app::CategoryPreview& preview) {
@@ -243,7 +235,7 @@ void ImportStore::verify_categories(const app::OperationContext* context) const 
         if(expected.kind!=CategoryKind::leaf || !expected.parent.empty())fail(SQLITE_CORRUPT);
         if(!expected.parent.empty()){const auto parent=reconstructed.find(expected.parent);if(expected.kind!=CategoryKind::leaf || parent==reconstructed.end() || parent->second.deleted || parent->second.kind!=CategoryKind::group)fail(SQLITE_CORRUPT);}
         for(const auto& [id,definition]:reconstructed){if(expected.deleted && !definition.deleted && definition.parent==expected.identity)fail(SQLITE_CORRUPT);if(!expected.deleted && !definition.deleted && id!=expected.identity && app::category_name_matches(definition.name,expected.name))fail(SQLITE_CORRUPT);}
-        if(expected.deleted && category_referenced(impl_->db,expected.identity))fail(SQLITE_CORRUPT);
+        // Deleted definitions retain their historical bindings and rule provenance.
         reconstructed.insert_or_assign(expected.identity,expected);previous=receipt.catalog_after;
     }
     if(previous!=catalog.revision || reconstructed.size()!=catalog.categories.size())fail(SQLITE_CORRUPT);

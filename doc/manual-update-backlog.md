@@ -18,12 +18,25 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-075. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-076. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- MAN-075 (2026-11-17) — Delete formerly used empty accounts and categories. Include cleanup after
+  Unmerge: imported transfer destinations can become categories or Uncategorized,
+  independent counterparts remain, released transfer history does not block empty
+  account deletion, and Review Correct opens a closed transaction editor.
+  Contracts: [accounts](../features/002-accounts-money-splits.md),
+  [categories](../features/010-categories-and-selection.md), and
+  [Undo](action-undo-design.md#definitions-can-coexist-with-transaction-undo).
+  Update account setup and category organization text: current use prevents
+  deletion, historical use alone does not. Explain zero opening, current rule
+  and report references, and confirmation when file-wide Undo/Redo must expire.
+  Capture the conditional deletion confirmation using synthetic data. Manual
+  text and images have not been edited.
 
 - MAN-074 (2026-11-17) — Automatic matching starts on. Contract:
   [review sheet](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).

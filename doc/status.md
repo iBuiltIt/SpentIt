@@ -13,6 +13,74 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Delete empty accounts and unused categories — 2026-11-17
+
+Owner Go permits deleting a formerly used account once its current ledger is
+empty and opening is zero, and deleting a category with no current transaction,
+rule or saved-report references. Pending import errors, live transfers, saved
+account report selections and retained import inverses that would refill an
+account must be resolved first. The last account remains protected. Historical
+identities, original imports and financial proof remain internal. The database
+stays version 1. See [accounts](../features/002-accounts-money-splits.md),
+[categories](../features/010-categories-and-selection.md) and
+[Undo](action-undo-design.md#definitions-can-coexist-with-transaction-undo).
+
+Deletion preserves unrelated Undo and Redo. If an inverse or replay needs the
+identity, its confirmation explains that both file-wide stacks will be cleared.
+Expiry and deletion commit together. Cancel, stale confirmation and failed saves
+preserve the item and history; a committed retry uses its receipt. Eligible
+source-owned import Undo can remove retained evidence from a deleted account.
+Financial verification continues to reconcile retired account history and refuses
+money or visible transactions in a retired account. Manual work is MAN-075;
+manual text and pictures have not been edited.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release `catalog.deletion`
+regression and the ASan/UBSan version passed (leak detection disabled). They
+cover new and accepted rows, formerly used categories, opening corrections,
+unrelated Undo/Redo preservation and replay, manual/repair Redo dependencies,
+confirmation and stale tokens, saved reports and disabled rules, import Undo,
+removed transfers, reopen, and lost acknowledgements on the same connection.
+All 11 selected Release CTests passed: deletion behavior and faults, account
+lifecycle behavior and durable boundaries, category assignment/history/validation
+and I/O/crash sweeps, and Undo/Redo behavior and faults. The deletion fault sweep
+injects disk-full and write failures at every observed write/sync position,
+reopens and retries, and interrupts before and after durable commit to check
+atomic history expiry. The initial sandboxed checks could not access the required
+application-data locks; the passing runs had that access.
+The full category UI suite passed (10 QtTest results); the final confirmation
+function passed again after resetting previews on file changes. A synthetic
+confirmation screenshot was inspected. `./build/SpentIt` was rebuilt and its
+offscreen `--smoke` launch exited 0. No full repository suite, physical disk
+exhaustion, Linux or Windows verification is claimed.
+
+## Transfer cleanup follow-up — 2026-11-17
+
+Owner Go covers correcting imported transfer destinations to categories or
+Uncategorized, deleting emptied accounts after release/Unmerge, and reopening
+an editor through Review Correct. Source allocation identities and originals
+remain intact. Validation accepts explicit manual category replacements, and
+accepted-transfer verification reads the current entry snapshot. Account
+retirement ignores released relationship history and checks actual eligible
+Import Undo inverses rather than every retained relationship snapshot. Correct
+explicitly opens the editor after selecting its transaction. No schema change.
+
+Rules-enabled Release checks passed for the four cleanup scenarios (generated,
+linked new, Unmerge, and accepted), including Undo/Redo, original source retention,
+retirement and reopen. Signed-split correction preserves the sibling allocation
+and exact total; invalid source associations and invented destinations are refused.
+The synthetic category UI suite passed, including Correct
+with a closed editor followed by Uncategorized. Related transfer release,
+assignment, import, QIF, validation, management and split tests passed, as did
+account lifecycle, category assignment/history/validation, ordinary deletion,
+Undo/Redo and rule preview. The old transfer-import test expected a category
+correction to fail; it now checks refusal to invent a bracketed destination and
+passed on rerun. The new imported-release fault sweep passed all 205 observed
+write/sync positions with alternating disk-full and I/O errors, reopen/retry and
+Undo, plus interruption before and after durable commit. ASan/UBSan cleanup
+passed with leak detection disabled. The Release executable was rebuilt without
+restarting the owner's running application or changing its open data. Full
+repository, Linux and Windows suites were not run. Manual work remains MAN-075.
+
 ## What the application does
 
 - Encrypted local files, optional explicit no-password mode, and private

@@ -988,6 +988,8 @@ struct PreparedImport {
     std::string warning;
 };
 struct ImportStore::RedoFrame {
+    std::set<std::int64_t> accounts;
+    std::set<std::string> categories;
     app::ActionSummary action;
     std::function<void(ImportStore&,std::string_view)> replay;
 };
@@ -2567,6 +2569,7 @@ constexpr const char duplicate_decision_warning[]="Choose whether this transacti
 #include "rule_account_store.inc"
 #include "redo_store.inc"
 #include "action_store.inc"
+#include "deletion_store.inc"
 #include "history_page.inc"
 #include "connected_undo.inc"
 #include "definition_import.inc"

@@ -79,7 +79,7 @@ static constexpr ExactExplanation exactExplanations[] = {
     {R"sep(Pattern has too many captures)sep", R"sep(The rule pattern is too complicated for SpentIt to run. Simplify the pattern and preview again. Nothing was categorized by this attempt.)sep"},
     {R"sep(Pattern memory limit reached)sep", R"sep(The rule pattern is too large for SpentIt to run. Shorten it and preview again. Nothing was categorized by this attempt.)sep"},
     {R"sep(Pattern must be bounded valid UTF-8 without NUL)sep", R"sep(The rule pattern contains text SpentIt will not use, or a hidden null character. Retype the pattern as ordinary text and preview again.)sep"},
-    {R"sep(Preserve imported transfer allocations; resolve their destinations in Transfers)sep", R"sep(These imported lines are transfers. Do not turn them into categories here. Choose the other account in Transfers.)sep"},
+    {R"sep(Keep the imported transfer split. To change its destination, choose an account, category or Uncategorized.)sep", R"sep(Keep this split and use its category selector to choose another account, a category or Uncategorized.)sep"},
     {R"sep(Projection is incomplete; review the pending import)sep", R"sep(The balance on screen leaves out an import that is not finished. Finish or review that import before you rely on the balance.)sep"},
     {R"sep(Record repair is not supported by this dataset)sep", R"sep(This file cannot correct that imported row in place. Fix the export and import it again, or leave the row unresolved.)sep"},
     {R"sep(Rescale would drop a non-zero fractional digit)sep", R"sep(Changing the number of decimal places would throw away a digit that is not zero. SpentIt did not round. The amount was left as it was.)sep"},

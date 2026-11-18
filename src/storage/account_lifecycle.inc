@@ -93,25 +93,57 @@ app::AccountCommandReceipt ImportStore::reactivate_account(std::string_view oper
     Statement update(impl_->db,"UPDATE account_status SET archived=0 WHERE identity=?");update.integer(1,acct.identity);update.done();
     finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
 }
-app::AccountCommandReceipt ImportStore::delete_account(std::string_view operation) {
+bool ImportStore::preview_account_deletion() const {
+    const auto acct=command_account(false);
+    if(acct.opening.units()!=0)fail(SQLITE_CONSTRAINT,"Set the opening balance to zero before deleting this account.");
+    if(!current_ledger().empty())fail(SQLITE_CONSTRAINT,"Delete the remaining transactions before deleting this account.");
+    Statement pending(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND (state=3 OR (state IN(0,4) AND blocked=1)) LIMIT 1");pending.integer(1,acct.identity);
+    if(pending.row())fail(SQLITE_CONSTRAINT,"Finish or discard the pending import before deleting this account.");
+    ActionChain(impl_->db).require_idle();
+    for(const auto& view:all_transfers())for(const auto* side:{&view.link.origin,&view.link.destination})
+        if(!view.link.unresolved && !view.link.destination_released &&
+           side->endpoint.account==acct.identity && side->state!=transfers::State::removed)
+            fail(SQLITE_CONSTRAINT,"Remove the remaining transfers before deleting this account.");
+    // An import may still own a relationship inverse after ordinary Undo has
+    // expired. Do not retire an account that this live rollback would refill.
+    std::set<std::string> import_inverses;
+    for(const auto& source:undoable_imports()) {
+        try {for(const auto& answer:import_link_undos(source.source))import_inverses.insert(answer);}
+        catch(const ImportError& error) {
+            // Later changes already prevent this import reversal. Ordinary Undo
+            // dependencies are checked below before deleting the account.
+            if(error.code()!=SQLITE_CONSTRAINT)throw;
+        }
+    }
+    Statement restore(impl_->db,"SELECT answer,prior_payload FROM review_link_history WHERE prior_payload IS NOT NULL");
+    while(restore.row()) {
+        if(!import_inverses.contains(restore.bytes(0)))continue;
+        const auto prior=transfer_codec::view(restore.bytes(1));
+        for(const auto* side:{&prior.link.origin,&prior.link.destination})
+            if(side->endpoint.account==acct.identity && side->state!=transfers::State::removed)
+                fail(SQLITE_CONSTRAINT,"Undo the import that depends on this account before deleting it.");
+    }
+    Statement remaining(impl_->db,"SELECT count(*) FROM account WHERE singleton NOT IN(SELECT account_id FROM account_retirements) AND singleton NOT IN(SELECT account_id FROM retired_import_accounts)");
+    if(!remaining.row() || remaining.integer(0)<=1)fail(SQLITE_CONSTRAINT,"Keep at least one account in this file.");
+    Statement reports(impl_->db,"SELECT 1 FROM report_accounts WHERE account=? LIMIT 1");reports.integer(1,acct.identity);
+    if(reports.row())fail(SQLITE_CONSTRAINT,"Remove this account from saved reports before deleting it.");
+    return deletion_clears_history(acct.identity,{});
+}
+app::AccountCommandReceipt ImportStore::delete_account(std::string_view operation,std::optional<app::ActionToken> consent) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
     const auto id=command_id(operation);const auto content="3";
     if(auto prior=matching_account_command(impl_->db,id,content)) return *prior;
-    if(impl_->selected_account<=0) fail(SQLITE_CONSTRAINT,"No active account is selected. Archived accounts remain available.");
+    const auto clears=preview_account_deletion();
     const auto acct=account();
-    auto refuse=[&]{fail(SQLITE_CONSTRAINT,empty_account_deletion);};
-    if(account_lifecycle_retired(impl_->db,acct.identity) || account_import_retired(impl_->db,acct.identity)) refuse();
-    Statement batches(impl_->db,"SELECT 1 FROM batches WHERE account_id=? LIMIT 1");batches.integer(1,acct.identity);if(batches.row()) refuse();
-    if(transfer_participation(impl_->db,acct.identity)) refuse();
-    if(explicit_account_money(impl_->db,acct.identity)) refuse();
-    Statement created(impl_->db,"SELECT opening_date FROM account_creations WHERE identity=?");created.integer(1,acct.identity);if(!created.row()) fail(SQLITE_CORRUPT);
-    if(acct.opening.units()!=0 || acct.opening_date!=created.bytes(0)) refuse();
-    Statement remaining(impl_->db,"SELECT count(*) FROM account WHERE NOT EXISTS(SELECT 1 FROM account_retirements d WHERE d.account_id=account.singleton)");
-    if(!remaining.row() || remaining.integer(0)<=1) refuse();
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
+    if(clears) {
+        if(!consent)fail(SQLITE_CONSTRAINT,"Deleting this account will clear Undo and Redo for this file. Confirm deletion to continue.");
+        ActionChain(impl_->db).require_current(*consent);
+        expire_deletion_history();
+    }
     insert_account_op(impl_->db,id,acct.identity,3,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,acct.archived?1:0,acct.archived?1:0,1,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement retirement(impl_->db,"INSERT INTO account_retirements VALUES(?,?)");retirement.integer(1,acct.identity);retirement.text(2,id);retirement.done();
-    finish([&]{transaction.commit();},true);return *account_command_row(impl_->db,id);
+    finish([&]{transaction.commit();if(!clears)impl_->redo_epoch=ledger_edit_generation();},true);return *account_command_row(impl_->db,id);
 }
 app::AccountCommandReceipt ImportStore::correct_opening(std::string_view operation,std::string_view date,const Money& amount) {
     if(!sqlite3_get_autocommit(impl_->db)) throw app::OperationOutcomeUnknown();
@@ -367,6 +399,11 @@ void ImportStore::verify_account_commands(const app::OperationContext* context) 
         }
         const auto live=account_by_id(id);
         if(live.name!=name || live.currency.definition_id()!=definition || live.archived!=static_cast<bool>(archived) || account_lifecycle_retired(impl_->db,id)!=static_cast<bool>(retired)) fail(SQLITE_CORRUPT,"Account command does not replay");
+        if(retired) {
+            struct Selection {std::int64_t& slot;std::int64_t prior;~Selection(){slot=prior;}} selection{impl_->selected_account,impl_->selected_account};
+            impl_->selected_account=id;
+            if(live.opening.units()!=0 || !current_ledger().empty())fail(SQLITE_CORRUPT,"A deleted account still contains money or transactions");
+        }
         if(last_money && (live.opening.units()!=std::get<0>(*last_money) || live.opening_date!=std::get<1>(*last_money) || live.currency.definition_id()!=std::get<2>(*last_money))) fail(SQLITE_CORRUPT,"Explicit opening does not match its latest command");
     }
     Statement pins(impl_->db,"SELECT 1 FROM batches b WHERE NOT EXISTS(SELECT 1 FROM batch_source_currency p WHERE p.batch=b.id) UNION ALL SELECT 1 FROM source_occurrences o JOIN batches b ON b.id=o.batch JOIN batch_source_currency p ON p.batch=o.batch WHERE b.materialized_revision IS NOT NULL AND o.currency!=p.definition");

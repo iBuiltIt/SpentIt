@@ -63,7 +63,11 @@ app::RollbackReview ImportStore::review_import_undo(std::string_view source) con
     if(found==imports.end())fail(SQLITE_CONSTRAINT,"This import cannot be undone. Refresh the import list.");
     app::RollbackReview result;Statement generation(impl_->db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!generation.row())fail(SQLITE_CORRUPT);result.token=generation.integer(0);
     std::set<std::int64_t> affected(found->accounts.begin(),found->accounts.end());
-    for(const auto account:affected)require_writable_account(impl_->db,account);
+    for(const auto account:affected) {
+        // Source-owned removal can collect retained evidence from an empty,
+        // retired account. It cannot create or edit transactions there.
+        if(!account_lifecycle_retired(impl_->db,account))require_writable_account(impl_->db,account);
+    }
     std::set<std::pair<std::string,std::size_t>> removed;
     Statement rows(impl_->db,R"SQL(
         SELECT o.batch,o.ordinal,EXISTS(SELECT 1 FROM records r WHERE r.batch=o.batch AND r.ordinal=o.ordinal),

@@ -1,5 +1,4 @@
 // Account-command helpers. Included inside the storage anonymous namespace.
-constexpr const char* empty_account_deletion="Empty-account deletion requires an untouched zero opening, the creation opening date, no imports, no transfer participation, and another account remaining in the document.";
 constexpr const char* archived_target="Archived accounts are not targets for new imports, commits, transactions, or transfer matches";
 constexpr const char* reactivate_first="Reactivate the account before changing its opening or currency";
 constexpr const char* later_undo_block="A later financial operation prevents Undo";

@@ -25,6 +25,7 @@ struct CategoryPreview {
     std::int64_t catalog_revision;
     std::optional<CategoryDefinition> before;
     CategoryDefinition after;
+    bool clears_history=false;
 };
 struct CategoryReceipt {
     std::string operation;

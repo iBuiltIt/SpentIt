@@ -40,8 +40,16 @@ or adding a category does not change a saved report's selection.
 The editor is a compact table. New category adds a blank row. Enter or leaving
 the field saves. Escape cancels. Invalid or duplicate names stay in the field
 and use the bottom status line. Rename, Archive, Unarchive, and Delete unused
-category are row actions and save immediately. Deleted definitions stay
-available to history. Show archived lists archived rows only.
+category are row actions. Delete requires no current transaction assignments
+(including unresolved rows and archived accounts), no current rule targeting the
+category (including disabled rules), and no saved-report selection. Past
+assignments and superseded/deleted rules do not block deletion. Historical
+identities and definitions remain internal; deletion does not erase import facts.
+If an active Undo or Redo would restore the category, ask to clear the file-wide
+stacks and save that expiry with deletion atomically. Otherwise preserve both
+stacks and delete immediately. Cancel and failed saves preserve the category and
+history. Other row actions save immediately. Show archived lists archived rows
+only. Owner Go: 2026-11-17; the version-1 format stays unchanged.
 
 Sort choices last for the visit, not as a saved preference. Selectors always
 use the grouped alphabetical order above, sized to the current labels.

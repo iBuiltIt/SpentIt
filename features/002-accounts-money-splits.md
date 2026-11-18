@@ -1,7 +1,7 @@
 # 002 — Accounts, money, and splits
 
 Status: **active**
-Last updated: 2026-11-09
+Last updated: 2026-11-17
 
 Money is exact decimal minor units with a currency definition identity. The
 pinned catalog is the current selection. Retained historical definitions restore
@@ -26,10 +26,17 @@ completion.
   not a target for new imports, new transactions, or new transfer matches.
   Archive is refused while that account has a pending import. Reactivation
   restores ordinary use and changes no amounts.
-- **Delete empty account** retires the identity permanently. It requires an
-  untouched zero opening, the creation opening date, no imports, no transfer
-  participation, and another account remaining. A creation retry cannot
-  resurrect it.
+- **Delete empty account** retires the identity permanently. It requires no
+  current ledger transactions, a zero opening, no unfinished blocked import or
+  live transfer participation or import rollback that would restore it, no
+  saved-report selection, and another account
+  remaining. Past imports, edits, opening dates and corrections do not prevent
+  deletion. Retain the identity and financial history internally; a creation
+  retry cannot resurrect it. If an active Undo or Redo depends on this account,
+  explicitly confirm clearing the file-wide stacks and save that expiry with
+  deletion atomically. Otherwise preserve both stacks. Cancel and failed saves
+  preserve the account and history. This is not an Undo step and does not change
+  the version-1 format. Owner Go: 2026-11-17.
 - **Correct opening** changes the current opening date, amount, or both. It
   does not change transactions or source facts. A new opening date later than
   any transaction on that account is refused. The stored opening is used

@@ -110,8 +110,13 @@ Archived categories may retain/restore their historical assignments; this narrow
 restoration is not permission for new forward assignments to archived categories.
 
 Definition deletion must check active Undo dependencies as well as current use.
-Refuse deleting a category/account required by an active inverse. Account archive
-must also refuse while an active action needs writable access to that account;
+For otherwise-unused categories and empty zero-opening accounts, ask before
+clearing file-wide Undo/Redo if an active inverse or replay depends on the deleted
+identity. Expire history and retire the identity in one transaction; preserve
+unrelated Undo/Redo when neither needs that identity. Retain historical identities
+and imported facts internally. Cancel, stale confirmation and failed saves change
+neither deletion nor history. This deletion exception was authorized 2026-11-17.
+Account archive must still refuse while an active action needs writable access to that account;
 retain today's other archive restrictions. Explain the affected action and that
 successful close ends session Undo. Do not silently discard history or allow the
 save to strand a later Undo. Rule deletion can retain an older definition solely
@@ -434,7 +439,9 @@ acknowledgement is resolved against the committed action before publishing the
 stack change; a retry cannot replay the next action.
 
 A saved semantic mutation outside Undo/Redo invalidates pending Redo, including
-standalone definitions/settings. It preserves the existing Undo chain. No-ops,
+standalone definitions/settings. The deletion exception above preserves unrelated
+Redo and clears dependent history only with confirmation. Other definition saves
+preserve the existing Undo chain. No-ops,
 failed commands, selection, navigation, and previews preserve Redo. The saved
 mutation epoch is the authority for detecting invalidation. Import Undo clears
 all pending Redo and creates no recipe: reimport the file to bring it back.

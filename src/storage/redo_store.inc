@@ -70,6 +70,9 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
     struct Selection {std::int64_t& value;std::int64_t prior;~Selection(){value=prior;}} selection{impl_->selected_account,impl_->selected_account};
     RedoFrame frame;frame.action=action;frame.action.label=action_display_label(action);
     if(action.kind==app::ActionKind::import)return frame;
+    auto available=accounts();const auto archived=archived_accounts();available.insert(available.end(),archived.begin(),archived.end());
+    for(const auto& account:available)if(deletion_affects_action(action,account.identity,{},true))frame.accounts.insert(account.identity);
+    frame.categories=action_categories(action,true);
     if(action.kind==app::ActionKind::manual_creation) {
         const auto id=action.payload;const auto owner=account_for_batch(id).identity;const auto draft=*load_row({id,0},false).draft;
         frame.replay=[id,owner,draft](ImportStore& store,std::string_view operation){store.impl_->selected_account=owner;store.impl_->redo_names["batch:"+id]=std::string(operation);store.create_manual(operation,draft);};return frame;
