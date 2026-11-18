@@ -551,4 +551,29 @@ EntryLinkEdit edit_linked_allocation(std::span<const Link> links,const Allocatio
     validate(link);edited(links,{link,std::nullopt,std::nullopt});
     return {std::move(link),LinkFate::released};
 }
+bool draft_date_editable(const Link& link,const Side& side) {
+    return !link.unresolved && !link.destination_released &&
+        link.origin.state!=State::removed && link.destination.state!=State::removed &&
+        side.state==State::draft && (side.ledger_entry || side.independent_evidence) &&
+        !link.origin.attached_evidence && !link.origin.proposed_evidence &&
+        !link.destination.attached_evidence && !link.destination.proposed_evidence;
+}
+Link correct_draft_date(const Link& before,const Endpoint& endpoint,std::string_view after_date) {
+    validate(before);
+    auto link=before;
+    const bool origin=link.origin.endpoint==endpoint;
+    auto& side=origin?link.origin:link.destination;
+    if(side.endpoint!=endpoint || !draft_date_editable(link,side))invalid();
+    date(after_date);
+    side.date=after_date;
+    if(origin) {
+        if(disposable(link.destination) && !link.destination.ledger_entry) {
+            link.generated_date=after_date;
+            link.destination.date=after_date;
+        }
+        link.origin_date_corrected=side.date!=link.generated_date;
+    }
+    validate(link);
+    return link;
+}
 } // namespace spentit::transfers

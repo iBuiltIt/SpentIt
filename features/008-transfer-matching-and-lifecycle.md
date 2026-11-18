@@ -1,7 +1,7 @@
 # 008 — Transfer matching and lifecycle
 
 Status: **active**
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
@@ -77,6 +77,14 @@ distinct.
   for generated entries in listed accounts. **Accept transactions** records
   their unmatched decisions in the same file-wide save. Possible matches
   stay in Review. See [account preference](../doc/review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
+
+## New transfer dates
+
+A [date correction](../doc/ledger-editing.md#correcting-the-date-of-a-new-transfer)
+on a New transfer preserves its link and is one Undo step. An eligible New
+generated counterpart follows the original's correction. Independent or
+accepted counterparts keep their dates. Attached or proposed bank matches
+protect the dates.
 
 ## Committed edits
 

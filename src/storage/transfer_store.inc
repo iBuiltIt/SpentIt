@@ -50,6 +50,29 @@ void store_transfer(sqlite3* db,const app::TransferView& value,std::int64_t sequ
     Statement head(db,initial?"INSERT INTO transfer_heads VALUES(?,?)":"UPDATE transfer_heads SET sequence=?2 WHERE identity=?1");head.text(1,value.link.identity);head.integer(2,sequence);head.done();
 }
 void validate_transfer_set(const std::vector<app::TransferView>& values){std::vector<transfers::Link> links;links.reserve(values.size());for(const auto& value:values)links.push_back(value.link);transfers::validate_set(links);}
+std::vector<app::TransferView> plan_draft_transfer_date(const std::vector<app::TransferView>& before,
+    std::int64_t account,const imports::Occurrence& id,std::string_view prior,std::string_view date) {
+    std::vector<app::TransferView> edits;
+    for(const auto& value:before) {
+        const auto& link=value.link;
+        if(link.unresolved || link.destination_released)continue;
+        for(const auto* side:{&link.origin,&link.destination}) {
+            const auto matches=[&](const transfers::Endpoint& endpoint){return endpoint.account==account && endpoint.entry==id;};
+            if(side->state==transfers::State::removed)continue;
+            if((side->attached_evidence && matches(side->attached_evidence->endpoint)) ||
+               (side->proposed_evidence && matches(side->proposed_evidence->endpoint)))
+                fail(SQLITE_CONSTRAINT,"The date is locked while this transfer has a bank match.");
+            if(!matches(side->endpoint))continue;
+            if(value.link_has_bank_match || !transfers::draft_date_editable(link,*side))
+                fail(SQLITE_CONSTRAINT,"The date is locked while this transfer has a bank match or is no longer New.");
+            if(side->date!=prior)fail(SQLITE_CONSTRAINT,"The transfer changed. Reopen the transaction before editing its date.");
+            auto edit=value;
+            edit.link=transfers::correct_draft_date(link,side->endpoint,date);
+            edits.push_back(std::move(edit));
+        }
+    }
+    return edits;
+}
 app::TransferView transition_transfer(app::TransferView value,const app::TransferRequest& request,std::int64_t account){
     const auto& current=value.link.origin.endpoint.account==account?value.link.origin:value.link.destination;
     if(current.endpoint.account!=account)fail(SQLITE_CONSTRAINT,"Transfer belongs to another account");
@@ -217,7 +240,10 @@ std::vector<app::TransferView> ImportStore::all_transfers() const {
 }
 std::vector<app::TransferView> ImportStore::transfers() const {
     auto out=all_transfers();std::erase_if(out,[&](const auto& value){return value.link.origin.endpoint.account!=impl_->selected_account && value.link.destination.endpoint.account!=impl_->selected_account;});
-    for(auto& value:out){Statement match(impl_->db,"SELECT 1 FROM generated_source_matches WHERE link=? AND account=? AND active=1");match.text(1,value.link.identity);match.integer(2,impl_->selected_account);value.source_matched=match.row();}
+    for(auto& value:out){
+        Statement match(impl_->db,"SELECT account FROM generated_source_matches WHERE link=? AND active=1");match.text(1,value.link.identity);
+        while(match.row()){value.link_has_bank_match=true;value.source_matched|=match.integer(0)==impl_->selected_account;}
+    }
     return out;
 }
 Money ImportStore::local_transfer_total(std::int64_t account,bool projected) const {return local_total(all_transfers(),account,account_by_id(account).currency,projected);}
@@ -508,7 +534,10 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         const bool committed_category=request.action==app::TransferAction::retarget && request.mode==0 && request.left && (request.left->imported || request.left->ledger_entry) && request.left->state==transfers::State::committed;
         int expected_kind=4;
         if(request.action==app::TransferAction::import_commit)expected_kind=0;
-        else if(request.action==app::TransferAction::relink){if(kind!=static_cast<int>(app::ChangeKind::correct) && kind!=static_cast<int>(app::ChangeKind::remove))fail(SQLITE_CORRUPT,"Transfer history does not replay");expected_kind=kind;}
+        else if(request.action==app::TransferAction::relink){
+            if(kind!=static_cast<int>(app::ChangeKind::transfer) && kind!=static_cast<int>(app::ChangeKind::correct) && kind!=static_cast<int>(app::ChangeKind::remove))fail(SQLITE_CORRUPT,"Transfer history does not replay");
+            expected_kind=kind;
+        }
         else if(request.action==app::TransferAction::restore)expected_kind=static_cast<int>(app::ChangeKind::undo);
         else if(committed_category)expected_kind=static_cast<int>(app::ChangeKind::correct);
         const bool posts_money=request.action==app::TransferAction::commit_local || request.action==app::TransferAction::import_commit || ((request.action==app::TransferAction::merge || request.action==app::TransferAction::review_undo || request.action==app::TransferAction::resize_generated || request.action==app::TransferAction::release_generated || request.action==app::TransferAction::delete_selection || request.action==app::TransferAction::unmerge) && events.integer(6)!=0);
@@ -599,6 +628,22 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
                 if(request.action==app::TransferAction::restore){
                     Statement undone(impl_->db,"SELECT undo_of FROM ledger_operations WHERE sequence=?");undone.integer(1,sequence);if(!undone.row() || undone.bytes(0).empty())fail(SQLITE_CORRUPT);
                     expected=plan_restore(undone.bytes(0));
+                }else if(kind==static_cast<int>(app::ChangeKind::transfer)){
+                    Statement member(impl_->db,R"SQL(SELECT m.batch,m.ordinal,m.prior,m.result
+                        FROM review_members m JOIN review_answers a ON a.id=m.answer JOIN batches b ON b.id=m.batch
+                        WHERE m.child=? AND m.committed=0 AND a.question='ledger-edit' AND b.account_id=?)SQL");
+                    member.text(1,events.bytes(0));member.integer(2,account.identity);
+                    if(!member.row())fail(SQLITE_CORRUPT,"New transfer date edit is missing its transaction");
+                    const imports::Occurrence id{member.bytes(0),static_cast<std::size_t>(member.integer(1))};
+                    auto before_draft=review_draft(id,member.integer(2),true);
+                    const auto after_draft=review_draft(id,member.integer(3),true);
+                    const auto prior_date=before_draft.date;
+                    before_draft.date=after_draft.date;
+                    if(prior_date==after_draft.date || !same_draft(before_draft,after_draft) || member.row())
+                        fail(SQLITE_CORRUPT,"New transfer edit changed more than its date");
+                    std::vector<app::TransferView> before;
+                    for(const auto& [identity,value]:previous){(void)identity;before.push_back(value);}
+                    expected.changed=plan_draft_transfer_date(before,account.identity,id,prior_date,after_draft.date);
                 }else{
                     Statement op(impl_->db,"SELECT batch,ordinal,prior_revision,result_revision,kind FROM ledger_operations WHERE sequence=?");op.integer(1,sequence);if(!op.row())fail(SQLITE_CORRUPT);
                     const imports::Occurrence id{op.bytes(0),static_cast<std::size_t>(op.integer(1))};

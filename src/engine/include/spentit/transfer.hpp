@@ -119,6 +119,10 @@ LinkEdit retarget(std::span<const Link>,const AllocationFact& origin,std::string
 // amount, or leaving the transfer category ends the link. A committed
 // counterpart stays. A purely generated uncommitted counterpart is removed.
 EntryLinkEdit edit_linked_allocation(std::span<const Link>,const AllocationFact& before,bool remove,bool keep_transfer,const Money& after_amount,std::string_view after_date);
+// An independent New posting can change its date. A purely generated New
+// destination follows the origin while all other posting dates stay in place.
+bool draft_date_editable(const Link&,const Side&);
+Link correct_draft_date(const Link&,const Endpoint&,std::string_view date);
 // Pass the complete relationship set for the operation. A protected allocation
 // preserves its entire source transaction, including sibling transfer links.
 // Duplicate endpoints and inconsistent states of a shared entry are rejected.

@@ -1047,6 +1047,15 @@ struct ImportModel::Worker {
                 selectedBatch=batch;selectedOrdinal=ordinal;selectedCommittedToken.reset();
                 Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
                 selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat,amountFormat)}};
+                const auto& origin=value.link.origin;
+                if(side==&value.link.destination && side->state==transfers::State::draft &&
+                   !origin.endpoint.entry.batch.starts_with("~transfer-")){
+                    if(!value.link_has_bank_match && transfers::draft_date_editable(value.link,origin))
+                        selected["transferDateOrigin"]=QVariantMap{{"counterpartAccount",QString::number(origin.endpoint.account)},
+                            {"counterpartBatch",text(origin.endpoint.entry.batch)},{"counterpartOrdinal",static_cast<int>(origin.endpoint.entry.ordinal)}};
+                    else if(value.link_has_bank_match || origin.attached_evidence || origin.proposed_evidence || side->attached_evidence || side->proposed_evidence)
+                        selected["transferDateLocked"]=true;
+                }
                 QVariantList origins;
                 if(!value.link.unresolved && side==&value.link.origin)origins.push_back(QVariantMap{{"allocation",text(side->endpoint.allocation)},{"link",text(value.link.identity)}});
                 selected["transferOrigins"]=origins;decorateSelectedTransfers(repo,repo.transfers());return;
@@ -1159,15 +1168,28 @@ struct ImportModel::Worker {
             selected["duplicate"]=text(row.decision.duplicate_of->batch)+" / "+QString::number(row.decision.duplicate_of->ordinal+1);
             selected["removedDuplicate"]=repo.transaction_accepted(*row.decision.duplicate_of) && !repo.committed_entry(*row.decision.duplicate_of).current.active;
         }
-        bool linked=false,endpoint=false,evidence=false;std::string transfer_id;const imports::Occurrence row_id{batch,ordinal};
+        bool linked=false,endpoint=false,evidence=false,date_locked=false,bank_match=false;
+        std::string transfer_id;const imports::Occurrence row_id{batch,ordinal};
         for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination}){
             if(side->state==transfers::State::removed)continue;
             const bool hit_endpoint=side->endpoint.entry==row_id;
             const bool hit_evidence=(side->attached_evidence && side->attached_evidence->endpoint.entry==row_id) || (side->proposed_evidence && side->proposed_evidence->endpoint.entry==row_id);
             if(!hit_endpoint && !hit_evidence)continue;
             linked=true;endpoint=endpoint||hit_endpoint;evidence=evidence||hit_evidence;transfer_id=value.link.identity;
+            date_locked|=hit_evidence || value.link_has_bank_match || !transfers::draft_date_editable(value.link,*side);
+            bank_match|=hit_evidence || value.link_has_bank_match || value.link.origin.attached_evidence ||
+                value.link.origin.proposed_evidence || value.link.destination.attached_evidence || value.link.destination.proposed_evidence;
         }
-        if(linked){selected["editable"]=false;if(!(committed && endpoint && !evidence && !batch.starts_with("~transfer-")))selected["canCorrect"]=false;selected["transferId"]=text(transfer_id);}
+        if(linked){
+            const bool new_transfer=selected.value("editable").toBool() || (found->state==app::BatchState::protected_drafts && !committed);
+            if(new_transfer && !row.excluded_by_clear){
+                selected["transferDateEditable"]=endpoint && !date_locked;
+                selected["transferDateLocked"]=bank_match;
+            }
+            selected["editable"]=false;
+            if(!(committed && endpoint && !evidence && !batch.starts_with("~transfer-")))selected["canCorrect"]=false;
+            selected["transferId"]=text(transfer_id);
+        }
         QVariantList origins;
         for(const auto& value:transferLinks)if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed && value.link.origin.endpoint.account==acct.identity && value.link.origin.endpoint.entry==imports::Occurrence{batch,ordinal})origins.push_back(QVariantMap{{"allocation",text(value.link.origin.endpoint.allocation)},{"link",text(value.link.identity)}});
         selected["transferOrigins"]=origins;
@@ -2543,6 +2565,13 @@ struct ImportModel::Worker {
         else if(action=="save") {
             if(selectedBatch.empty()) throw std::logic_error("Select a draft first");
             auto row=repo.row({selectedBatch,selectedOrdinal});
+            if(a.value("dateOnly").toBool()){
+                if(!row.draft || !selected.value("transferDateEditable").toBool())throw std::logic_error("This transfer date is locked.");
+                auto edit=*row.draft;
+                edit.date=str(a.value("date"));
+                acceptEdit(edit,context);
+                return;
+            }
             if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source,amountFormat);
             if(row.draft)acceptEdit(edit,context);

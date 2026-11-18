@@ -107,6 +107,22 @@ retains the editor's existing discard behavior. Leaving a search without choosin
 restores the saved label. Category searching alone does not mutate the edit.
 Other fields retain Enter-to-accept behavior and session Undo remains unchanged.
 
+## Correcting the date of a New transfer
+
+Double-click the original transaction to edit its Date. Press Enter to save or
+Escape to discard the edit. The transaction stays New and the link stays in
+place. The transfer editor's existing restrictions on other fields still apply.
+
+If the other side is a generated entry that is also New, the correction updates
+both dates in one save. From that generated entry, **Edit date on original
+transaction** opens the original and focuses Date. Two independently entered or
+imported postings keep their own dates. An accepted counterpart keeps its date.
+An attached or proposed bank match locks the date.
+
+**Undo Correct transfer date** restores the previous date or dates in one step.
+Redo reapplies the correction through the same validation. Amounts, allocation
+identities, source evidence and acceptance status are preserved.
+
 ## Undo scope and persistence
 
 Accepted edits survive closing and reopening. The editor Undo capability is
@@ -217,8 +233,8 @@ Storage validates the complete frozen selection and mutation generation before
 writing. A stale selection or any invalid member rejects the entire operation;
 no selected row is silently skipped. Generated counterpart entries are excluded.
 Missing/invalid original fields, unavailable original categories, changed currency
-or removed original source-split associations require individual editing. Pending
-linked transfers retain the existing editor restriction. Committed transfer edits
+or removed original source-split associations require individual editing. Bulk
+Restore stays unavailable for pending linked transfers. Committed transfer edits
 use the existing relationship planner and exact group Undo; overlapping changes
 to the same relationship reject the selection. Restoration does not create
 categories or silently repair incomplete originals.

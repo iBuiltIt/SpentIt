@@ -327,7 +327,7 @@ private:
     struct ReviewRestore {std::int64_t prior,result;std::string child;};
     void write_review_row(std::string_view,std::string_view,const imports::Occurrence&,const imports::DraftRow&,const imports::Decision&,bool,bool=false,bool=true,std::optional<std::int64_t> = {},std::optional<Money> = {},Money* = nullptr,const app::CommittedEntry* = nullptr,const ReviewRestore* = nullptr);
     bool review_draft_undo(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) const;
-    imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t) const;
+    imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t,bool historical_currency=false) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);
     app::ReviewSheet build_review_sheet(const std::vector<app::LinkExclusion>&) const;
     void verify_link_exclusions() const;

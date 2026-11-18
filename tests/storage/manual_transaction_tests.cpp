@@ -99,6 +99,27 @@ void origin_transfers(const std::filesystem::path& dir) {
         if(!left_imported)rejects([&]{s.apply_transfer("forged",forged);});
         s.preview_transfer(r);s.apply_transfer("link",r);s.apply_transfer("link",r);s.verify();
         check(s.balance().units()==-1000 && s.current_ledger().size()==1,"Linked left counted once");s.select_account(2);check(s.balance().units()==1000 && s.current_ledger().size()==1,"Linked right counted once");s.select_account(1);
+        for(int account:{1,2}) {
+            s.select_account(account);
+            const auto& request=account==1?left:right;
+            const auto id=request.left->endpoint.entry;
+            if(s.transaction_accepted(id))continue;
+            auto edit=*s.row(id).draft;
+            edit.date="2026-01-03";
+            const auto operation="new-date-"+std::to_string(account);
+            s.edit_transaction(operation,id,request.batch_revision,{},edit);
+            const auto links=s.transfers();
+            const auto linked=std::find_if(links.begin(),links.end(),[](const auto& view){return view.link.identity=="pair";});
+            check(linked!=links.end(),"The independent link stays in place");
+            const auto& link=linked->link;
+            const bool origin=link.origin.endpoint.account==account;
+            check((origin?link.origin.date:link.destination.date)==edit.date &&
+                (origin?link.destination.date:link.origin.date)=="2026-01-01","Only the selected independent date changes");
+            s.verify();
+            s.undo_transaction_edit("undo-"+operation,operation);
+            s.verify();
+        }
+        s.select_account(1);
         if(!accepted)s.accept_all("accept-linked");
         s.verify();
         for(int account:{1,2}) {
@@ -122,6 +143,124 @@ void origin_transfers(const std::filesystem::path& dir) {
         }
         s.select_account(1);}
         {auto s=ImportStore::open(path,"test-password");check(s.balance().units()==-1000,"Pair reopen left");s.select_account(2);check(s.balance().units()==1000,"Pair reopen right");s.verify();}
+    }
+}
+void new_transfer_date(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const imports::Occurrence id{"entry",0};
+    const std::string original="2026-01-01",corrected="2026-02-02";
+    const auto base=dir/"new-transfer-date";
+    auto assign=[&](ImportStore& store){
+        store.create_account(2,"Savings",cad,"2025-01-01");
+        store.create_manual(id.batch,manual());
+        auto request=category_requests(store,{id}).front();
+        request.mode=1;request.category_id.clear();request.category_path.clear();request.left->ledger_entry=true;
+        request.generated=transfers::Endpoint{2,{"~transfer-date-destination",0},"generated"};
+        request.generated_currency=cad.definition_id();
+        OperationContext context;
+        store.assign_transfer_batch("assign",{request},context);
+    };
+    auto dates=[&](ImportStore& store,const std::string& expected,const std::string& counterpart){
+        const auto view=store.transfers().front();
+        check(store.row(id).draft->date==expected && view.link.origin.date==expected &&
+            view.link.destination.date==counterpart && view.link.identity=="category-entry" &&
+            view.link.origin.state==transfers::State::draft && !view.link.unresolved,"Origin date and link agree");
+        check(store.balance().units()==-1000,"Transfer date preserves origin balance");
+        store.select_account(2);
+        check(store.balance().units()==1000 && store.current_ledger().front().draft.date==counterpart,"Counterpart date and balance agree");
+        store.select_account(1);
+    };
+    auto save=[&](ImportStore& store,std::string_view operation){
+        auto edit=*store.row(id).draft;
+        edit.date=corrected;
+        store.edit_transaction(operation,id,store.batches().front().revision,{},edit);
+    };
+    {auto store=ImportStore::create(base,"test-password","Checking",cad,"2025-01-01");assign(store);}
+    const auto path=dir/"new-transfer-date-success";
+    std::filesystem::copy_file(base,path);
+    {
+        auto store=ImportStore::open(path,"test-password");
+        auto edit=*store.row(id).draft;
+        const auto revision=store.batches().front().revision;
+        edit.date="2026-02-30";
+        rejects([&]{store.edit_transaction("invalid",id,revision,{},edit);});
+        edit.date=corrected;edit.memo="Other change";
+        rejects([&]{store.edit_transaction("mixed",id,revision,{},edit);});
+        dates(store,original,original);
+        edit.memo="My note";
+        store.edit_transaction("date",id,revision,{},edit);
+        store.edit_transaction("date",id,revision,{},edit);
+        dates(store,corrected,corrected);
+        store.verify();
+        const auto action=store.action_head();
+        check(action && action->label=="Correct transfer date","A transfer date correction is one labeled action");
+        store.undo_action("undo-date",store.preview_undo(action->id,store.action_token()));
+        dates(store,original,original);
+        store.verify();
+        UndoPreview redo;redo.action=store.redo_history().front();redo.token=store.action_token();
+        store.redo_action("redo-date",redo);
+        dates(store,corrected,corrected);
+        store.verify();
+        test_session::close_reopen(store,path,"test-password");
+        dates(store,corrected,corrected);
+        store.verify();
+    }
+    for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const bool committed=phase==storage::ImportPhase::after_commit;
+        const auto trial=dir/(committed?"date-after-commit":"date-before-commit");
+        std::filesystem::copy_file(base,trial);
+        auto store=ImportStore::open(trial,"test-password");
+        const auto revision=store.batches().front().revision;
+        auto edit=*store.row(id).draft;edit.date=corrected;
+        store.observer([&](auto event){if(event==phase)throw std::runtime_error("Injected edit interruption");});
+        rejects([&]{store.edit_transaction("date",id,revision,{},edit);});
+        store.observer({});
+        check(store.review_outcome("date").has_value()==committed,"Date save has an accurate durable receipt");
+        dates(store,committed?corrected:original,committed?corrected:original);
+        store.edit_transaction("date",id,revision,{},edit);
+        dates(store,corrected,corrected);
+        store.verify();
+    }
+    {
+        const auto trial=dir/"date-with-bank-match";
+        std::filesystem::copy_file(base,trial);
+        auto store=ImportStore::open(trial,"test-password");
+        store.select_account(2);
+        store.ingest("bank","!Type:Bank\nD01/01/2026\nT10.00\nPBank transfer\n^\n",qif::DateOrder::dmy);
+        TransferRequest match{};match.action=TransferAction::propose_match;match.link="category-entry";
+        match.expected_sequence=store.transfer_sequence();
+        match.evidence=transfers::BankEvidence{{2,{"bank",0},"source-0"},Money(1000,cad),original};
+        store.apply_transfer("match",match);
+        store.select_account(1);
+        rejects([&]{save(store,"protected-proposal");});
+        check(store.row(id).draft->date==original && !store.review_outcome("protected-proposal"),"A proposed bank match protects the date");
+        store.select_account(2);
+        store.commit("bank",0,"accept-bank");
+        store.select_account(1);
+        rejects([&]{save(store,"protected-match");});
+        check(store.row(id).draft->date==original && !store.review_outcome("protected-match"),"An attached bank match protects the date");
+        store.verify();
+    }
+    {
+        auto store=ImportStore::open(base,"test-password");
+        for(int failure:{SQLITE_FULL,SQLITE_IOERR_WRITE}){
+            fault_vfs::arm(1,failure);
+            bool failed=false;
+            try{save(store,"io-date");}catch(const std::exception&){failed=true;}
+            const auto fired=fault_vfs::fired;
+            fault_vfs::disarm();
+            check(failed && fired && !store.review_outcome("io-date"),"Failed transfer date write is unacknowledged");
+            dates(store,original,original);
+        }
+        store.select_account(2);
+        TransferRequest accept{};accept.action=TransferAction::accept;accept.link="category-entry";accept.expected_sequence=store.transfer_sequence();
+        store.apply_transfer("accept-unmatched",accept);
+        accept.action=TransferAction::commit_local;accept.expected_sequence=store.transfer_sequence();
+        store.apply_transfer("accept-destination",accept);
+        store.select_account(1);
+        save(store,"date");
+        dates(store,corrected,original);
+        store.verify();
     }
 }
 void origin_import_undo(const std::filesystem::path& dir) {
@@ -274,7 +413,7 @@ void recovery(const std::filesystem::path& dir) {
 int main(){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
-        fault_vfs::install();origin_transfers(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
+        fault_vfs::install();origin_transfers(dir);new_transfer_date(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
         {auto s=ImportStore::create(path,"test-password","Checking",Currency("CAD"),"2025-01-01");
         const auto id=s.create_manual("manual-one",manual());check(id.batch=="manual-one","Identity");
         check(s.balance().units()==-1000,"Balance");check(!s.row(id).draft->transaction.original_imported_amount(),"No invented original");check(!s.imported_original(id),"No imported original");check(s.undoable_imports().empty(),"Manual is not an import");

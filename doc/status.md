@@ -13,6 +13,26 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Correcting New transfer dates — 2026-11-18
+
+The original ledger transaction can save a date correction while it is New
+and linked. An eligible generated New counterpart follows that date. An
+independent or accepted counterpart keeps its own date. Attached or proposed
+bank matches protect the dates. The correction and its Undo each save as one
+operation. See [ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer)
+and [MAN-088](manual-update-backlog.md#open-items). The release schema remains
+version 1.
+
+On macOS arm64 with Qt 6.12.0, five focused offscreen navigation cases and five
+Release CTest targets passed. The new UI case covers the generated entry's
+shortcut to the original, Enter to save, and Undo with Date focused. Synthetic
+storage checks cover independent and accepted counterparts, proposed and
+attached bank matches, invalid dates, Undo, Redo, reopen, and injected disk-full,
+write, and commit-boundary failures. The manual transaction storage suite
+also passed under AddressSanitizer and UndefinedBehaviorSanitizer with leak
+detection disabled. Native interactive, Linux, Windows, and full repository
+checks were not run.
+
 ## Switch accounts after Undo — 2026-11-18
 
 Returning to an account after Undo skips a remembered transaction that

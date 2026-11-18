@@ -42,6 +42,8 @@ struct TransferView {
     bool source_matched=false;
     // Current persisted relationship revision; excluded from the financial payload.
     std::int64_t sequence=0;
+    // Derived bank-source ownership on either account, outside the payload.
+    bool link_has_bank_match=false;
 };
 struct TransferReceipt {
     std::string operation;

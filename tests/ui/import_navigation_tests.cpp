@@ -270,6 +270,66 @@ private slots:
         }
         if(native)QGuiApplication::styleHints()->unsetColorScheme();
     }
+    void newTransferDate() {
+        QTemporaryDir dir;
+        ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();
+        auto* window=qobject_cast<QQuickWindow*>(root);
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"select_account",{{"id","1"}});
+        QVERIFY(click(root,"addTransaction"));
+        QTRY_VERIFY(!model.busy());
+        QVERIFY(edit(root,"durablePayee","Manual transfer"));
+        QVERIFY(edit(root,"durableTotal","-10.00"));
+        QVERIFY(edit(root,"durableDate","2026-01-02"));
+        QVERIFY(QMetaObject::invokeMethod(object(root,"durableDate"),"accepted"));
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto batch=model.state().value("selected").toMap().value("batch");
+        const auto allocation=model.state().value("selected").toMap().value("draft").toMap()
+            .value("splits").toList().first().toMap().value("allocationId");
+        const auto generated=QStringLiteral("~transfer-test-date-destination");
+        run(model,"transfer_retarget",{{"link","test-date"},{"batch",batch},{"ordinal",0},{"allocation",allocation},
+            {"mode",1},{"destination","2"},{"generatedBatch",generated},{"operation","assign-test-date"},
+            {"sequence",model.state().value("transferSequence")}});
+        run(model,"select_account",{{"id","2"}});
+        run(model,"inspect",{{"batch",generated},{"ordinal",0}});
+        QVERIFY(object(root,"durableDate")->property("readOnly").toBool());
+        QTRY_VERIFY(object(root,"editTransferDateOrigin")->property("visible").toBool());
+        QVERIFY(click(root,"editTransferDateOrigin"));
+        QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));
+        QTRY_VERIFY(object(root,"durableDate")->property("activeFocus").toBool());
+        QVERIFY(!object(root,"durableDate")->property("readOnly").toBool());
+        QVERIFY(object(root,"durableTotal")->property("readOnly").toBool());
+        QVERIFY(object(root,"durablePayee")->property("readOnly").toBool());
+        QVERIFY(edit(root,"durableDate","2026-01-05"));
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto selected=model.state().value("selected").toMap();
+        QCOMPARE(selected.value("draft").toMap().value("date").toString(),QString("2026-01-05"));
+        QVERIFY(!selected.value("committed").toBool());
+        QCOMPARE(selected.value("transferId").toString(),QString("test-date"));
+        run(model,"select_account",{{"id","2"}});
+        run(model,"inspect",{{"batch",generated},{"ordinal",0}});
+        QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-05"));
+        QVERIFY(click(root,"editTransferDateOrigin"));
+        QTRY_COMPARE(model.state().value("accountId").toString(),QString("1"));
+        QTRY_VERIFY(object(root,"durableDate")->property("activeFocus").toBool());
+        QTest::keySequence(window,QKeySequence::Undo);
+        QTRY_COMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-02"));
+        run(model,"select_account",{{"id","2"}});
+        run(model,"inspect",{{"batch",generated},{"ordinal",0}});
+        QCOMPARE(object(root,"durableDate")->property("text").toString(),QString("2026-01-02"));
+        QCOMPARE(model.state().value("selected").toMap().value("transferId").toString(),QString("test-date"));
+    }
     void manualTransactionEntry() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

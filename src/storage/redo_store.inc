@@ -129,6 +129,26 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
         transfer_codec::Reader in{request};app::LedgerSelectionEdit choice;choice.action=static_cast<app::LedgerSelectionAction>(in.number());choice.account=in.number();(void)in.number();choice.payee=in.text();while(!in.bytes.empty()){const auto field=in.text();if(field=="delete-counterparts")choice.delete_counterparts=true;else choice.selected.push_back(redo_key(field));}
         frame.replay=[choice](ImportStore& store,std::string_view operation){auto fresh=choice;fresh.generation=store.ledger_edit_generation();for(auto& id:fresh.selected)id=store.redo_occurrence(id);store.impl_->selected_account=fresh.account;app::OperationContext context;store.delete_transactions(operation,fresh,context);};return frame;
     }
+    if(question=="ledger-edit"){
+        Statement date_edit(impl_->db,R"SQL(SELECT m.batch,m.ordinal,v.date FROM review_members m
+            JOIN ledger_operations l ON l.id=m.child AND l.kind=4
+            JOIN versions v ON v.batch=m.batch AND v.ordinal=m.ordinal AND v.revision=m.result
+            WHERE m.answer=? AND m.committed=0)SQL");
+        date_edit.text(1,action.payload);
+        if(date_edit.row()){
+            const imports::Occurrence id{date_edit.bytes(0),static_cast<std::size_t>(date_edit.integer(1))};
+            frame.replay=[id,date=date_edit.bytes(2)](ImportStore& store,std::string_view operation){
+                const auto target=store.redo_occurrence(id);
+                store.impl_->selected_account=store.account_for_batch(target.batch).identity;
+                const auto row=store.load_row(target,false);
+                if(!row.draft)fail(SQLITE_CONSTRAINT,"This transfer is no longer available.");
+                auto draft=*row.draft;
+                draft.date=date;
+                store.edit_transaction(operation,target,batch(store.impl_->db,target.batch).revision,{},draft);
+            };
+            return frame;
+        }
+    }
     // Ordinary edits and rule application replay recorded results. They do not
     // re-evaluate expressions, import matching, or the current rule definitions.
     struct Member {imports::Occurrence id;imports::DraftRow draft;imports::Decision decision;bool active;std::optional<std::int64_t> ruleset;};

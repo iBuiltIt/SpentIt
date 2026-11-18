@@ -213,7 +213,7 @@ ApplicationWindow {
             if(controls[i].enabled)enabledControls+=Math.pow(2,i)
             if(controls[i].activeFocus)focusRole=i+1
         }
-        workflow.observeUi({modalStack:diagnosticModalStack,editorKind:currentPage==="rules"?3:currentPage==="categories"?2:editEnabled?1:0,focusRole:focusRole,visibleControls:visibleControls,enabledControls:enabledControls,generation:workflow.diagnosticGeneration,surface:s.active?currentPage:settingUp?"setup":s.unlockRequired?"unlock":"welcome",modals:modals,pending:pending,
+        workflow.observeUi({modalStack:diagnosticModalStack,editorKind:currentPage==="rules"?3:currentPage==="categories"?2:(editEnabled || transferDateOnly)?1:0,focusRole:focusRole,visibleControls:visibleControls,enabledControls:enabledControls,generation:workflow.diagnosticGeneration,surface:s.active?currentPage:settingUp?"setup":s.unlockRequired?"unlock":"welcome",modals:modals,pending:pending,
           sidebar:sidebarVisible,dirty:dirty||categoryDirty||rulesDirty,search:search.text.length>0,searchValid:diagnosticSearchValid,
           first:first,last:last,delegates:count,selectedVisible:!!ledger.currentItem && ledger.currentItem.y>=ledger.contentY && ledger.currentItem.y<ledger.contentY+ledger.height,
           ready:modals!==0 || (pending===0 && (!s.active || (currentPage!=="ledger" && currentPage!=="review") || observedList.count===0 || first>=0)),nativeExposed:false,
@@ -246,7 +246,7 @@ ApplicationWindow {
             LedgerMenuItem {
                 objectName:"editUndo"
                 readonly property var editor:editMenuFocus || window.activeFocusItem
-                readonly property bool textEditing:!!editor && typeof editor.undo === "function"
+                readonly property bool textEditing:window.usesTextUndo(editor)
                 text:"Undo"+(!textEditing && s.actionUndo && s.actionUndo.label?" "+s.actionUndo.label:"")
                 enabled:!workflow.busy && (textEditing?editor.canUndo:!!s.canUndoAction)
                 onTriggered:{if(textEditing)editor.undo();else undoEdit()}
@@ -254,7 +254,7 @@ ApplicationWindow {
             LedgerMenuItem {
                 objectName:"editRedo"
                 readonly property var editor:editMenuFocus || window.activeFocusItem
-                readonly property bool textEditing:!!editor && typeof editor.redo === "function"
+                readonly property bool textEditing:window.usesTextUndo(editor)
                 text:"Redo"+(!textEditing && s.actionRedo && s.actionRedo.label?" "+s.actionRedo.label:"")
                 enabled:!workflow.busy && (textEditing?editor.canRedo:!!s.canRedoAction)
                 onTriggered:{if(textEditing)editor.redo();else redoEdit()}
@@ -353,10 +353,10 @@ ApplicationWindow {
         ToolTip.text:destination?destination.description:""
         onClicked:window.showCounterpart(destination)
     }
-    function showCounterpart(item) {
+    function showCounterpart(item, editDateOnArrival) {
         guard(function(){
             rememberAccountViewport()
-            pendingCounterpart={batch:item.counterpartBatch,ordinal:item.counterpartOrdinal}
+            pendingCounterpart={batch:item.counterpartBatch,ordinal:item.counterpartOrdinal,editDate:!!editDateOnArrival}
             workflow.command("select_account",{id:item.counterpartAccount,reveal:true,batch:item.counterpartBatch,ordinal:item.counterpartOrdinal})
         })
     }
@@ -1582,6 +1582,10 @@ ApplicationWindow {
     property var editFocus: null
     property bool committedEditing: false
     property bool editEnabled: (!!selected.editable || (committedEditing && !!selected.canCorrect)) && !s.readOnly
+    readonly property bool transferDateOnly: !!selected.transferDateEditable && !s.readOnly
+    function usesTextUndo(item) {
+        return !!item && typeof item.undo === "function" && !(item===editDate && transferDateOnly && !dirty)
+    }
     property bool dirty: false
     property bool manualSplitAmounts: false
     property int automaticSplitIndex: -1
@@ -1609,7 +1613,7 @@ ApplicationWindow {
         else {beginQuit()}
     }
     property bool settingUp: false
-    function guard(action) { if (dirty) { pendingAction=action; if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else if(reportsWorkspace.dirty) {reportsWorkspace.requestLeave(action)} else action() }
+    function guard(action) { if (dirty) { pendingAction=action; if(!transferDateOnly && !prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open() } else if(categoryDirty || categorySaving) {pendingAction=action;finishCategoryEdit()} else if(rulesDirty) {pendingAction=action;showRulesLeave()} else if(reportsWorkspace.dirty) {reportsWorkspace.requestLeave(action)} else action() }
     function dismiss(dialog) { guardHandoff=true; dialog.close(); Qt.callLater(function(){guardHandoff=false}) }
     function addTransaction() {guard(function(){editorClosed=false;workflow.command("begin_manual")})}
     function discardEditor(next) {
@@ -2011,7 +2015,7 @@ ApplicationWindow {
         }
         // Undo changes saved transactions, openings and source ownership. Rule,
         // report and category definition drafts remain independent.
-        if(dirty){pendingAction=show;if(!prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open()}
+        if(dirty){pendingAction=show;if(!transferDateOnly && !prepareSplitAmounts() && splitSum!=="")splitMismatch.open();else unsaved.open()}
         else show()
     }
     HelpDialog {
@@ -2114,6 +2118,11 @@ ApplicationWindow {
     }
     function saveEditor() {
         if(workflow.busy || !dirty)return
+        if(transferDateOnly) {
+            rememberEditView()
+            workflow.command("save",{date:editDate.text,dateOnly:true})
+            return
+        }
         if(!prepareSplitAmounts()){pendingAction=null;return}
         rememberEditView()
         let splits=[]
@@ -2255,7 +2264,18 @@ ApplicationWindow {
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
                     if(pendingReviewLedger)++accountViewportRestoreSerial
-                    else if(pendingCounterpart){pendingCounterpart=null;Qt.callLater(function(){if(workflow.selectedRowIndex()>=0){ledger.currentIndex=workflow.selectedRowIndex();ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)}})}
+                    else if(pendingCounterpart){
+                        const editDateOnArrival=pendingCounterpart.editDate
+                        pendingCounterpart=null
+                        if(editDateOnArrival)editorClosed=false
+                        Qt.callLater(function(){
+                            if(workflow.selectedRowIndex()>=0){
+                                ledger.currentIndex=workflow.selectedRowIndex()
+                                ledger.positionViewAtIndex(ledger.currentIndex,ListView.Beginning)
+                            }
+                            if(editDateOnArrival && transferDateOnly)editDate.forceActiveFocus()
+                        })
+                    }
                     else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(switchingRulesAccount) {currentPage="rules";let entries=navigation.slice();entries[navigationIndex]={page:"rules",account:s.accountId};navigation=entries}
                     else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
@@ -5228,9 +5248,23 @@ ApplicationWindow {
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"This file does not support editing accepted transactions.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
                     visible:!!selected.draft
-                    NavigableTextField {id:editDate;KeyNavigation.tab:editPayee;objectName:"durableDate";placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
-                    onAccepted:if(editEnabled)saveEditor();onTextEdited:dirty=true;Accessible.name:"Transaction date"}
-                    CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled;onSelected:function(value){editDate.text=value;dirty=true}}
+                    NavigableTextField {
+                        id:editDate;objectName:"durableDate";KeyNavigation.tab:editPayee
+                        placeholderText:s.dateFormat||"YYYY-MM-DD";readOnly:!(editEnabled || transferDateOnly)
+                        Keys.onShortcutOverride:function(event){
+                            if(transferDateOnly && !dirty && (event.matches(StandardKey.Undo) || event.matches(StandardKey.Redo)))
+                                event.accepted=true
+                        }
+                        Keys.onPressed:function(event){
+                            if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}
+                            else if(transferDateOnly && !dirty && event.matches(StandardKey.Undo)){undoEdit();event.accepted=true}
+                            else if(transferDateOnly && !dirty && event.matches(StandardKey.Redo)){redoEdit();event.accepted=true}
+                        }
+                        onAccepted:if(editEnabled || transferDateOnly)saveEditor()
+                        onTextEdited:dirty=true
+                        Accessible.name:"Transaction date"
+                    }
+                    CalendarPicker {objectName:"transactionCalendar";workflow:window.workflowBackend;field:editDate;enabled:editEnabled || transferDateOnly;onSelected:function(value){editDate.text=value;dirty=true}}
                     NavigableTextField {id:editPayee;KeyNavigation.tab:editTotal;KeyNavigation.backtab:editDate;objectName:"durablePayee";placeholderText:"Payee";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;payeeTouched=true} Layout.fillWidth:true;Accessible.name:"Payee"}
                     NavigableTextField {id:editTotal;selectAllOnFocus:true;onEditingFinished:if(!window.helpFocusSuspended && selected.draft)resolveAmount(editTotal,selected.draft.currencyDefinition);KeyNavigation.tab:editorSplits.count?editorSplits.itemAt(0).categoryField:editMemo;KeyNavigation.backtab:editPayee;objectName:"durableTotal";placeholderText:"Amount";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
@@ -5293,6 +5327,9 @@ ApplicationWindow {
                 }
                 NavigableTextField {id:editMemo;KeyNavigation.backtab:editorSplits.count>1?editorSplits.itemAt(editorSplits.count-1).amountField:editorSplits.count?editorSplits.itemAt(0).categoryField:editTotal;objectName:"durableMemo";visible:!!selected.draft;placeholderText:"Memo";readOnly:!editEnabled;Keys.onPressed:function(event){if(event.key===Qt.Key_Escape){discardEditor();event.accepted=true}}
                     onAccepted:if(editEnabled)saveEditor();onTextEdited:{dirty=true;memoTouched=true} Layout.fillWidth:true;Accessible.name:"Memo"}
+                Label {visible:transferDateOnly;text:dirty?"Press Enter to save the date, or Escape to discard your changes.":"You can correct the date and keep the transfer linked.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {visible:!!selected.transferDateLocked;text:"The date is locked while this transfer has a bank match.";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Button {objectName:"editTransferDateOrigin";visible:!!selected.transferDateOrigin && !s.readOnly;text:"Edit date on original transaction";onClicked:showCounterpart(selected.transferDateOrigin,true)}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
                     Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}

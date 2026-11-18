@@ -28,7 +28,12 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 ## Open items
 
-None.
+- **MAN-088 — New transfer date corrections, 2026-11-18.** Update the
+  transaction editing and transfer sections to show the Date field, **Edit date
+  on original transaction**, bank-match protection, and one-step Undo. Cover
+  when a generated counterpart follows the date and when each posting keeps
+  its own date. Refresh any affected transfer editor pictures and captions.
+  [Ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer).
 
 ## Recapturing pictures
 
