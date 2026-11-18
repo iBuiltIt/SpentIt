@@ -894,7 +894,15 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10.40\nPTransfer\nL[Wise]\n^\n")}});
         run(m,"create_account",{{"id","2"},{"name","Wise"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10.00\nPTransfer\n^\n")}});
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));
+        QVERIFY(!visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());
+        QVERIFY(!visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        auto* warning=visualItem(window->contentItem(),"reviewAmountDifference_1");QVERIFY(warning);QVERIFY(warning->isVisible());
+        QCOMPARE(warning->property("text").toString(),QString("Amounts differ — review before linking"));
+        QVariant groups;QVERIFY(QMetaObject::invokeMethod(window,"linkSelectedGroups",Q_RETURN_ARG(QVariant,groups)));QVERIFY(groups.toList().isEmpty());
+        if(qEnvironmentVariableIsSet("SPENTIT_DIFFERENCE_CHOICE_CAPTURE")){QTest::qWait(150);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_DIFFERENCE_CHOICE_CAPTURE")));}
+        QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_1"),"clicked"));
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         auto* popup=window->findChild<QObject*>("reviewDifference");QVERIFY(popup);QTRY_VERIFY(popup->property("visible").toBool());QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("common").toString(),"10.00");QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("remainder").toString(),"0.40");

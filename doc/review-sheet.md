@@ -705,10 +705,12 @@ transfer** stages that answer for the card, including every suggested partner
 on a multiple-choice card. **Decide later** leaves the card out of the batch.
 Each card states its pending decision.
 
-Mutually unique one-to-one exact-allocation suggestions start checked. A
-mutually unique card with one other transaction also starts checked when each
-transaction has a single amount and those amounts differ. Link then opens the
-difference question, and Apply decisions does not save that card. Checked cards
+Mutually unique one-to-one exact-allocation suggestions start checked.
+Differing-amount suggestions start unchecked, even with only one candidate.
+Single-amount candidates show **Amounts differ — review before linking**.
+Choosing the candidate enables Link, which opens the difference question;
+Apply decisions does not save that card. This supersedes the automatic check
+for differing amounts (owner Go, 2026-11-18). Checked cards
 sort before multiple-choice cards, retaining their place when unchecked or
 set aside. Other cards start undecided, including a multiple-choice card with
 one same-day suggestion. Choosing a partner can check a remaining mutually

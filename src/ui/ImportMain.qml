@@ -3627,11 +3627,8 @@ ApplicationWindow {
             for(const edge of edges) {
                 const q=edge.q, row=q.rows[edge.index]
                 if((!followChoices && q.rows.length!==2) || degree[edge.origin]!==1 || degree[edge.partner]!==1 || used[edge.origin] || used[edge.partner])continue
-                // Exact pairs can be applied together. One other amount still
-                // starts checked so Link can ask about the difference first.
-                const exact=!!(row.suggestedLeftAllocation && row.suggestedRightAllocation)
-                const oneAmount=!followChoices && q.rows.length===2 && (q.rows[0].splits||[]).length===1 && (row.splits||[]).length===1
-                if(!exact && !oneAmount)continue
+                // Amount differences need an explicit choice and the Link workflow.
+                if(!row.suggestedLeftAllocation || !row.suggestedRightAllocation)continue
                 next[q.key]=makeLinkDecision(q,edge.index,true);
                 if(!followChoices && q.rows.length===2)ranks[q.key]=true
                 used[edge.origin]=true;used[edge.partner]=true;added=true
@@ -4251,6 +4248,7 @@ ApplicationWindow {
                         Button {Layout.preferredWidth:100;text:"Inspect";enabled:!workflow.busy;onClicked:inspectReviewTransaction(reviewRow.modelData)}
                     }
                     Repeater {model:reviewRow.showSplits?reviewRow.modelData.splits:[];delegate:Label {required property var modelData;Layout.fillWidth:true;leftPadding:24;text:modelData.amount+" · "+modelData.categoryDisplay+" · "+modelData.memo;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
+                    Label {objectName:"reviewAmountDifference_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0 && !!reviewRow.modelData.amountsDiffer;text:"Amounts differ — review before linking";color:theme.warning;wrapMode:Text.Wrap;Layout.fillWidth:true}
                     Label {text:reviewRow.modelData.note||"";visible:text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true;font.italic:true}
                     Label {text:reviewRow.modelData.memo||"";visible:reviewRow.showSplits && text.length>0;wrapMode:Text.Wrap;textFormat:Text.PlainText;Layout.fillWidth:true}
                     RowLayout {

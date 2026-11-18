@@ -13,6 +13,27 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Differing transfer amounts require a choice — 2026-11-18
+
+Owner Go replaces automatic checking of differing-amount candidates. They start
+unchecked; single-amount candidates show “Amounts differ — review before
+linking”. Selecting one enables the existing Link difference workflow. Exact
+one-to-one suggestions still start checked. The display flag compares exact
+magnitudes in the same currency in the worker; QML does no monetary arithmetic.
+Storage, matching eligibility and saving behavior are unchanged. The Review
+contract and MAN-073 reflect this refinement; manual files were not edited.
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release application and UI test
+executables were rebuilt. The five focused Review functions passed (10 QtTest
+results): differing-amount initial state/message, pending batch omission,
+explicit selection, difference cancellation/save, pending decisions, partner
+switching, multiple candidates, card buttons and batch selection. The Help
+`reviewChapterWalkthrough:difference` passed (3 QtTest results). Tests used
+synthetic files with access to their required application-data locks. A synthetic
+screenshot was inspected. `./build/SpentIt --smoke` passed offscreen, as did
+changed-document file links and `git diff --check`. No full suite, sanitizer,
+native interaction, Linux or Windows verification is claimed.
+
 ## Disabled Review transfer choices — 2026-11-18
 
 Owner Go covers dimming and disabling partner checkboxes that the existing
@@ -158,9 +179,10 @@ release 1 does not add.
 
 Review stages Link, Not this transfer, or Decide later separately. Automatically
 checked one-to-one cards sort first and keep their place when unchecked.
-A card with one other transaction also starts checked when each side has one
-amount and the amounts differ. Link asks about the difference, and Apply
-decisions does not save that card.
+Differing-amount suggestions now start unchecked (owner Go, 2026-11-18).
+Single-amount candidates show “Amounts differ — review before linking”.
+Choose the candidate and use Link to resolve the difference; Apply decisions
+does not save that card.
 Multiple-choice cards start undecided; selecting a pair can still check a
 remaining one-to-one partner. Related cards stay adjacent, and inferred mirrors
 do not jump to the initial one-to-one section. Changing or unchecking a choice

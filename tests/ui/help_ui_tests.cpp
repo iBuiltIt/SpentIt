@@ -2546,6 +2546,8 @@ private slots:
             run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
             import("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\n^\n", "2");
             mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewLinkCandidate_1"));
+            mouse("reviewLinkCandidate_1");
             QTRY_VERIFY(object(session.root, "reviewYes") && object(session.root, "reviewYes")->property("enabled").toBool());
             mouse("reviewYes");
             QTRY_VERIFY(object(session.root, "reviewDifference")->property("visible").toBool());

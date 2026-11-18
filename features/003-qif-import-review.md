@@ -99,9 +99,10 @@ follow-ons share one ordinary Undo step, separate from import Undo. Acceptance
 stays explicit. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
 **Apply decisions** saves pending transfer links and rejections together.
 Review card Link now saves only its pair; individual saves preserve unrelated
-pending choices. One-to-one suggestions sort first and start checked, including
-one other transaction whose single amount differs. Link asks about that
-difference before anything is saved, and Apply decisions omits that card.
+pending choices. Exact one-to-one suggestions sort first and start checked.
+Differing amounts start unchecked and single-amount candidates show
+**Amounts differ — review before linking**. Choose the candidate and use Link
+to resolve the difference before saving; Apply decisions omits that card.
 Untouched multiple-choice cards are omitted. See
 [pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
 
