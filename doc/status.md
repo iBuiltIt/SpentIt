@@ -136,6 +136,9 @@ release 1 does not add.
 
 Review stages Link, Not this transfer, or Decide later separately. Automatically
 checked one-to-one cards sort first and keep their place when unchecked.
+A card with one other transaction also starts checked when each side has one
+amount and the amounts differ. Link asks about the difference, and Apply
+decisions does not save that card.
 Multiple-choice cards start undecided; selecting a pair can still check a
 remaining one-to-one partner. Related cards stay adjacent, and inferred mirrors
 do not jump to the initial one-to-one section. Changing or unchecking a choice

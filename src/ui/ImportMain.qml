@@ -3627,7 +3627,11 @@ ApplicationWindow {
             for(const edge of edges) {
                 const q=edge.q, row=q.rows[edge.index]
                 if((!followChoices && q.rows.length!==2) || degree[edge.origin]!==1 || degree[edge.partner]!==1 || used[edge.origin] || used[edge.partner])continue
-                if(!row.suggestedLeftAllocation || !row.suggestedRightAllocation)continue
+                // Exact pairs can be applied together. One other amount still
+                // starts checked so Link can ask about the difference first.
+                const exact=!!(row.suggestedLeftAllocation && row.suggestedRightAllocation)
+                const oneAmount=!followChoices && q.rows.length===2 && (q.rows[0].splits||[]).length===1 && (row.splits||[]).length===1
+                if(!exact && !oneAmount)continue
                 next[q.key]=makeLinkDecision(q,edge.index,true);
                 if(!followChoices && q.rows.length===2)ranks[q.key]=true
                 used[edge.origin]=true;used[edge.partner]=true;added=true

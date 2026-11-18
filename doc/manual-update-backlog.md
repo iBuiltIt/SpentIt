@@ -54,7 +54,9 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   [review sheet](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
   Chapter: [review duplicates and transfers](../manual/review-duplicates-transfers.md),
   "Is it a payment between accounts?". Show automatically checked one-to-one
-  cards first, then undecided multiple-choice cards. Uncheck to stage Not this
+  cards first, then undecided multiple-choice cards. A card with one other
+  transaction also starts checked when the amounts differ; Link asks how to
+  categorise the difference before anything is saved. Uncheck to stage Not this
   transfer; Mark not a transfer stages rejection; Decide later omits the card.
   Apply decisions saves the displayed counts of links and rejections together;
   one Undo reverses the set. Individual Link and Not this transfer save only

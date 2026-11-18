@@ -871,7 +871,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10.40\nPTransfer\nL[Wise]\n^\n")}});
         run(m,"create_account",{{"id","2"},{"name","Wise"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10.00\nPTransfer\n^\n")}});
         QCOMPARE(m.state().value("reviewCount").toInt(),1);QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
-        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewLinkCandidate_1"),"clicked"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
+        QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1"));QTRY_VERIFY(visualItem(window->contentItem(),"reviewLinkCandidate_1")->property("checked").toBool());QTRY_VERIFY(visualItem(window->contentItem(),"reviewYes")->isEnabled());
         QTRY_VERIFY(visualItem(window->contentItem(),"reviewNo"));QCOMPARE(visualItem(window->contentItem(),"reviewNo")->property("text").toString(),QString("Not this transfer"));
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewYes"),"clicked"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         auto* popup=window->findChild<QObject*>("reviewDifference");QVERIFY(popup);QTRY_VERIFY(popup->property("visible").toBool());QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("common").toString(),"10.00");QCOMPARE(m.state().value("reviewLinkPreview").toMap().value("remainder").toString(),"0.40");
@@ -2056,7 +2056,7 @@ private slots:
         QTemporaryDir dir;const auto path=dir.path()+"/dates.spentit";
         ImportModel m(storage::document_gateway());
         run(m,"create",{{"path",path},{"name","Dates"},{"currency","CAD"},{"protected",false},{"dateFormat","DD/MM/YYYY"},{"defaultCategories",true}});
-        QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));QCOMPARE(m.state().value("categories").toList().size(),46);
+        QCOMPARE(m.state().value("dateFormat").toString(),QString("DD/MM/YYYY"));QCOMPARE(m.state().value("categories").toList().size(),59);
         run(m,"opening",{{"date","28/10/2026"},{"amount","0.00"}});
         QCOMPARE(m.state().value("openingDate").toString(),QString("28/10/2026"));
         QFile source(dir.path()+"/dates.qif");QVERIFY(source.open(QIODevice::WriteOnly));source.write("D10/11/2026\nT-1.00\nPSynthetic date\n^\n");source.close();
@@ -3453,8 +3453,8 @@ private slots:
         QCOMPARE(m.state().value("selectionIndex").toInt(),m.occurrenceIndex(batch,40));QVERIFY(m.state().value("canUndoEdit").toBool());
         if(qEnvironmentVariableIsSet("SPENTIT_EDITOR_SCREENSHOT"))QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_EDITOR_SCREENSHOT")));
         payee->setProperty("text","Second edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());
-        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QTRY_VERIFY(root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40 Stefan"));
-        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QTRY_VERIFY(root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QVERIFY(QMetaObject::invokeMethod(root->findChild<QObject*>("confirmActionUndo"),"clicked"));QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40"));QVERIFY(m.state().value("canUndoEdit").toBool()); // The import remains the common head.
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(!root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40 Stefan"));
+        QVERIFY(QMetaObject::invokeMethod(root,"undoEdit"));QVERIFY(!root->findChild<QObject*>("actionUndoConfirm")->property("visible").toBool());QTRY_VERIFY(!m.busy());QTRY_COMPARE(payee->property("text").toString(),QString("Row 40"));QVERIFY(m.state().value("canUndoEdit").toBool()); // The import remains the common head.
         auto* total=root->findChild<QQuickItem*>("durableTotal");QVERIFY(total);total->setProperty("text","-11.001");QVERIFY(QMetaObject::invokeMethod(total,"textEdited"));total->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(!root->property("splitEditMessage").toString().isEmpty());QVERIFY(root->property("dirty").toBool());QCOMPARE(selected(m).value("draft").toMap().value("total").toString(),QString("-10.00"));
         QTRY_VERIFY(total->hasActiveFocus());QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!root->property("dirty").toBool());QCOMPARE(total->property("text").toString(),QString("-10.00"));
         payee->setProperty("text","Persistent edit");QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));payee->forceActiveFocus();QTest::keyClick(window,Qt::Key_Return);QTRY_VERIFY(!m.busy());QVERIFY(m.error().isEmpty());

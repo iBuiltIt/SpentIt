@@ -321,9 +321,9 @@ The rule pattern is too large for SpentIt to run. Shorten it and preview again. 
 
 The rule pattern contains text SpentIt will not use, or a hidden null character. Retype the pattern as ordinary text and preview again.
 
-## Preserve imported transfer allocations; resolve their destinations in Transfers
+## Keep the imported transfer split. To change its destination, choose an account, category or Uncategorized.
 
-These imported lines are transfers. Do not turn them into categories here. Choose the other account in Transfers.
+Keep this split and use its category selector to choose another account, a category or Uncategorized.
 
 ## Projection is incomplete; review the pending import
 
