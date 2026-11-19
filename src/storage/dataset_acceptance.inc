@@ -110,7 +110,7 @@ app::AcceptanceReview ImportStore::acceptance_review(const std::set<std::int64_t
     for(const auto& value:all_transfers())for(const auto* side:{&value.link.origin,&value.link.destination}) {
         if(side->state!=transfers::State::draft || !local_side(*side) || side->proposed_evidence)continue;
         ++result.transactions;
-        if(value.link.unresolved)
+        if(value.link.unresolved && !side->accepted_unmatched)
             result.warnings.push_back({side->endpoint.account,"",{},"","Resolve this transfer before accepting transactions"});
         else if(!side->accepted_unmatched && (side!=&value.link.destination || !waiting_without_match.contains(value.link.identity))) {
             app::ImportBlocker warning{side->endpoint.account,"",{},"","This transfer has not been matched to an imported transaction."};warning.overridable=true;result.warnings.push_back(std::move(warning));

@@ -1,5 +1,11 @@
 namespace {
 bool local_side(const transfers::Side& side){return !side.ledger_entry && (side.manually_entered || !side.independent_evidence) && !side.attached_evidence;}
+constexpr int delete_transfer_origin=1,delete_transfer_destination=2,keep_transfer_posting=4;
+app::TransferView unlink_transfer_for_deletion(app::TransferView value,int mask) {
+    value.link=transfers::unlink_for_deletion(value.link,(mask&delete_transfer_origin)!=0,
+        (mask&delete_transfer_destination)!=0,(mask&keep_transfer_posting)!=0);
+    return value;
+}
 // Undo of a newly created relationship preserves independently imported postings,
 // but retires a purely generated draft along with its relationship.
 void undo_new_relationship(app::TransferView& value) {
@@ -161,8 +167,8 @@ app::TransferView transition_transfer(app::TransferView value,const app::Transfe
     if(current.endpoint.account!=account)fail(SQLITE_CONSTRAINT,"Transfer belongs to another account");
     switch(request.action){
     case app::TransferAction::delete_selection:
-        if(request.destination<0 || request.destination>3)fail(SQLITE_CONSTRAINT,"Invalid linked deletion choice");
-        value.link=transfers::unlink_for_deletion(value.link,(request.destination&1)!=0,(request.destination&2)!=0);break;
+        if(request.destination<0 || request.destination>6 || request.destination==4)fail(SQLITE_CONSTRAINT,"Invalid linked deletion choice");
+        value=unlink_transfer_for_deletion(std::move(value),static_cast<int>(request.destination));break;
     case app::TransferAction::release_generated:value.link=transfers::release_generated(value.link);break;
     case app::TransferAction::resize_generated:
         if(!request.amount)fail(SQLITE_CONSTRAINT,"Missing generated allocation amount");
@@ -334,7 +340,8 @@ std::vector<app::LedgerRow> ImportStore::local_transfer_ledger(bool projected) c
     std::vector<app::LedgerRow> out;
     for(const auto& value:transfers())for(const auto* side:{&value.link.origin,&value.link.destination}){
         if(side->endpoint.account!=impl_->selected_account || !local_side(*side) || side->state==transfers::State::removed || (!projected && side->state!=transfers::State::committed) || (projected && side->proposed_evidence))continue;
-        const std::string category=side==&value.link.origin && !value.link.origin_category.empty()?value.link.origin_category:"Transfer";
+        const bool standalone=(value.link.unresolved || value.link.destination_released) && side->accepted_unmatched;
+        const std::string category=side==&value.link.origin && !value.link.origin_category.empty()?value.link.origin_category:standalone?"":"Transfer";
         Allocation allocation{category,value.memo,side->amount,{},side->endpoint.allocation};allocation.category_owner=allocation.memo_owner=FieldOwnership::manual;
         out.push_back({side->endpoint.entry,-value.created_sequence,{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation}),FieldOwnership::manual,FieldOwnership::manual},side->state==transfers::State::committed});
     }

@@ -24,7 +24,7 @@ SELECT m.category_id FROM draft_allocation_meta m JOIN versions v USING(batch,or
         rows.text(1,batch);rows.integer(2,ordinal);rows.integer(3,revision);
         while(rows.row())result.insert(rows.bytes(0));
     };
-    Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result FROM review_members WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1)");members.text(1,action.payload);
+    Statement members(impl_->db,"SELECT batch,ordinal,committed,prior,result FROM review_members WHERE answer=?1 OR answer IN(SELECT id FROM review_answers WHERE question IN('batch-child:'||?1,'ledger-delete-kept:'||?1))");members.text(1,action.payload);
     while(members.row())bound(members.bytes(0),members.integer(1),members.integer(redo?4:3),members.integer(2)!=0);
     if(action.kind==app::ActionKind::acceptance) {
         Statement rows(impl_->db,"SELECT o.batch,m.ordinal,m.draft_revision FROM acceptance_members m JOIN operations o ON o.id=m.operation WHERE o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1)");rows.text(1,action.payload);

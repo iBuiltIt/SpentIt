@@ -478,31 +478,34 @@ The implementation uses shared Qt Quick code on all platforms. macOS verificatio
 is recorded in [status](status.md); Windows/Linux behavior remains unverified.
 Read-only multiline displays retain Qt's existing navigation.
 
-## Delete a selection — owner Go 2026-11-13
+## Delete a selection
 
-Delete removes the selected transactions that are not linked to another account.
-A linked transaction stays in this account, and the other account stays as it is.
-The link stays as it is. Delete does not break a link, change the other side's
-category, or delete the other side. That choice is later work.
+For one linked pair, choose **Delete and keep other entry** or **Delete both
+entries** from either account. The dialog identifies the other entry and shows
+both options' balance changes in each account's currency. Keep preserves the
+other posting and its original imported transfer destination, when it has one.
+Otherwise Keep leaves it Uncategorized. Delete both takes both postings out of
+the ledger and retains any original import records. The deletion and link
+change save as one action. One Undo restores both sides.
 
-The confirmation says how many transactions will be deleted and how many linked
-transactions stay. It shows each affected account’s balance change in that
-account’s currency. It does not combine currencies. When every selected
-transaction is linked, nothing is deleted, and SpentIt says they stay in this
-account.
+Resolve pending or attached matches in Review first. If the selected transaction
+has several links, or its counterpart has other splits, change the transfer
+splits individually before deleting the row.
+
+With more than one selected transaction, Delete removes the ordinary rows and
+leaves linked rows in place. The confirmation lists both counts and shows the
+balance change. When all selected entries are linked, select one at a time or
+change their transfer categories before deleting the remaining entries.
 
 A transaction whose link has already been released is an ordinary transaction
 for this command. A pending import-match proposal still has to be settled before
 deletion. Archived accounts and invalid or unavailable members reject the whole
 command. A stale selection is rejected. The ordinary rows and the Undo receipt
 commit together. Cancellation before that commit leaves every row in place.
-Undo restores the deleted ordinary transactions and does not change the links
-that were left in place.
+Undo restores the deleted ordinary transactions in a bulk selection.
 
 ## Linked selection deletion and large-operation performance — owner Go 2026-11-06
 
-The 2026-11-06 counterpart choices, **Delete selected only** and **Delete linked
-entries too**, are not offered. The paragraph above is the current command.
 Read-only planning and the final command both derive changes from retained rows.
 
 Bulk edits/deletion and Undo reuse bounded prepared statements for the operation.

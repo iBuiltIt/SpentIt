@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-098. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-099. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -92,6 +92,13 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   category while bracketed QIF transfer destinations are awaiting review.
   The existing pictures still apply.
   [Category editor](../features/010-categories-and-selection.md#editor-and-pickers).
+
+- **MAN-098 — Delete one linked transaction, 2026-11-18.**
+  In Add and correct transactions, show **Delete and keep other entry** and
+  **Delete both entries**, their effect on the other account, and one Undo
+  across both accounts. Update the guidance for an entirely linked bulk
+  selection and capture the single-delete dialog.
+  [Ledger editing](ledger-editing.md#delete-a-selection).
 
 ## Recapturing pictures
 

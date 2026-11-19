@@ -16,9 +16,9 @@ and [doc/change-history-handoff.md](../doc/change-history-handoff.md).
 Reimport of a removed transaction stays unresolved. It is not automatically
 included or excluded.
 
-Ordinary corrections and removals of a live transfer link are refused. The
-locked transfer cases are in [feature 008](008-transfer-matching-and-lifecycle.md).
-After the link has ended, the unresolved imported counterpart is an ordinary row.
+For removal of a single live transfer, see
+[Delete a selection](../doc/ledger-editing.md#delete-a-selection). Locked
+transfer cases are in [feature 008](008-transfer-matching-and-lifecycle.md).
 
 Moving a committed row to another account, and rewriting source-occurrence
 links, must fail in domain and storage validation. Hiding the command is not

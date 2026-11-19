@@ -32,9 +32,19 @@ struct LedgerSelectionEdit {
     std::string memo;
     // When false, a transaction memo that already contains text is left unchanged.
     bool overwrite_memo=false;
+    bool keep_counterpart=false;
 };
 struct DeletionImpact {std::int64_t account;std::string name;Money change;std::size_t removed=0,changed=0;};
-struct DeletionPreview {std::size_t links=0,skipped=0;std::vector<DeletionImpact> accounts;};
+struct DeletionCounterpart {
+    std::string account, payee, date, category;
+    Money amount;
+    bool imported;
+};
+struct DeletionPreview {
+    std::size_t links=0,skipped=0;
+    std::vector<DeletionImpact> accounts;
+    std::optional<DeletionCounterpart> counterpart;
+};
 struct CategoryTarget { imports::Occurrence identity; std::string allocation; };
 struct CategorySelection {
     std::int64_t account=0,generation=0;

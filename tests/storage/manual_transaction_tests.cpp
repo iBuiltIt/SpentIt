@@ -140,6 +140,29 @@ void origin_transfers(const std::filesystem::path& dir) {
             const auto remove=deletion(s,{id});bool stayed=false;try{s.edit_transactions("delete-"+std::to_string(account),remove,context);}catch(const std::exception& error){stayed=std::string(error.what())=="These transactions are linked to other accounts. They stay in this account.";}
             check(stayed,"Linked posting stays");s.verify();
             check(s.balance().units()==(account==1?-1000:1000),"Delete leaves the selected linked posting");s.select_account(3-account);check(s.balance().units()==(account==1?1000:-1000),"Delete leaves the other account");s.select_account(account);
+            if(accepted && !left_imported && right_imported){
+                for(const bool both:{false,true}){
+                    auto choice=deletion(s,{id});
+                    choice.delete_counterparts=both;
+                    choice.keep_counterpart=!both;
+                    const auto preview=s.preview_deletion(choice,context);
+                    check(preview.counterpart && preview.counterpart->imported==(account==1),"The preview distinguishes independently imported and manual counterparts");
+                    const auto operation="delete-pair-"+std::to_string(account)+"-"+std::to_string(both);
+                    s.edit_transactions(operation,choice,context);
+                    check(s.current_ledger().empty() && s.balance().units()==0,"The selected posting is removed");
+                    s.select_account(3-account);
+                    check(s.current_ledger().size()==(both?0u:1u),"The independent counterpart follows the chosen option");
+                    if(!both)
+                        check(s.current_ledger().front().draft.transaction.allocations().front().category.empty(),"Keep makes the independent counterpart Uncategorized");
+                    s.select_account(2);
+                    check(!s.evidence("right").empty(),"The independent bank record remains");
+                    s.verify();
+                    s.undo_action("undo-"+operation,s.preview_undo(operation,s.action_token()));
+                    s.select_account(1);check(s.balance().units()==-1000,"Undo restores the manual posting");
+                    s.select_account(2);check(s.balance().units()==1000,"Undo restores the imported posting");
+                    s.select_account(account);s.verify();
+                }
+            }
         }
         s.select_account(1);}
         {auto s=ImportStore::open(path,"test-password");check(s.balance().units()==-1000,"Pair reopen left");s.select_account(2);check(s.balance().units()==1000,"Pair reopen right");s.verify();}
@@ -794,6 +817,11 @@ void create_manual_transfer(const std::filesystem::path& dir) {
         balances(store,true);
         const auto links=store.transfers();
         check(links.size()==2 && links[0].memo=="First split" && links[1].memo==draft.memo,"Counterparts use split memo or transaction memo");
+        OperationContext context;
+        rejects([&]{store.preview_deletion(deletion(store,{id}),context);});
+        store.select_account(2);
+        rejects([&]{store.preview_deletion(deletion(store,{store.current_ledger().front().identity}),context);});
+        balances(store,true);
         store.select_account(3);
         rejects([&]{store.archive_account("archive-destination");});
         const auto history=store.account_change_history(3,0,10,links[1].link.destination.endpoint.entry);

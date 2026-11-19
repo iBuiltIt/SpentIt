@@ -1078,7 +1078,9 @@ struct ImportModel::Worker {
             for(const auto& value:repo.transfers())for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==acct.identity && side->endpoint.entry==imports::Occurrence{batch,ordinal}){
                 if(restoring && (side->state==transfers::State::removed || side->proposed_evidence))continue;
                 selectedBatch=batch;selectedOrdinal=ordinal;selectedCommittedToken.reset();
-                Allocation allocation{"Transfer",value.memo,side->amount,{},side->endpoint.allocation};
+                const bool standalone=(value.link.unresolved || value.link.destination_released) && side->accepted_unmatched;
+                const auto category=side==&value.link.origin && !value.link.origin_category.empty()?value.link.origin_category:standalone?"":"Transfer";
+                Allocation allocation{category,value.memo,side->amount,{},side->endpoint.allocation};
                 selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},{"localTransfer",true},{"transferId",text(value.link.identity)},{"committed",side->state==transfers::State::committed},{"source",side->manually_entered?"Manually entered; no imported source":"Generated counterpart; no imported source"},{"draft",draft(imports::DraftRow{side->date,value.payee,value.memo,Transaction::manual(side->amount,{allocation})},categoryById,dateFormat,amountFormat)}};
                 const auto& origin=value.link.origin;
                 if(side==&value.link.destination && !origin.endpoint.entry.batch.starts_with("~transfer-")){
@@ -2559,16 +2561,39 @@ struct ImportModel::Worker {
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
             if(reportLedgerActive){reportSelectionAccount(std::set<imports::Occurrence>(request.selected.begin(),request.selected.end()));request.account=repo.account().identity;}
-            const auto describe=[&](const app::DeletionPreview& preview){QStringList lines;for(const auto& impact:preview.accounts)lines.push_back(text(impact.name)+": delete "+QString::number(impact.removed)+", change "+QString::number(impact.changed)+"; balance change "+text(impact.change.currency().code())+" "+money(impact.change,amountFormat));return lines.join("\n");};
+            const auto describe=[&](const app::DeletionPreview& preview){
+                QStringList lines;
+                for(const auto& impact:preview.accounts){
+                    const auto delta=text(impact.change.currency().code())+" "+money(impact.change,amountFormat);
+                    auto line=text(impact.name)+": ";
+                    if(!preview.links)line+="delete "+QString::number(impact.removed)+", change "+QString::number(impact.changed)+". ";
+                    line+=impact.change.units()==0?"Balance stays the same.":"Balance change "+delta;
+                    lines.push_back(line);
+                }
+                return lines.join("\n");
+            };
             const auto preview=repo.preview_deletion(request,context);
             std::size_t removed=0;for(const auto& impact:preview.accounts)removed+=impact.removed;
-            deletionPreview={{"links",0},{"skipped",static_cast<int>(preview.skipped)},{"removed",static_cast<int>(removed)},{"keep",describe(preview)},{"both",describe(preview)}};
+            deletionPreview={{"links",static_cast<int>(preview.links)},{"skipped",static_cast<int>(preview.skipped)},{"removed",static_cast<int>(removed)},{"keep",describe(preview)}};
+            if(preview.counterpart){
+                const auto& other=*preview.counterpart;
+                request.delete_counterparts=true;
+                deletionPreview["both"]=describe(repo.preview_deletion(request,context));
+                deletionPreview["otherAccount"]=text(other.account);
+                deletionPreview["otherPayee"]=text(other.payee);
+                deletionPreview["otherDate"]=dateText(other.date);
+                deletionPreview["otherAmount"]=text(other.amount.currency().code())+" "+money(other.amount,amountFormat);
+                deletionPreview["otherCategory"]=other.category.empty()?QString("Uncategorized"):
+                    "Transfer destination: "+text(qif::transfer_destination(other.category).value_or(other.category));
+                deletionPreview["otherImported"]=other.imported;
+            }
         }
         else if(action=="rename_payee_selection" || action=="set_memo_selection" || action=="restore_imported_selection" || action=="delete_selection") {
             app::LedgerSelectionEdit request;
             request.action=action=="delete_selection"?app::LedgerSelectionAction::remove:action=="rename_payee_selection"?app::LedgerSelectionAction::rename_payee:action=="set_memo_selection"?app::LedgerSelectionAction::set_memo:app::LedgerSelectionAction::restore_imported;
             request.account=a.value("account").toString().toLongLong();request.generation=a.value("generation").toString().toLongLong();
             request.payee=str(a.value("payee"));request.memo=str(a.value("memo"));request.overwrite_memo=a.value("overwriteMemo").toBool();request.delete_counterparts=a.value("deleteCounterparts").toBool();
+            request.keep_counterpart=a.value("keepCounterpart").toBool();
             for(const auto& value:a.value("selected").toList()){const auto row=value.toMap();request.selected.push_back({str(row.value("batch")),static_cast<std::size_t>(row.value("ordinal").toUInt())});}
             if(reportLedgerActive){
                 const auto ids=std::set<imports::Occurrence>(request.selected.begin(),request.selected.end());

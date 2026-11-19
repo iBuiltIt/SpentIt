@@ -1524,20 +1524,52 @@ ApplicationWindow {
         })
     }
     property var deleteSelectionRequest:null
+    function confirmTransactionDeletion(keepOther, deleteOther) {
+        deleteSelectionRequest.keepCounterpart=keepOther
+        deleteSelectionRequest.deleteCounterparts=deleteOther
+        captureLedgerView("selected-edit")
+        deleteSelectionDialog.close()
+        workflow.command("delete_selection",deleteSelectionRequest)
+    }
     HelpDialog {
         helpTarget: "help:add-correct-transactions#change-a-selection-or-delete-entries"
-        id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(640,window.width-40)
+        id:deleteSelectionDialog;objectName:"deleteSelectionDialog";title:linked?"Delete linked transaction?":"Delete selected transactions?";modal:true;anchors.centerIn:parent;width:Math.min(640,window.width-40)
+        readonly property var preview: s.deletionPreview||{}
+        readonly property bool linked: !!preview.links
         contentItem:ColumnLayout {
-            Label {objectName:"deleteSelectionCount";Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Delete "+deletionCount((s.deletionPreview||{}).removed||0,"transaction?","transactions?")}
+            Label {objectName:"deleteSelectionCount";Layout.fillWidth:true;wrapMode:Text.Wrap;visible:!deleteSelectionDialog.linked;text:"Delete "+deletionCount((s.deletionPreview||{}).removed||0,"transaction?","transactions?")}
             Label {objectName:"deleteSelectionSkipped";Layout.fillWidth:true;wrapMode:Text.Wrap;visible:((s.deletionPreview||{}).skipped||0)>0;text:deletionCount((s.deletionPreview||{}).skipped||0,"linked transaction stays in this account.","linked transactions stay in this account.")}
+            Label {
+                objectName:"deleteLinkedCounterpart";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                visible:deleteSelectionDialog.linked
+                text: {
+                    const other=deleteSelectionDialog.preview
+                    return "Other entry in "+other.otherAccount+"\n"+[other.otherDate,other.otherPayee,other.otherAmount].filter(Boolean).join(" · ")
+                }
+            }
             ScrollView {
                 id:deleteImpactScroll;Layout.fillWidth:true;Layout.preferredHeight:Math.min(180,deletionImpacts.implicitHeight);clip:true
-                Label {id:deletionImpacts;objectName:"deletionImpacts";width:deleteImpactScroll.availableWidth;wrapMode:Text.Wrap;text:(s.deletionPreview||{}).keep||""}
+                Label {
+                    id:deletionImpacts;objectName:"deletionImpacts";width:deleteImpactScroll.availableWidth;wrapMode:Text.Wrap;textFormat:Text.PlainText
+                    text: {
+                        const preview=deleteSelectionDialog.preview
+                        if(!deleteSelectionDialog.linked)return preview.keep||""
+                        return "Keep the other entry as "+preview.otherCategory+".\n"+preview.keep+
+                            "\n\nDelete both entries.\n"+preview.both
+                    }
+                }
+            }
+            Label {
+                Layout.fillWidth:true;wrapMode:Text.Wrap
+                visible:deleteSelectionDialog.linked && !!deleteSelectionDialog.preview.otherImported
+                text:"Delete both removes the other bank transaction from the ledger. Its original import record stays in this file."
             }
         }
         footer:DialogButtonBox {
             Button {text:"Cancel";onClicked:deleteSelectionDialog.close()}
-            Button {objectName:"confirmDeleteSelection";text:"Delete";enabled:!workflow.busy;onClicked:{deleteSelectionRequest.deleteCounterparts=false;captureLedgerView("selected-edit");deleteSelectionDialog.close();workflow.command("delete_selection",deleteSelectionRequest)}}
+            Button {objectName:"confirmDeleteSelection";text:"Delete";visible:!deleteSelectionDialog.linked;enabled:!workflow.busy;onClicked:confirmTransactionDeletion(false,false)}
+            Button {objectName:"confirmKeepLinkedEntry";text:"Delete and keep other entry";visible:deleteSelectionDialog.linked;enabled:!workflow.busy;onClicked:confirmTransactionDeletion(true,false)}
+            Button {objectName:"confirmDeleteBothEntries";text:"Delete both entries";visible:deleteSelectionDialog.linked;enabled:!workflow.busy;onClicked:confirmTransactionDeletion(false,true)}
         }
     }
     function accountForName(name) {
@@ -2244,7 +2276,9 @@ ApplicationWindow {
                 const preview=s.deletionPreview||{}
                 const removed=preview.removed||0
                 const skipped=preview.skipped||0
-                workspaceFeedback="Deleted "+deletionCount(removed,"transaction.","transactions.")+(skipped>0?" "+deletionCount(skipped,"linked transaction stays in this account.","linked transactions stay in this account."):"")
+                if(preview.links)workspaceFeedback=deleteSelectionRequest && deleteSelectionRequest.deleteCounterparts?
+                    "Deleted both entries. Undo is available.":"Deleted the selected entry and kept the other entry. Undo is available."
+                else workspaceFeedback="Deleted "+deletionCount(removed,"transaction.","transactions.")+(skipped>0?" "+deletionCount(skipped,"linked transaction stays in this account.","linked transactions stay in this account."):"")
             }
             if(!success){transferMergeAnnounced=false;ruleApplyAfterPreview=false;returnAfterRuleApply=false;rulePreviewKey="";if(ruleValidatingAll){ruleValidatingAll=false;ruleValidationQueue=[];stayInRules();revealRuleEditor()}}
             if(success && action==="rules_reapply_apply")workspaceFeedback=(s.reapplyReceipt||{}).summary||"Rules reapplied."
@@ -2349,7 +2383,7 @@ ApplicationWindow {
                 if(action.indexOf("transfer_")===0 || action==="assign_transfer_batch" || action==="release_transfer_batch" || action==="undo_transfer_assignment")loadEditor()
                 if(action==="preview_deletion"){
                     const preview=s.deletionPreview||{}
-                    if((preview.removed||0)===0)workspaceFeedback=(preview.skipped||0)>0?"These transactions are linked to other accounts. They stay in this account.":"Select transactions to delete."
+                    if((preview.removed||0)===0)workspaceFeedback=(preview.skipped||0)>0?"To delete linked transactions, select one at a time. To delete them in bulk, change their transfer categories first, then delete the remaining entries in each account.":"Select transactions to delete."
                     else deleteSelectionDialog.open()
                 }
                 if(action==="preview_bulk")bulkDialog.open()

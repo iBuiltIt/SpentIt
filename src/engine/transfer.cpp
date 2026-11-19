@@ -55,6 +55,13 @@ void agree(const Side& side,const AllocationFact& fact) {
 }
 LinkEdit release_link(Link link) {
     preserved(link);
+    if(link.destination_released && !counts_locally(link.origin)){
+        link.destination_released=false;
+        link.unresolved=true;
+        retire_origin(link);
+        validate(link);
+        return {std::move(link),std::nullopt,std::nullopt};
+    }
     if(link.unresolved || link.origin.state==State::removed || link.destination.state==State::removed) invalid();
     if(disposable(link.destination)) {
         link.origin.proposed_evidence.reset();link.destination.proposed_evidence.reset();
@@ -217,22 +224,26 @@ Link commit(const Link& link,std::int64_t account) {
     if(current.proposed_evidence)
         throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match explicitly");
     if(current.state==State::committed) return link;
-    if(link.unresolved) invalid();
+    if(link.unresolved && !(counts_locally(current) && current.accepted_unmatched)) invalid();
     if(!current.ledger_entry && !current.independent_evidence && !current.accepted_unmatched)
         throw TransferError(Error::acceptance_required,"Accept this entry as valid without a bank match before committing");
     auto result=link;
     (account==result.origin.endpoint.account?result.origin:result.destination).state=State::committed;
     validate(result);return result;
 }
-Link unlink_for_deletion(const Link& link,bool remove_origin,bool remove_destination) {
+Link unlink_for_deletion(const Link& link,bool remove_origin,bool remove_destination,bool retain_other) {
     validate(link);
     if(link.origin.proposed_evidence || link.destination.proposed_evidence)
         throw TransferError(Error::unresolved_policy,"Commit or discard the pending import match before deleting this transfer.");
     if(link.origin.attached_evidence || link.destination.attached_evidence)
         throw TransferError(Error::unresolved_policy,"This transfer has attached import records. Unlink it in Review before deleting it.");
     auto result=link;
-    if(remove_origin || !counts_locally(result.origin))result.origin.state=State::removed;
-    if(remove_destination || !counts_locally(result.destination))result.destination.state=State::removed;
+    if(remove_origin || (!retain_other && !counts_locally(result.origin)))result.origin.state=State::removed;
+    if(remove_destination || (!retain_other && !counts_locally(result.destination)))result.destination.state=State::removed;
+    // Keep explicitly releases a generated posting from matching, while
+    // preserving its New or Accepted state and its amount.
+    if(retain_other)for(auto* side:{&result.origin,&result.destination})
+        if(side->state!=State::removed && counts_locally(*side))side->accepted_unmatched=true;
     result.origin_category.clear();
     result.destination_released=result.origin.state!=State::removed;
     result.unresolved=!result.destination_released;
@@ -526,6 +537,8 @@ EntryLinkEdit edit_linked_allocation(std::span<const Link> links,const Allocatio
         throw TransferError(Error::unresolved_policy,"Replacing transfer evidence requires the repair policy");
     const bool amount_same=after_amount==before.amount;
     const bool date_same=after_date==before.date;
+    if(host->destination_released && !counts_locally(current) && keep_transfer && !amount_same)
+        throw TransferError(Error::unresolved_policy,"Choose a category before changing the amount of this released transfer.");
     if(!remove && keep_transfer && amount_same && date_same) return {*host,LinkFate::unchanged};
     if(!remove && keep_transfer && amount_same) {
         Link link=*host;

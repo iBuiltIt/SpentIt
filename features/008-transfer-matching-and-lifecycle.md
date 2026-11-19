@@ -104,7 +104,7 @@ preserves independent and accepted postings.
 - Merging a purely generated committed duplicate with an independent row of the
   same amount inactivates the generated row and links the independent row. A
   generated row that has its own import evidence is not removed.
-- Changing the category of one committed side, or removing that side, changes
+- Changing the category of one committed side changes
   only that side and ends the link. A committed counterpart is not deleted. A
   purely generated uncommitted counterpart is removed in the same operation.
 - An amount correction on one side of a both-committed link changes that side
@@ -115,6 +115,9 @@ preserves independent and accepted postings.
   atomically through the transfer-aware command, including imported bracketed
   destinations. Original imported allocations remain available. Bulk deletion
   skips live linked rows; break or release the links first.
+- Deleting one linked pair from either account lets the user keep the other
+  posting or delete both. See [Delete a selection](../doc/ledger-editing.md#delete-a-selection)
+  for the category, confirmation and Undo behavior.
 - A later edit, a newer transfer relationship, or a newer source association
   blocks Undo. The entry's own publication association does not.
 

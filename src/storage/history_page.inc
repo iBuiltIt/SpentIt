@@ -1,6 +1,6 @@
 // Change history reads the live applied action chain. It does not create a journal.
 namespace {
-constexpr const char* member_where="(m.answer=?1 OR m.answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1))";
+constexpr const char* member_where="(m.answer=?1 OR m.answer IN(SELECT id FROM review_answers WHERE question IN('batch-child:'||?1,'ledger-delete-kept:'||?1)))";
 struct HistorySnap {
     bool present=false,active=true,has_active=false;
     std::string date,payee,memo,definition;
