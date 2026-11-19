@@ -76,14 +76,18 @@ the opening and saved transactions, even those not yet accepted.
 Check the currency code beside the balance too.
 
 Use **Back** and **Forward** to return to places you’ve visited. They
-are dimmed when there is nowhere to go. If you have an unfinished edit,
-answer the prompt before leaving it.
+look faded when there’s nowhere to go or while SpentIt is busy. If SpentIt
+asks about an unfinished edit, choose **Save**, **Discard** or **Stay**. See the
+[Back and Forward keys](keyboard-mouse.md#find-and-move-around).
 
 ## Later: manage your accounts
 
-Right-click an account name for its actions. To change the order of
-active accounts, drag one above or below another; the line shows
-where it will go.
+Right-click an account name to open its menu. You can also Tab to the
+name and press **Shift+F10**. If your keyboard has a **Menu** key, that
+works too.
+
+To change the order of active accounts, drag one above or below another.
+The line shows where it will go. Press **Escape** while dragging to cancel.
 
 ![Chequing’s right-click menu with Rename, Archive, Delete, Correct opening and Reassign currency.](images/accounts-menu.png)
 *Account actions apply to the account you right-click.*

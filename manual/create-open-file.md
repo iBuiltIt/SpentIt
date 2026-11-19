@@ -64,10 +64,13 @@ Choose **Create file** when you’re ready. Your first account opens.
 
 The **left sidebar** holds your accounts and balances. Below them are
 **Import…**, **Review**, **Categories**, **Rules**, **Reports**, and
-**Settings**. We explain each of these later in this guide.
+**Settings**. We explain each of these later in this guide. To hide the
+sidebar for a little more room, press **Ctrl+Shift+B** on Windows and Linux
+or **Command+Shift+B** on a Mac. Press the same keys to bring it back.
 
 The **transaction list** on the right belongs to the selected account.
-**Back** and **Forward** return to places you’ve visited.
+**Back** and **Forward** return to places you’ve visited. See the
+[Back and Forward keys](keyboard-mouse.md#find-and-move-around).
 
 Some actions take a little time. A spinning arc icon at the top right
 shows when SpentIt is busy. The status line at the bottom tells you

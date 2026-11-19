@@ -124,7 +124,11 @@ Rest the pointer on cut-off text to read it in full, including category and
 memo text in an expanded split. SpentIt remembers your column widths on
 this computer.
 
-**Back** and **Forward** return to visited accounts and workspaces.
+Use **Back** and **Forward** to return to an account or page you’ve visited.
+On Windows and Linux, press **Alt+Left Arrow** or **Alt+Right Arrow**. On a
+Mac, press **Command+[** or **Command+]**. **Command+Left Arrow** and
+**Command+Right Arrow** also work.
+
 You can also choose the account again in the sidebar. SpentIt keeps
 your place in each account during the session; if that row is no
 longer visible, it returns nearby.
@@ -142,8 +146,9 @@ Press **Command+Z** on a Mac, or **Ctrl+Z** on Windows and Linux, to
 undo the newest saved answer. You can answer the same questions in Review.
 
 A blue edge means a payment appears twice in this account. Select the two
-rows and choose **Merge** to join that payment. An indigo edge marks the
-entry kept after a merge; a green edge marks a linked transfer. Rest the
+rows and choose **Merge**, or press **Alt+M** on Windows and Linux or
+**Option+M** on a Mac. After a merge, the entry SpentIt kept has an indigo
+edge. A green edge marks a linked transfer. Rest the
 pointer on the green mark to see the other account. These result marks
 remain until **Accept transactions**. Automatic Merge or Link can also
 mark an already accepted entry, so you can check what happened.

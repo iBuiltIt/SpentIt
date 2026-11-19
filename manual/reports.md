@@ -173,6 +173,8 @@ restored with Undo.
 Use **Back** in the top bar to return to the results. Use **Forward**
 to reopen the same report amount with the transactions that match it now.
 An unfinished edit asks for Save, Discard or Stay before you leave.
+The [Back and Forward keys](keyboard-mouse.md#find-and-move-around)
+work here too.
 
 Search here only narrows the transactions you opened. Click the
 **Account** heading to sort by account.

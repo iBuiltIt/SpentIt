@@ -45,7 +45,8 @@ Most controls appear after you open a file.
 - **Correct a starting balance:** double-click the account’s
   **Opening Balance** row. [Set the starting balance](accounts.md#set-the-starting-balance).
 - **Rename, archive or manage an account:** right-click its name in the
-  sidebar. Archived accounts appear under **Archived**.
+  sidebar, or Tab to its name and press **Shift+F10**. Archived accounts
+  appear under **Archived**.
   [Manage your accounts](accounts.md#later-manage-your-accounts).
 
 ## Transactions and categories
@@ -97,8 +98,12 @@ Undo works newest first across all accounts in the file.
   **Ctrl+Z** on Windows and Linux, or choose **Edit → Undo**. You can also
   open the newest action in **Change history** and choose **Undo** there.
   [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
-- **Put an undone action back:** choose **Edit → Redo**. Import Undo cannot
-  be redone. [Undo and Redo](add-correct-transactions.md#undo-a-saved-change).
+- **Put an undone action back:** choose **Edit → Redo**, press **Ctrl+Shift+Z**
+  on Windows and Linux, or press **Command+Shift+Z** on a Mac. On Windows,
+  **Ctrl+Y** also works. Import Undo cannot be redone.
+  [Undo and Redo](add-correct-transactions.md#undo-a-saved-change).
+- **Get help with this screen:** press **F1** on Windows and Linux or
+  **Command+?** on a Mac. [Read Help](keyboard-mouse.md#read-help).
 - **Separate a merged or linked transaction:** select it in its account,
   right-click and choose **Unmerge** when available.
   [Undo a mistaken answer](review-duplicates-transfers.md#undo-a-mistaken-answer).

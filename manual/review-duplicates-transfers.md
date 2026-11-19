@@ -18,6 +18,9 @@ Open **Review** in the sidebar. Read the question above each group
 before you answer it. **Accept transactions** is at the bottom and
 covers every account.
 
+Tab to the list of questions. Press **Up** or **Down** to move to a
+question, then press **Enter** to open its first transaction.
+
 A recognized repeat of an accepted import does not need another Review
 answer, even after you edit the transaction. If the matched entry was
 removed or its original details no longer agree, answer the question about
@@ -229,14 +232,17 @@ and categories rather than changing accurate values to force a match.
 ## If there is no suitable question
 
 For a duplicate you have identified yourself, select the entries in
-one account’s ledger, right-click and choose **Merge**. You can also
-use the duplicate line above the ledger, described in
+one account’s ledger, then right-click and choose **Merge**, or press
+**Alt+M** on Windows and Linux or **Option+M** on a Mac. You can also use
+the duplicate line above the ledger, described in
 [Find your way around transactions](find-transactions.md#see-what-needs-attention).
 Check which entry will be kept, just as in Review.
 
 For a transfer whose two entries each have just one split, select
-the first entry, right-click and choose **Link to other account…**. Switch
-accounts, select the other entry, then choose **Link to other account…** again.
+the first entry. Right-click and choose **Link to other account…**, or
+press **Alt+L** on Windows and Linux or **Option+L** on a Mac. Switch
+to the other account, select the other entry, and choose **Link to other
+account…** or press the same keys again.
 The same steps work when the accounts use different currencies. One
 amount should be money going out and the other money coming in.
 SpentIt keeps the amount from each account. For a payment with several

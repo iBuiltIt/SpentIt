@@ -183,10 +183,13 @@ blank with that box checked to clear them. The button then says
 A memo you enter here stays when rules run later.
 
 For a transaction that should not be in the account, right-click it and
-choose **Delete selected…**. With several rows selected, the question
-shows how many will be deleted, how many linked entries will stay, and
-how each balance will change. If every selected row is linked, select
-one entry at a time.
+choose **Delete selected…**. You can also select the row and press
+**Delete** on Windows and Linux or **Forward Delete (⌦)** on a Mac. If
+your Mac keyboard has only a **Delete** key, press **Fn+Delete**.
+
+If you select several rows, SpentIt shows how many will be deleted, how
+many linked entries will stay, and how each balance will change. If every
+selected row is linked, select one entry at a time.
 
 For one linked pair, check the other entry and compare the balances shown
 for each choice.
@@ -259,8 +262,10 @@ An edit, a selection-wide change, a rule application, an opening or currency
 correction, and accepting transactions can each be one step. Ordinary Undo
 runs straight away. Undoing an import asks you to confirm the removal first.
 
-To put an undone change back, choose **Edit → Redo**. The menu shows your
-platform’s shortcut. You can undo several actions and redo them in order.
+To put an undone change back, choose **Edit → Redo** or press
+**Ctrl+Shift+Z** on Windows and Linux or **Command+Shift+Z** on a Mac.
+On Windows, **Ctrl+Y** also works. You can undo several actions and redo
+them in order.
 Saving a new change clears the waiting Redo actions. Saving a rule, category,
 report or setting clears Redo too, though those saves are not Undo steps. Selecting rows, searching and previewing a rule leave
 Redo available.

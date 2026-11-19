@@ -31,6 +31,9 @@ Click a row to select it without opening its editor.
 - **Enter:** open the focused transaction.
 - **Right-click:** open the actions for the selection. Check the selected
   rows before changing or deleting them.
+- Select the rows you want to delete. Press **Delete** on Windows and Linux
+  or **Forward Delete (⌦)** on a Mac. If your Mac keyboard has only a
+  **Delete** key, press **Fn+Delete**. SpentIt asks before deleting anything.
 
 [More about selection](find-transactions.md#select-without-editing).
 
@@ -60,11 +63,25 @@ another row leaves that editor where it is.
 
 For a saved change, press **Command+Z** on a Mac, or **Ctrl+Z** on
 Windows and Linux, to undo the newest saved action. Import Undo asks for
-confirmation; other saved actions undo straight away. **Edit → Redo** puts
-an undone action back, except for an import. Its shortcut appears in the
-menu. While you are typing, Undo and Redo act on the text instead.
+confirmation; other saved actions undo straight away. To put a change back,
+press **Ctrl+Shift+Z** on Windows and Linux or **Command+Shift+Z** on a Mac.
+On Windows, **Ctrl+Y** also works. You can also choose **Edit → Redo**.
+Import Undo cannot be redone. While you are typing, Undo and Redo act on
+the text instead.
 
 [Editing and Undo](add-correct-transactions.md#correct-an-entry).
+
+## Review, merge and link
+
+- In **Review**, Tab to the list of questions. Press **Up** or **Down** to
+  move to a question, then press **Enter** to open its first transaction.
+- To merge entries in an account, select them and press **Alt+M** on
+  Windows and Linux or **Option+M** on a Mac.
+- To link a transfer, select the first entry and press **Alt+L** on Windows
+  and Linux or **Option+L** on a Mac. Switch to the other account, select
+  the other entry and press the same shortcut again.
+
+[Review duplicates and link transfers](review-duplicates-transfers.md).
 
 ## Choose a date
 
@@ -91,10 +108,19 @@ Choosing a date fills the field. Save the surrounding edit when ready.
   transactions on the same day. Each row keeps the balance after that
   transaction.
 - Click the arrow beside a transfer category to visit its other posting.
-- Use **Back** and **Forward** to return to places you’ve visited. A
-  button you cannot use yet stays where it is and looks faded. Finish
-  the choice it is waiting for, or visit somewhere first, and it is
-  ready again.
+- Use **Back** and **Forward** to return to places you’ve visited. On
+  Windows and Linux, press **Alt+Left Arrow** or **Alt+Right Arrow**.
+  On a Mac, press **Command+[** or **Command+]**. **Command+Left Arrow**
+  and **Command+Right Arrow** also work. The buttons look faded when
+  there’s nowhere to go in that direction or while SpentIt is busy. If
+  SpentIt asks about an unfinished edit, choose **Save**, **Discard** or
+  **Stay** before you move on.
+- To show or hide the left sidebar, press **Ctrl+Shift+B** on Windows
+  and Linux or **Command+Shift+B** on a Mac.
+- Tab to an account name in the sidebar, then press **Shift+F10** to open
+  its menu. If your keyboard has a **Menu** key, that works too. If you
+  change your mind while dragging an account, press **Escape** to put it
+  back where it was.
 - Double-click a category or Total amount in a report to see the
   transactions behind it.
 
@@ -103,11 +129,12 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 
 ## Read Help
 
-Choose **Help → SpentIt Help** to return to your reading. For instructions
-about the current task, choose **Help for this screen** from that menu or
-click **Help** on the screen or dialog. **Search help** beside ledger search
-opens examples. In a narrow Help window, **Contents** reveals the topic list
-and search.
+Choose **Help → SpentIt Help** to return to your reading. For help with
+what you’re doing, press **F1** on Windows and Linux or **Command+?** on
+a Mac. You can also choose **Help for this screen** from the Help menu
+or click **Help** on the screen or dialog. **Search help** beside ledger
+search opens examples. In a narrow Help window, **Contents** reveals the
+topic list and search.
 
 - **Tab / Shift+Tab** moves between controls. Use **Space** to activate a
   focused button, topic or search result.
@@ -138,3 +165,6 @@ once Contents is already closed. On an enlarged picture, **Escape** or
 Escape in a Save / Discard / Stay dialog means Stay. In the Rules or
 Reports leave dialog, Escape means **Cancel**. Closing Help does not
 choose a button for you.
+
+If you’re reading the license or notices in **About SpentIt**, press
+**Escape** to go back. Press **Escape** from the first page to close the window.

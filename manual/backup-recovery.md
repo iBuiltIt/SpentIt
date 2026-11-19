@@ -172,10 +172,15 @@ offered](add-correct-transactions.md#when-undo-is-no-longer-offered).
 
 ### If you still need help
 
+For help with the screen you’re on, press **F1** on Windows and Linux or
+**Command+?** on a Mac.
+
 Note the exact message, the action you took, and your operating system.
 On a Mac, choose **About SpentIt** in the application menu. On Windows and
 Linux, choose **Help → About SpentIt**. **Copy version information** copies
 the version and build so you can include them in your report.
+If you open the license or notices, press **Escape** to go back to the
+version information. From there, **Escape** closes the window.
 
 A small made-up example can help explain the problem. Remove names, account details and amounts from screenshots you
 share; do not send passwords, your financial file or bank exports.
