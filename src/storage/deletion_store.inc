@@ -69,7 +69,10 @@ void ImportStore::require_unused_category(std::string_view id) const {
     for(const auto& account:available) {
         impl_->selected_account=account.identity;
         for(const auto& row:current_ledger())for(const auto& allocation:row.draft.transaction.allocations())
-            if(allocation.category_binding?allocation.category_binding->identity==id:(!allocation.category.empty() && app::category_name_matches(allocation.category,definition.name)))
+            // An unbound QIF transfer destination is outside the ordinary category namespace.
+            if(allocation.category_binding?allocation.category_binding->identity==id:
+               (!allocation.category.empty() && !qif::transfer_destination(allocation.category) &&
+                app::category_name_matches(allocation.category,definition.name)))
                 fail(SQLITE_CONSTRAINT,"Transactions use this category. Change their category before deleting it.");
     }
     if(rules_format(impl_->db)) {

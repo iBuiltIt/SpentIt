@@ -67,6 +67,52 @@ class CategoryUiTests : public QObject {
 private slots:
     void initTestCase(){QCoreApplication::setOrganizationName("SpentItTests");QCoreApplication::setApplicationName("CategoryUi");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());QSettings::setPath(QSettings::IniFormat,QSettings::SystemScope,settings.path());}
     void init(){QSettings().clear();}
+    void deleteUnusedAfterIncomeToggle_data() {
+        QTest::addColumn<bool>("unresolvedTransfer");
+        QTest::newRow("empty ledger") << false;
+        QTest::newRow("unrelated transfer") << true;
+    }
+    void deleteUnusedAfterIncomeToggle() {
+        QFETCH(bool, unresolvedTransfer);
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("doc")},{"protected",false},{"name","Main"},{"currency","CAD"}});
+        if(unresolvedTransfer) {
+            run(model,"create_account",{{"id","2"},{"name","Spare"},{"currency","USD"},{"date","2026-01-01"}});
+            run(model,"select_account",{{"id","1"}});
+            QFile file(dir.filePath("synthetic.qif"));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("D1/1/2026\nT-10.00\nPSynthetic\nL[Spare]\n^\n");
+            file.close();
+            run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
+            QVERIFY(!model.state().value("reviewQuestions").toList().empty());
+        }
+        QVERIFY(click(window,"categoryNavigation"));
+        wait(model);
+        const auto id=createCategory(model,window,"Secret Stuff");
+        QVERIFY(!id.isEmpty());
+        const auto category=[&] {return model.state().value("categoryById").toMap().value(id).toMap();};
+        QCOMPARE(category().value("name").toString(),"Secret Stuff");
+        QVERIFY(!category().value("income").toBool());
+        const auto checkbox="categoryIncome_"+id;
+        for(const bool income:{true,false}) {
+            QTRY_VERIFY(object(window,checkbox));
+            QVERIFY(pointer(window,window,checkbox));
+            wait(model);
+            QCOMPARE(category().value("income").toBool(),income);
+        }
+        menu(model,window,id,"deleteCategory");
+        wait(model);
+        QTRY_VERIFY(category().value("deleted").toBool());
+        QVERIFY(!catalogNames(window).contains("Secret Stuff"));
+    }
     void correctImportedTransfer() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

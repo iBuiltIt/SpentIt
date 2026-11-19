@@ -45,6 +45,8 @@ category are row actions. Delete requires no current transaction assignments
 category (including disabled rules), and no saved-report selection. Past
 assignments and superseded/deleted rules do not block deletion. Historical
 identities and definitions remain internal; deletion does not erase import facts.
+You can delete an unused ordinary category while bracketed QIF transfer
+destinations are awaiting review.
 If an active Undo or Redo would restore the category, ask to clear the file-wide
 stacks and save that expiry with deletion atomically. Otherwise preserve both
 stacks and delete immediately. Cancel and failed saves preserve the category and

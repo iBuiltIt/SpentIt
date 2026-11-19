@@ -83,7 +83,59 @@ void transfer_cleanup_faults(){
  for(auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}){Directory d;setup(d.path/"doc");auto child=fork();check(child>=0);if(child==0){auto s=ImportStore::open(d.path/"doc",password);s.observer([&](ImportPhase at){if(at==phase)_exit(72);});apply(s);_exit(0);}int status;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==72);auto s=ImportStore::open(d.path/"doc",password);const bool saved=s.review_outcome("clear").has_value();check(saved==(phase==ImportPhase::after_commit));verify(s,saved);if(!saved)apply(s);verify(s,true);}
  std::cout<<"Imported transfer release: "<<positions<<" fault positions\n";
 }
+void deletion_ignores_transfer_destinations() {
+ Directory dir;
+ const auto path=dir.path/"doc";
+ auto s=create(path);
+ for(const auto& request:{
+     CategoryRequest{CategoryAction::create,"unused","Unused Category",{}},
+     CategoryRequest{CategoryAction::create,"ordinary","Ordinary Category",{}}}) {
+  const auto preview=s.preview_category_change(request);
+  s.apply_category_change("create-"+request.identity,request,preview.catalog_revision);
+ }
+ for(const bool income:{true,false}) {
+  const CategoryRequest request{CategoryAction::set_income,"unused",{},{},CategoryKind::leaf,income};
+  const auto preview=s.preview_category_change(request);
+  const auto receipt=s.apply_category_change(income?"mark-income":"clear-income",request,preview.catalog_revision);
+  check(receipt.after.income==income);
+ }
+ s.select_account(2);
+ const std::string split="!Type:Bank\nD01/01/2026\nT-9.00\nPSynthetic\nS[Unresolved destination]\n$-10.00\nSOrdinary Category\n$1.00\n^\n";
+ s.ingest("split",split,qif::DateOrder::dmy);
+ const auto check_split=[&] {
+  const auto row=s.row({"split",0});
+  check(row.draft.has_value());
+  const auto& allocations=row.draft->transaction.allocations();
+  check(s.evidence("split")==split);
+  check(row.draft->transaction.effective_total().units()==-900);
+  check(allocations.size()==2);
+  check(!allocations[0].category_binding && allocations[0].category=="[Unresolved destination]" && allocations[0].amount.units()==-1000);
+  check(!allocations[1].category_binding && allocations[1].category=="Ordinary Category" && allocations[1].amount.units()==100);
+ };
+ check_split();
+ s.select_account(1);
+ const auto preview=s.preview_category_change({CategoryAction::erase,"unused",{},{}});
+ check(!preview.clears_history && s.account().identity==1);
+ try {
+  (void)s.preview_category_change({CategoryAction::erase,"ordinary",{},{}});
+  check(false);
+ } catch(const ImportError& error) {
+  check(std::string_view(error.what()).find("Transactions use this category")!=std::string_view::npos);
+ }
+ const auto receipt=s.apply_category_change("delete-unused",preview.request,preview.catalog_revision);
+ check(receipt.after.deleted && s.account().identity==1);
+ s.select_account(2);
+ check_split();
+ s.verify();
+ test_session::close_reopen(s,path,password);
+ const auto saved=s.category_change_outcome("delete-unused");
+ check(saved && saved->after.deleted);
+ s.select_account(2);
+ check_split();
+ s.verify();
+}
 void behavior(){
+ deletion_ignores_transfer_destinations();
  for(bool accepted:{false,true}){
   Directory dir;auto s=create(dir.path/"doc");s.ingest("import",source,qif::DateOrder::dmy);if(accepted)s.commit("import",0,"accept");rejects([&]{s.preview_account_deletion();});remove_rows(s);
   check(s.preview_account_deletion());const auto token=s.action_token();rejects([&]{s.delete_account("delete");});check(s.action_token()==token && s.account_selected());

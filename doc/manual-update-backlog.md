@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-097. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-098. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -86,6 +86,12 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   until cleared. Show Accept transactions at the bottom right of Review when
   a mark remains and there are no new transactions.
   [Review](review-sheet.md#ledger-same-payment-and-result-marks--owner-go-2026-11-13).
+
+- **MAN-097 — Delete an unused category with unresolved transfers, 2026-11-18.**
+  In Organize spending with categories, explain that you can delete an unused
+  category while bracketed QIF transfer destinations are awaiting review.
+  The existing pictures still apply.
+  [Category editor](../features/010-categories-and-selection.md#editor-and-pickers).
 
 ## Recapturing pictures
 
