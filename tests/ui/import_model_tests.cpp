@@ -1573,7 +1573,8 @@ private slots:
         transfer("transfer_commit",{},false);transfer("transfer_accept");transfer("transfer_commit");
         run(m,"query",{{"filter","Payment"},{"projected",true}});
         const auto link=m.state().value("transfers").toList().first().toMap();
-        QVERIFY(QMetaObject::invokeMethod(root,"showCounterpart",Q_ARG(QVariant,link)));QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(QMetaObject::invokeMethod(root,"showCounterpart",Q_ARG(QVariant,link),Q_ARG(QVariant,false)));
+        QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("accountId").toString(),QString("2"));QVERIFY(selected(m).value("localTransfer").toBool());
         QCOMPARE(m.state().value("committed").toString(),QString("0.00"));QVERIFY(m.state().value("transfers").toList().first().toMap().value("protected").toBool());
         transfer("transfer_accept");transfer("transfer_commit");
@@ -2692,9 +2693,29 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),input)},{"profile","DMY"}});
         QVariantList mappings{QVariantMap{{"source",0},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}},QVariantMap{{"source",1},{"create",true},{"useReportedOpening",false},{"currency","CAD"},{"date","2026-01-01"}}};run(m,"map_import",{{"mappings",mappings}});
         QCOMPARE(m.state().value("importGroup").toMap().value("unresolvedTransfers").toInt(),0);
-        const auto questions=m.state().value("reviewQuestions").toList();int waiting=0;QVariantMap target;
-        for(const auto& value:questions){const auto q=value.toMap();if(!q.value("waitingLink").toString().isEmpty()){++waiting;target=q.value("rows").toList().first().toMap();}}
-        QCOMPARE(waiting,74);QVERIFY(!m.state().value("acceptanceWarnings").toList().isEmpty());
+        const auto questions=m.state().value("reviewQuestions").toList();
+        int transferCards=0;
+        QSet<int> withdrawals;
+        QVariantMap target;
+        for(const auto& value:questions) {
+            const auto question=value.toMap();
+            if(question.value("kind").toString()!="link")continue;
+            ++transferCards;
+            QVERIFY(!question.value("waitingLink").toString().isEmpty());
+            const auto rows=question.value("rows").toList();
+            QCOMPARE(rows.size(),2);
+            const auto withdrawal=rows.front().toMap();
+            const auto deposit=rows.back().toMap();
+            QCOMPARE(withdrawal.value("accountName").toString(),"A");
+            QCOMPARE(deposit.value("accountName").toString(),"B");
+            QCOMPARE(deposit.value("ordinal").toInt(),0);
+            withdrawals.insert(withdrawal.value("ordinal").toInt());
+            target=withdrawal;
+        }
+        QCOMPARE(transferCards,73);
+        QCOMPARE(withdrawals.size(),73);
+        for(int ordinal=41;ordinal<114;++ordinal)QVERIFY(withdrawals.contains(ordinal));
+        QVERIFY(!m.state().value("acceptanceWarnings").toList().isEmpty());
         QVERIFY(QMetaObject::invokeMethod(visualItem(window->contentItem(),"reviewNavigation"),"clicked"));
         QTRY_COMPARE(window->property("currentPage").toString(),"review");
         auto* list=visualItem(window->contentItem(),"reviewQuestions");QVERIFY(list);QVERIFY(QMetaObject::invokeMethod(list,"positionViewAtEnd"));QTRY_VERIFY(list->property("contentY").toDouble()>20);
@@ -2721,11 +2742,33 @@ private slots:
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);create(m,dir.path()+"/doc");run(m,"opening",{{"date","2000-01-01"},{"amount","7.00"}});
         const QByteArray input="!Account\nNNew account\nTBank\nB100\n^\n!Type:Bank\nD2010-01-01\nT10\n^\nD2009-01-01\nT20\n^\n!Account\nNEmpty account\nTBank\nB0\n^\n!Type:Bank\n!Account\nNExisting export\nTBank\n^\n!Type:Bank\nD2001-01-01\nT1\n^\n";
         run(m,"import",{{"path",fixture(dir.path(),input)},{"profile","DMY"}});const auto plan=m.state().value("importPlan").toList();QCOMPARE(plan.size(),3);QCOMPARE(plan[0].toMap().value("openingDate").toString(),"2008-12-31");QCOMPARE(plan[1].toMap().value("openingDate").toString(),"1900-01-01");QVERIFY(plan[0].toMap().value("offerReportedOpening").toBool());QVERIFY(!plan[1].toMap().value("offerReportedOpening").toBool());QVERIFY(!plan[2].toMap().value("offerReportedOpening").toBool());
-        auto* dialog=window->findChild<QObject*>("importAccountMapping");QVERIFY(dialog);QTRY_VERIFY(dialog->property("visible").toBool());auto mappings=dialog->property("mappings").toList();QCOMPARE(mappings[0].toMap().value("date").toString(),"2008-12-31");QVERIFY(!mappings[0].toMap().value("useReportedOpening").toBool());
-        for(int i=0;i<3;++i){auto item=mappings[i].toMap();item["create"]=i<2;item["account"]=i<2?"new":"1";mappings[i]=item;}dialog->setProperty("mappings",mappings);
-        auto* balance=visualItem(window->contentItem(),"sourceOpeningBalance_0");QTRY_VERIFY(balance && balance->isVisible());QCOMPARE(balance->property("count").toInt(),2);QCOMPARE(balance->property("currentIndex").toInt(),0);balance->setProperty("currentIndex",1);QVERIFY(QMetaObject::invokeMethod(balance,"activated",Q_ARG(int,1)));
+        auto* dialog=window->findChild<QObject*>("importAccountMapping");
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("opened").toBool());
+        for(int source=0;source<3;++source) {
+            const auto name="sourceAccountChoice_"+QString::number(source);
+            QTRY_VERIFY(visualItem(window->contentItem(),name));
+            auto* choice=visualItem(window->contentItem(),name);
+            const int destination=source<2?1:2;
+            QVERIFY(choice->setProperty("currentIndex",destination));
+            QVERIFY(QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,destination)));
+        }
+        QTRY_VERIFY(visualItem(window->contentItem(),"sourceOpeningDate_0"));
+        QCOMPARE(visualItem(window->contentItem(),"sourceOpeningDate_0")->property("text").toString(),"2008-12-31");
+        QTRY_VERIFY(visualItem(window->contentItem(),"sourceOpeningBalance_0"));
+        auto* balance=visualItem(window->contentItem(),"sourceOpeningBalance_0");
+        QVERIFY(balance->isVisible());
+        QCOMPARE(balance->property("count").toInt(),2);
+        QCOMPARE(balance->property("currentIndex").toInt(),0);
+        QVERIFY(balance->setProperty("currentIndex",1));
+        QVERIFY(QMetaObject::invokeMethod(balance,"activated",Q_ARG(int,1)));
         if(qEnvironmentVariableIsSet("SPENTIT_MAPPING_CAPTURE")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_MAPPING_CAPTURE")));}
-        run(m,"map_import",{{"mappings",dialog->property("mappings")}});QCOMPARE(m.state().value("opening").toString(),"100.00");QCOMPARE(m.state().value("openingDate").toString(),"2008-12-31");QCOMPARE(m.state().value("balance").toString(),"130.00");QVERIFY(!m.state().value("groupCreated").toBool());QVERIFY(!visualItem(window->contentItem(),"openingSetup"));QCOMPARE(m.state().value("importGroup").toMap().value("unresolved").toInt(),0);
+        auto* confirm=visualItem(window->contentItem(),"confirmImportMappings");
+        QTRY_VERIFY(confirm && confirm->isEnabled());
+        QVERIFY(QMetaObject::invokeMethod(confirm,"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("opening").toString(),"100.00");QCOMPARE(m.state().value("openingDate").toString(),"2008-12-31");QCOMPARE(m.state().value("balance").toString(),"130.00");QVERIFY(!m.state().value("groupCreated").toBool());QVERIFY(!visualItem(window->contentItem(),"openingSetup"));QCOMPARE(m.state().value("importGroup").toMap().value("unresolved").toInt(),0);
         run(m,"select_account",{{"id","3"}});QCOMPARE(m.state().value("opening").toString(),"0.00");QCOMPARE(m.state().value("openingDate").toString(),"1900-01-01");QVERIFY(!m.state().value("groupCreated").toBool());
         run(m,"select_account",{{"id","1"}});QCOMPARE(m.state().value("opening").toString(),"7.00");QCOMPARE(m.state().value("openingDate").toString(),"2000-01-01");run(m,"commit");run(m,"close");run(m,"open",{{"path",dir.path()+"/doc"}});run(m,"select_account",{{"id","2"}});QCOMPARE(m.state().value("balance").toString(),"130.00");
     }
