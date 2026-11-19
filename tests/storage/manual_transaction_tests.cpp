@@ -145,6 +145,76 @@ void origin_transfers(const std::filesystem::path& dir) {
         {auto s=ImportStore::open(path,"test-password");check(s.balance().units()==-1000,"Pair reopen left");s.select_account(2);check(s.balance().units()==1000,"Pair reopen right");s.verify();}
     }
 }
+void undo_manual_after_transfer_assignment(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto path=dir/"undo-manual-after-transfer";
+    {
+        auto store=ImportStore::create(path,"test-password","Transfer destination",cad,"2025-01-01");
+        store.create_account(2,"Transaction account",cad,"2025-01-01");
+        store.create_account(3,"Selected account",cad,"2025-01-01");
+        store.select_account(2);
+        const auto id=store.create_manual("entry",manual());
+        auto assignment=category_requests(store,{id}).front();
+        assignment.mode=1;
+        assignment.category_id.clear();
+        assignment.category_path.clear();
+        assignment.left->ledger_entry=true;
+        assignment.generated=transfers::Endpoint{1,{"~transfer-undo-manual",0},"generated"};
+        assignment.generated_currency=cad.definition_id();
+        OperationContext context;
+        store.assign_transfer_batch("assign",{assignment},context);
+        store.select_account(1);
+        check(store.balance()==Money(1000,cad),"Assignment creates the counterpart");
+        store.select_account(3);
+
+        store.undo_action("undo-assign",store.preview_undo("assign",store.action_token()));
+        check(store.account().identity==3,"Undo assignment preserves the selected account");
+        const auto preview=store.preview_undo("entry",store.action_token());
+        check(preview.accounts==std::vector<std::int64_t>{1,2},"The reversed transfer still contributes both accounts to the preview");
+        store.select_account(1);
+        check(store.balance()==Money(0,cad) && store.current_ledger().empty(),"Undo assignment removes the counterpart");
+        store.select_account(2);
+        check(store.balance()==Money(-1000,cad) && store.row(id).draft.has_value(),"Undo assignment keeps the original posting");
+        store.select_account(3);
+
+        bool reached_commit=false;
+        store.observer([&](auto phase){
+            if(phase==storage::ImportPhase::before_commit){
+                reached_commit=true;
+                throw std::runtime_error("Interrupted manual Undo");
+            }
+        });
+        rejects([&]{store.undo_action("undo-entry",preview);});
+        store.observer({});
+        check(reached_commit && store.account().identity==3,"Failed Undo restores the selected account");
+        check(!store.undo_action_outcome("undo-entry",preview) && store.action_token()==preview.token,
+              "An interrupted Undo preserves the posting and history");
+        store.select_account(2);
+        check(store.balance()==Money(-1000,cad) && store.row(id).draft.has_value(),"An interrupted Undo keeps the original posting");
+        store.select_account(3);
+
+        store.undo_action("undo-entry",preview);
+        check(store.account().identity==3,"Undo addition preserves the selected account");
+        check(store.undo_action_outcome("undo-entry",preview).has_value(),"Undo addition saves a durable receipt");
+        store.select_account(2);
+        check(store.balance()==Money(0,cad) && store.current_ledger().empty(),"Undo addition removes the posting from its own account");
+        store.select_account(3);
+        const auto redo=store.redo_history();
+        check(redo.size()==2 && redo.front().id=="entry" && redo.back().id=="assign","Redo keeps the addition before its transfer assignment");
+        store.redo_action("redo-entry",{store.action_token(),redo.front(),{},{}});
+        check(store.account().identity==3,"Redo addition preserves the selected account");
+        const auto pending=store.redo_history();
+        check(pending.size()==1 && pending.front().id=="assign","Redo addition leaves the transfer assignment available");
+        store.select_account(2);
+        check(store.balance()==Money(-1000,cad) && store.row({"redo-entry",0}).draft.has_value(),"Redo restores the original posting");
+        store.verify();
+    }
+    auto reopened=ImportStore::open(path,"test-password");
+    check(reopened.balance()==Money(0,cad) && reopened.current_ledger().empty(),"Reopen keeps the counterpart removed");
+    reopened.select_account(2);
+    check(reopened.balance()==Money(-1000,cad) && reopened.row({"redo-entry",0}).draft.has_value(),"Reopen keeps the replayed addition");
+    reopened.verify();
+}
 void new_transfer_date(const std::filesystem::path& dir) {
     const Currency cad("CAD");
     const imports::Occurrence id{"entry",0};
@@ -635,6 +705,9 @@ void recovery(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
+        if(argc==2 && std::string_view(argv[1])=="undo_after_transfer"){
+            undo_manual_after_transfer_assignment(dir);std::filesystem::remove_all(dir);return 0;
+        }
         if(argc==2 && std::string_view(argv[1])=="broken_review_link"){
             review_reopens_broken_manual_pair(dir);std::filesystem::remove_all(dir);return 0;
         }

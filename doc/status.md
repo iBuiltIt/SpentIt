@@ -13,6 +13,21 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Undo a manual addition after undoing its transfer assignment — 2026-11-18
+
+Change history uses the account that owns the original posting when undoing
+**Add transaction** after its transfer assignment has been undone. The account
+being viewed stays selected. See [Change history](change-history-handoff.md)
+and [MAN-089](manual-update-backlog.md#open-items).
+
+The synthetic regression reproduced the account error before the fix and
+passed afterward. It checks both account balances, the selected account, a
+failure before commit and retry, the durable Undo receipt, and Redo followed
+by reopening the file. Six rules-enabled Release CTest targets passed on macOS
+arm64 with Qt 6.12.0, including the manual transaction and committed UI suites,
+action Redo, and offscreen smoke. The new regression also passed under
+AddressSanitizer and UndefinedBehaviorSanitizer with leak detection disabled.
+
 ## Verify automatic rules after overlapping imports — 2026-11-18
 
 Rule-history verification now uses the duplicate decision at the automatic

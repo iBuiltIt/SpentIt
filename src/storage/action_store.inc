@@ -123,7 +123,9 @@ app::ActionReceipt ImportStore::undo_action(std::string_view operation,const app
     case app::ActionKind::acceptance: undo_acceptance(operation,checked.action.payload);break;
     case app::ActionKind::manual_creation: {
         struct Selection {std::int64_t& value;std::int64_t old;~Selection(){value=old;}} selection{impl_->selected_account,impl_->selected_account};
-        impl_->selected_account=checked.accounts.at(0);undo_manual(checked.action.payload,ledger_edit_generation());break;
+        // The preview can include transfer accounts that do not own the posting.
+        impl_->selected_account=account_for_batch(checked.action.payload).identity;
+        undo_manual(checked.action.payload,ledger_edit_generation());break;
     }
     case app::ActionKind::opening:
     case app::ActionKind::currency: {

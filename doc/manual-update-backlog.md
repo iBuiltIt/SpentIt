@@ -38,7 +38,8 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - **MAN-089 — Undo and Redo adding a transaction across accounts, 2026-11-18.**
   In Add and correct transactions, include **Add transaction** as an example of
   an action you can undo and redo from Change history while viewing a different
-  account. The existing pictures still apply.
+  account. Include the sequence of undoing a transfer assignment and then
+  undoing **Add transaction**. The existing pictures still apply.
   [Change history](change-history-handoff.md).
 
 - **MAN-090 — Edit New manual transfers, 2026-11-18.** Update the transfer

@@ -236,6 +236,7 @@ if(SPENTIT_IMPORT_WORKFLOW)
   spentit_compiler_options(spentit_manual_transaction_tests)
   add_test(NAME import.manual_transactions COMMAND spentit_manual_transaction_tests)
   add_test(NAME import.manual_review_broken_link COMMAND spentit_manual_transaction_tests broken_review_link)
+  add_test(NAME import.manual_undo_after_transfer COMMAND spentit_manual_transaction_tests undo_after_transfer)
   set_tests_properties(import.manual_transactions PROPERTIES TIMEOUT 180)
 endif()
 

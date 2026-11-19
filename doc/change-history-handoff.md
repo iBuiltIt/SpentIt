@@ -1,6 +1,6 @@
 # Change history
 
-Last updated: 2026-11-14
+Last updated: 2026-11-18
 
 History is a viewer of the file-wide linear Undo/Redo stack. It lists applied
 saved actions newest first across all accounts, with their existing transaction
@@ -12,6 +12,9 @@ perform that same operation. Edit → Redo and the platform Redo shortcut replay
 the next undone action. Native text editing keeps its own Undo/Redo. Ordinary
 saved Undo/Redo runs directly; import Undo asks for confirmation and explains
 that it clears Redo and cannot itself be redone.
+
+After undoing a transfer assignment, undoing **Add transaction** removes the
+posting from its account and keeps the account you are viewing selected.
 
 An import is one action. Its automatic rules and mapping work belong to it.
 A later explicit rule application, acceptance, merge, unmerge, bulk edit, or
