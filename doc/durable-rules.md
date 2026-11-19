@@ -16,6 +16,11 @@ separate. Apply is atomic for the chosen scope. Manual fields stay unless that
 operation replaces them. Amounts, dates, split structure, and transfer links
 stay.
 
+Automatic rules skip transactions already recognized as duplicates when the
+import runs. Verification counts the transaction versions eligible at the
+application's recorded starting revision. A later Review decision does not
+change that count. The explicit pending-batch Apply command keeps its own scope.
+
 Successful close keeps one current ruleset baseline and any definition still
 referenced by retained work. It drops full save requests and superseded
 snapshots. See the retention section of feature 004.

@@ -2792,6 +2792,67 @@ private slots:
         QFile oversized(dir.path()+"/oversized.qif");QVERIFY(oversized.open(QIODevice::WriteOnly));QVERIFY(oversized.resize(static_cast<qint64>(qif::max_file)+1));oversized.close();
         run(m,"import",{{"path",oversized.fileName()},{"profile","DMY"}},false);QVERIFY(!m.state().contains("pending"));
     }
+    void openingRedoReportsRuleHistoryFailure() {
+        QTemporaryDir dir;
+        const auto path=dir.path()+"/doc";
+        ImportModel model(storage::document_gateway());
+        create(model,path);
+        if(!model.state().value("rulesSupported").toBool())QSKIP("Rules storage required");
+        const QVariantMap opening{{"date","2026-01-01"},{"amount","25.00"}};
+        run(model,"correct_opening",opening);
+        QCOMPARE(model.state().value("opening").toString(),QString("25.00"));
+        run(model,"history");
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        const auto redo=model.state().value("actionRedo").toMap();
+        QVERIFY(!redo.isEmpty());
+        run(model,"redo_action",redo);
+        QCOMPARE(model.state().value("opening").toString(),QString("25.00"));
+        if(model.diagnosticsEnabled()){
+            const auto saved=diagnostics::Collector::instance().snapshot().latest;
+            QCOMPARE(saved.action,diagnostics::Action::redo_action);
+            QCOMPARE(saved.persistence,diagnostics::Persistence::confirmed_saved);
+        }
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        const auto pending=model.state().value("actionRedo").toMap();
+        const auto previousOpening=model.state().value("opening");
+        const auto previousUndo=model.state().value("actionUndo");
+
+        // Disturb only the ruleset head in this isolated, synthetic document.
+        sqlite3* raw=nullptr;
+        const auto filename=QFileInfo(path).canonicalFilePath().toUtf8();
+        const auto opened=sqlite3_open_v2(filename.constData(),&raw,SQLITE_OPEN_READWRITE,nullptr);
+        std::unique_ptr<sqlite3,decltype(&sqlite3_close)> db(raw,sqlite3_close);
+        QCOMPARE(opened,SQLITE_OK);
+        QCOMPARE(sqlite3_key(db.get(),storage::public_document_key.data(),static_cast<int>(storage::public_document_key.size())),SQLITE_OK);
+        QCOMPARE(sqlite3_exec(db.get(),"UPDATE rule_state SET revision=revision+1",nullptr,nullptr,nullptr),SQLITE_OK);
+        db.reset();
+
+        auto& collector=diagnostics::Collector::instance();
+        for(int attempt=0;attempt<2;++attempt){
+            const auto cursor=collector.snapshot().sequence;
+            run(model,"redo_action",pending,false);
+            QCOMPARE(model.error(),QString("SpentIt couldn’t redo the opening balance change because it couldn’t verify the file’s rule history. The Undo is still in effect."));
+            QCOMPARE(model.state().value("opening"),previousOpening);
+            QCOMPARE(model.state().value("actionUndo"),previousUndo);
+            QCOMPARE(model.state().value("actionRedo").toMap(),pending);
+            QVERIFY(model.state().value("active").toBool());
+            if(model.diagnosticsEnabled()){
+                const auto observed=collector.snapshot(cursor);
+                QCOMPARE(observed.latest.action,diagnostics::Action::redo_action);
+                QCOMPARE(observed.latest.result,diagnostics::Result::failed);
+                QCOMPARE(observed.latest.persistence,diagnostics::Persistence::confirmed_unchanged);
+                QCOMPARE(observed.latest.error,diagnostics::Code::rule_history_heads);
+                QVERIFY(collector.json().find("\"error\":\"rule_history_heads\"")!=std::string::npos);
+                bool found=false;
+                for(std::size_t index=0;index<observed.event_count;++index){
+                    const auto& event=observed.events[index];
+                    if(event.operation==observed.latest.id && event.kind==diagnostics::EventKind::verification_failed
+                        && event.code==diagnostics::Code::rule_history_heads && event.failed)found=true;
+                }
+                QVERIFY(found);
+            }
+        }
+    }
     void publicRecoveryAndSeparation() {
         QTemporaryDir dir;auto g=storage::document_gateway();const auto path=(dir.path()+"/public").toStdString();
         g->create(path,false,"","Synthetic",Currency("CAD"),"2026-10-25");g->repository().opening(0,"2026-10-25",Money(123,Currency("CAD")));

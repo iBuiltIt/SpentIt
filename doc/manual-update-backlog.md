@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-093. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-094. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -59,6 +59,10 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   edit breaks its Link. **Not this transfer** continues to hide that pair until
   the decision is undone. The existing pictures still apply.
   [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
+
+- **MAN-093 — Redo verification message, 2026-11-18.** In Change history,
+  explain that if SpentIt cannot verify the file’s rule history during Redo,
+  the Undo remains in effect. [Change history](change-history-handoff.md).
 
 ## Recapturing pictures
 

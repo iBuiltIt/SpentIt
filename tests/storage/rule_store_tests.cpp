@@ -105,6 +105,73 @@ void application(){
     {auto s=ImportStore::open(path,password);s.verify();}
 }
 
+void overlapping_import_redo(){
+    Directory dir("spentit-rule-overlap-XXXXXX");
+    const auto path=dir.path/"doc";
+    const std::string first="!Type:Bank\nD01/08/2026\nT-1.00\nPAlready imported\n^\n";
+    const std::string second=first+"D02/08/2026\nT-3.00\nPNew purchase\n^\n";
+    const imports::Occurrence duplicate{"overlap-account-0",0};
+    const imports::Occurrence fresh{"overlap-account-0",1};
+    {
+        auto s=create(path);
+        const auto import=[&](std::string_view id,std::string_view qif){
+            app::OperationContext capture,resume;
+            s.prepare_import_group(id,qif,qif::DateOrder::dmy,{{0,1,{}}},capture);
+            s.resume_import_group(id,resume);
+        };
+        import("first",first);
+        s.accept_all("accept-first",true);
+        save_rules(s,"rules",{rule_of("purchase","Purchases",rules::Scope::transaction,
+            rules::InputField::payee,"Already imported|New purchase",{{},{},"rule-default",false})},0);
+        import("overlap",second);
+
+        const auto skipped=s.row(duplicate);
+        check(skipped.decision.disposition==imports::Disposition::duplicate);
+        check(skipped.draft->transaction.allocations().front().category.empty());
+        check(s.row(fresh).draft->transaction.allocations().front().category_rule==RuleMark{"purchase",0});
+        check(s.balance()==Money(-400,cad));
+
+        s.correct_opening("opening","2026-08-01",Money(2500,cad));
+        s.undo_action("undo-opening",s.preview_undo("opening",s.action_token()));
+        check(s.account().opening==Money(0,cad) && s.balance()==Money(-400,cad));
+        const auto available=s.redo_history();
+        check(available.size()==1 && available.front().id=="opening");
+
+        const app::UndoPreview redo{s.action_token(),available.front(),{},{}};
+        s.redo_action("redo-opening",redo);
+        check(s.redo_action_outcome("redo-opening",redo).has_value());
+        const auto head=s.action_head();
+        check(s.redo_history().empty() && head && head->id=="redo-opening");
+        check(s.account().opening==Money(2500,cad) && s.balance()==Money(2100,cad));
+        check(s.row(duplicate).decision==skipped.decision);
+        check(s.row(fresh).draft->transaction.allocations().front().category_rule==RuleMark{"purchase",0});
+    }
+    {
+        auto s=ImportStore::open(path,password);
+        const auto head=s.action_head();
+        check(head && head->id=="redo-opening");
+        check(s.account().opening==Money(2500,cad) && s.balance()==Money(2100,cad));
+        check(s.row(duplicate).decision.disposition==imports::Disposition::duplicate);
+        check(s.row(fresh).draft->transaction.allocations().front().category_rule==RuleMark{"purchase",0});
+
+        const auto request=request_from(preview(s,duplicate.batch,batch_revision(s,duplicate.batch)));
+        check(apply_rules(s,"explicit-apply",request).evaluated==2);
+        s.verify();
+
+        // A later decision must not change the historical scope of automatic rules.
+        s.decide(duplicate,batch_revision(s,duplicate.batch),{imports::Disposition::include,{}});
+        check(s.row(duplicate).decision.disposition==imports::Disposition::include);
+        check(s.balance()==Money(2000,cad));
+        s.verify();
+        s.certify({});
+    }
+    {
+        auto s=ImportStore::open(path,password);
+        check(s.account().opening==Money(2500,cad) && s.balance()==Money(2000,cad));
+        s.verify();
+    }
+}
+
 void schema(){
     fault_vfs::install();
     Directory dir("spentit-rulestore-schema-XXXXXX");const auto path=dir.path/"doc";
@@ -560,4 +627,4 @@ void category_faults() {
     }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="cache_consistency")cache_consistency();else if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="cache_consistency")cache_consistency();else if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="overlapping_import_redo")overlapping_import_redo();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

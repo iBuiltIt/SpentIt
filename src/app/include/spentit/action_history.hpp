@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,11 @@ struct UndoPreview {
     ActionSummary action;
     std::vector<std::int64_t> accounts;
     std::string refusal;
+};
+
+class RedoRuleHistoryError final : public std::runtime_error {
+public:
+    RedoRuleHistoryError():std::runtime_error("SpentIt could not verify the file’s rule history during Redo.") {}
 };
 
 struct ActionReceipt {

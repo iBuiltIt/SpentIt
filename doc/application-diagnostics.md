@@ -59,6 +59,18 @@ Cancellation is reported as available/requested/sealed from the existing gate. A
 
 Spans carry IDs, parent IDs, inclusive/exclusive microseconds and an unwind flag. Verification spans indicate only work actually entered and finished; exception unwinding is not proof of corruption (cancellation can unwind). Cumulative calls/failures support identifying executed checks. Never sum overlapping inclusive spans. Statement prepare/reuse use atomic cumulative counters and currently report counts, with duration zero indicating unavailable timing; high-detail SQL timing is not enabled. No SQL text is collected. Cache events come from actual worker catalog/metadata/ledger/search and group-snapshot branches, including bypass/invalidation. Existing caches and retention policies are unchanged.
 
+## Redo rule-history checks
+
+Redo has its own `redo_action` outcome. A failure inside the saved rule-history
+verification records a fixed `rule_history_…` code in the outcome's `error`
+field and a verification failure event (kind 15). Use the operation ID to
+correlate the event with the outcome. For example,
+`rule_history_application_scope` identifies a mismatch between the saved
+number of transactions evaluated and the scope reconstructed during
+verification. The codes contain no record identities, rule text, SQL or
+exception text. The check runs before commit. A rejected replay with a
+confirmed outcome reports `confirmed_unchanged`.
+
 ## Import phase timings — 2026-10-30
 
 The fixed vocabulary now appends `import_capture` (source/mapping capture),
@@ -165,6 +177,7 @@ Observation is attached to the existing dispatch branches; it never issues a new
 | Existing actions | Successful outcome source |
 |---|---|
 | `create`, `create_account`, `rename_account`, `archive_account`, `reactivate_account`, `delete_account`, `correct_opening`, `reassign_currency`, `undo_account` | Existing gateway/complete repository return or validated existing outcome; marked before presentation work where available |
+| `redo_action` | Successful replay or confirmed receipt. A confirmed rule-history rejection leaves Undo in effect. |
 | `apply_change`, `apply_bulk`, `apply_category` | Existing command receipt, including strict/group Undo through the same action |
 | `rules_save`, `rules_apply`, `rules_reapply_apply` | Existing receipt; explicit unchanged/no-row-change result maps to confirmed unchanged |
 | `save`, `decide`, `opening`, `commit`, `discard` | Complete command return or existing commit receipt; unknown if the existing failure path cannot establish durability |

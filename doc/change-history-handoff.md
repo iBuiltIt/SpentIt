@@ -19,6 +19,9 @@ transaction edit is its own action. Standalone definition and settings saves
 remain outside Undo. Saved rules remain when their transaction application is
 undone.
 
+If SpentIt cannot verify the file’s rule history during Redo and confirms the
+replay did not save, Change history explains that the Undo is still in effect.
+
 A new saved change clears Redo. Import Undo also clears it; the user can reimport
 the original file. Successful close clears both stacks. Failed/cancelled close
 preserves both. A crash preserves the existing durable Undo chain and saved

@@ -153,6 +153,30 @@ void bind_request(Statement& row,const app::RuleDefinitionImage& image,int first
 }
 #endif
 
+namespace {
+// Both verification and partial rollback reconstruct the scope from retained
+// versions and facts that predate the application. Explicit Apply has its
+// own completion receipt and includes duplicates in its evaluated count.
+constexpr auto rule_application_scope=R"SQL(
+    SELECT count(*) FROM records r
+    JOIN versions prior ON prior.batch=r.batch AND prior.ordinal=r.ordinal
+        AND prior.revision=(SELECT max(v.revision) FROM versions v
+            WHERE v.batch=r.batch AND v.ordinal=r.ordinal AND v.revision<=application.batch_before)
+    WHERE r.batch=application.batch
+      AND NOT EXISTS(SELECT 1 FROM accepted_transactions a JOIN operations o ON o.id=a.operation
+          WHERE a.batch=r.batch AND a.ordinal=r.ordinal AND o.revision<application.batch_before)
+      AND NOT EXISTS(SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence
+          JOIN history_order h ON h.operation=l.id WHERE g.batch=r.batch AND g.ordinal=r.ordinal
+          AND h.sequence<(SELECT sequence FROM history_order WHERE rule_application=application.id))
+)SQL";
+constexpr auto exclude_automatic_rule_duplicates=R"SQL(
+      AND (prior.decision!=2 OR NOT EXISTS(SELECT 1 FROM import_group_accounts m
+          WHERE m.batch=application.batch AND application.id='auto-rules-'||m.group_id||'-'||m.source_account
+          AND NOT EXISTS(SELECT 1 FROM command_completions c
+              WHERE c.id=application.id AND c.domain='rule-apply')))
+)SQL";
+}
+
 bool ImportStore::rules_supported() const { return rules_format(impl_->db); }
 
 #ifndef SPENTIT_RULES_STORAGE
@@ -164,7 +188,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
 app::RuleApplyReceipt ImportStore::apply_pending_rules(std::string_view,const app::RuleApplyRequest&,const app::OperationContext&) { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
 app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence&,const app::OperationContext&) const { fail(SQLITE_SCHEMA,"Rules are not enabled for this dataset"); }
-void ImportStore::verify_rules(const app::OperationContext*) const {}
+void ImportStore::verify_rules(const app::OperationContext*,diag::Code&) const {}
 #else
 app::RuleImage ImportStore::rule_image() const {
     if(!rules_supported()) fail(SQLITE_SCHEMA,rules_dataset);
@@ -463,7 +487,7 @@ app::RuleMatch ImportStore::match_saved_rules(const imports::Occurrence& id,cons
     for(std::size_t i=0;i<draft->transaction.allocations().size();++i){const auto& allocation=draft->transaction.allocations()[i];winner(allocation.category_rule,"Category",i);winner(allocation.memo_rule,"Split memo",i);}
     return match;
 }
-void ImportStore::verify_rules(const app::OperationContext* context) const {
+void ImportStore::verify_rules(const app::OperationContext* context,diag::Code& check) const {
     if(context) context->checkpoint("Verifying rules");
     struct Sim { std::int64_t version=0; bool enabled=false; bool deleted=false; RuleBody body; };
     std::map<std::string,Sim> reconstructed;std::int64_t revision=0,previous_order=0;
@@ -479,13 +503,17 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
     while(operations.row()){
         if(context) context->checkpoint();
         const auto operation=operations.bytes(0);const auto before=operations.integer(1),after=operations.integer(2);
+        check=diag::Code::rule_history_save_revision;
         if(before!=revision || after!=revision+1) fail(SQLITE_CORRUPT);
+        check=diag::Code::rule_history_save_order;
         Statement ordering(impl_->db,"SELECT sequence FROM history_order WHERE rule_operation=?");ordering.text(1,operation);if(!ordering.row() || ordering.integer(0)<=previous_order)fail(SQLITE_CORRUPT);
         const auto sequence=ordering.integer(0);previous_order=sequence;
+        check=diag::Code::rule_history_save_completion;
         Statement completion(impl_->db,"SELECT domain,length(digest),expired FROM command_completions WHERE id=?");completion.text(1,operation);
         if(!completion.row() || completion.bytes(0)!="rule-save" || completion.integer(1)!=32 || (completion.integer(2)!=0)!=(after<=baseline))fail(SQLITE_CORRUPT,"Invalid rule save completion");
         if(after<=baseline){revision=after;continue;}
 
+        check=diag::Code::rule_history_save_request;
         Statement epoch(impl_->db,"SELECT coalesce(max(o.catalog_after),0) FROM category_operations o CROSS JOIN history_order h ON h.category_operation=o.id WHERE h.sequence<?");epoch.integer(1,sequence);if(!epoch.row())fail(SQLITE_CORRUPT);
         const auto catalog=epoch.integer(0);
         struct Member { std::string rule; RuleBody body; std::int64_t version=0; bool enabled=false; };
@@ -501,16 +529,19 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
 
         std::set<std::string> seen;
         for(std::size_t index=0;index<requests.size();++index){
+            check=diag::Code::rule_history_save_member;
             if(requests[index].rule!=snapshots[index].rule || requests[index].enabled!=snapshots[index].enabled || !seen.insert(requests[index].rule).second) fail(SQLITE_CORRUPT);
             auto found=reconstructed.find(requests[index].rule);
             const bool live=found!=reconstructed.end() && !found->second.deleted;
             if(found!=reconstructed.end() && found->second.deleted) fail(SQLITE_CORRUPT);
             const auto expected_version=live?(same_content(found->second.body,requests[index].body)?found->second.version:found->second.version+1):0;
             if(snapshots[index].version!=expected_version) fail(SQLITE_CORRUPT);
+            check=diag::Code::rule_history_save_definition;
             Statement definition(impl_->db,"SELECT label,scope,input_field,expression,payee_template,memo_template,category_id,inherit_parent FROM rule_definitions WHERE id=? AND version=?");definition.text(1,requests[index].rule);definition.integer(2,expected_version);if(!definition.row())fail(SQLITE_CORRUPT);
             RuleBody stored{definition.bytes(0),definition.bytes(3),static_cast<rules::Scope>(definition.integer(1)),static_cast<rules::InputField>(definition.integer(2)),optional_text(definition,4),optional_text(definition,5),optional_text(definition,6),definition.integer(7)!=0};
             if(stored!=requests[index].body) fail(SQLITE_CORRUPT);
             if(requests[index].body.category){
+                check=diag::Code::rule_history_save_category;
                 bool unavailable=false;
                 try { const auto category=category_at(impl_->db,*requests[index].body.category,catalog); unavailable=category.deleted || category.kind!=CategoryKind::leaf || (requests[index].enabled && !category_display(impl_->db,*requests[index].body.category,catalog).assignable); }
                 catch(const ImportError&){ unavailable=true; }
@@ -521,6 +552,7 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         for(auto& [identity,sim]:reconstructed) if(!sim.deleted && !seen.contains(identity)){sim.deleted=true;sim.enabled=false;}
         revision=after;
     }
+    check=diag::Code::rule_history_heads;
     if(ruleset_revision(impl_->db)!=revision) fail(SQLITE_CORRUPT);
     const auto heads=stored_heads(impl_->db);
     if(heads.size()!=reconstructed.size()) fail(SQLITE_CORRUPT);
@@ -531,7 +563,9 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
     }
     std::sort(live.begin(),live.end(),[](const auto& left,const auto& right){return left.position<right.position;});
     for(std::size_t index=0;index<live.size();++index) if(live[index].position!=integer(index)) fail(SQLITE_CORRUPT);
+    check=diag::Code::rule_history_snapshot;
     if(revision>0){Statement snapshot(impl_->db,"SELECT rule,version,enabled FROM rule_snapshots WHERE ruleset_revision=? AND deleted=0 ORDER BY position");snapshot.integer(1,revision);std::size_t index=0;while(snapshot.row()){if(index>=live.size() || snapshot.bytes(0)!=live[index].id || snapshot.integer(1)!=live[index].version || (snapshot.integer(2)!=0)!=live[index].enabled)fail(SQLITE_CORRUPT);++index;}if(index!=live.size())fail(SQLITE_CORRUPT);}
+    check=diag::Code::rule_history_regex;
     try {
         std::vector<rules::Rule> current;for(const auto& head:live){app::RuleDefinitionImage image;image.identity=head.id;image.label=head.body.label;image.enabled=head.enabled;image.scope=head.body.scope;image.input=head.body.input;image.expression=head.body.expression;image.actions={head.body.payee,head.body.memo,head.body.category,head.body.inherit};current.push_back(rule_from(image,head.version));}
         if(context) context->checkpoint();
@@ -539,19 +573,23 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
         Statement definitions(impl_->db,"SELECT id,version,scope,input_field,expression,payee_template,memo_template,category_id,inherit_parent FROM rule_definitions ORDER BY id,version");
         while(definitions.row()){if(context)context->checkpoint();rules::Rule historical=rule_from_row(definitions,0,definitions.integer(1),false);rules::RuleSet one({std::move(historical)});}
     } catch(const rules::RegexError&) { fail(SQLITE_CORRUPT); }
+    check=diag::Code::rule_history_draft_image;
     Statement batches_with_rules(impl_->db,"SELECT DISTINCT batch,ordinal FROM versions ORDER BY batch,ordinal");
     while(batches_with_rules.row()){
         const imports::Occurrence id{batches_with_rules.bytes(0),static_cast<std::size_t>(batches_with_rules.integer(1))};
+        check=diag::Code::rule_history_draft_image;
         Statement versions(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision");versions.text(1,id.batch);versions.integer(2,integer(id.ordinal));
         std::optional<imports::DraftRow> previous;std::int64_t previous_decision=0;std::string previous_duplicate;std::int64_t previous_ordinal=-1;
         while(versions.row()){
             if(context) context->checkpoint();
+            check=diag::Code::rule_history_draft_image;
             const auto revision_at=versions.integer(0);
             const auto source=load_row(id,false).source;
             const auto currency=version_currency(impl_->db,id.batch,integer(id.ordinal),revision_at);const bool reassigned=source.source_currency && *source.source_currency!=currency;
             std::vector<Allocation> allocations;Statement values(impl_->db,"SELECT category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");values.text(1,id.batch);values.integer(2,integer(id.ordinal));values.integer(3,revision_at);
             while(values.row()) allocations.push_back({values.bytes(0),values.bytes(1),Money(values.integer(2),currency)});
             imports::DraftRow draft{versions.bytes(1),versions.bytes(2),versions.bytes(3),Transaction::repaired_import(source.original_amount,Money(versions.integer(4),currency),std::move(allocations),reassigned)};
+            check=diag::Code::rule_history_draft_provenance;
             load_metadata(impl_->db,id,revision_at,draft,false);
             const bool marked=any_mark(draft);
             Statement provenance(impl_->db,"SELECT 1 FROM draft_rule_fields WHERE batch=? AND ordinal=? AND revision=?");provenance.text(1,id.batch);provenance.integer(2,integer(id.ordinal));provenance.integer(3,revision_at);
@@ -561,45 +599,85 @@ void ImportStore::verify_rules(const app::OperationContext* context) const {
             const auto& stored_allocations=draft.transaction.allocations();
             for(std::size_t index=0;index<stored_allocations.size();++index){const bool allocation_marked=stored_allocations[index].category_rule.has_value() || stored_allocations[index].memo_rule.has_value();if(marked_positions.contains(integer(index))!=allocation_marked)fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");}
             std::size_t marked_allocations=0;for(const auto& allocation:stored_allocations)if(allocation.category_rule||allocation.memo_rule)++marked_allocations;if(marked_positions.size()!=marked_allocations)fail(SQLITE_CORRUPT);
+            check=diag::Code::rule_history_draft_event;
             Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,id.batch);event.integer(2,revision_at);if(!event.row())fail(SQLITE_CORRUPT);
             const auto kind=event.bytes(0);
             if(session_snapshot::baseline(impl_->db,false,id,revision_at)){
                 // Checked baseline: provenance is validated above; expired
                 // intermediate field transitions are not reconstructed.
             } else if(!previous){
+                check=diag::Code::rule_history_draft_initial_ownership;
                 const auto initial_owner=source.format=="manual"?FieldOwnership::manual:FieldOwnership::source;
                 if(draft.payee_owner==FieldOwnership::rule || draft.memo_owner==FieldOwnership::rule || marked) fail(SQLITE_CORRUPT);
                 if((kind=="ingest" || kind=="materialize") && (draft.payee_owner!=initial_owner || draft.memo_owner!=initial_owner)) fail(SQLITE_CORRUPT);
                 for(const auto& allocation:stored_allocations) if(allocation.category_owner==FieldOwnership::rule || allocation.memo_owner==FieldOwnership::rule || ((kind=="ingest" || kind=="materialize") && (allocation.category_owner!=initial_owner || allocation.memo_owner!=initial_owner))) fail(SQLITE_CORRUPT);
-            } else if(kind=="save") {if(!review_draft_undo(id,revision_at,draft)){
-                Statement applied(impl_->db,"SELECT substr(a.request,1,1) FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.question='rules-account'");
-                applied.text(1,id.batch);applied.integer(2,integer(id.ordinal));applied.integer(3,revision_at);const bool account_apply=applied.row();
-                check_rule_transition(*previous,draft,account_apply,account_apply && applied.bytes(0)=="1");
-            }}
+            } else if(kind=="save") {
+                check=diag::Code::rule_history_draft_undo;
+                if(!review_draft_undo(id,revision_at,draft)){
+                    check=diag::Code::rule_history_draft_save_transition;
+                    Statement applied(impl_->db,"SELECT substr(a.request,1,1) FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.result=? AND m.committed=0 AND a.question='rules-account'");
+                    applied.text(1,id.batch);applied.integer(2,integer(id.ordinal));applied.integer(3,revision_at);const bool account_apply=applied.row();
+                    check_rule_transition(*previous,draft,account_apply,account_apply && applied.bytes(0)=="1");
+                }
+            }
             else if(kind=="apply_rules"){
+                check=diag::Code::rule_history_draft_apply_decision;
                 if(versions.integer(5)!=previous_decision || versions.bytes(6)!=previous_duplicate || versions.integer(7)!=previous_ordinal) fail(SQLITE_CORRUPT);
+                check=diag::Code::rule_history_draft_apply_receipt;
                 Statement applied(impl_->db,"SELECT replace_manual FROM rule_applications WHERE batch=? AND batch_after=?");applied.text(1,id.batch);applied.integer(2,revision_at);if(!applied.row())fail(SQLITE_CORRUPT);
+                check=diag::Code::rule_history_draft_apply_transition;
                 check_rule_transition(*previous,draft,true,applied.integer(0)!=0);
-            } else if(kind=="decide") { if(!same_draft(*previous,draft)) fail(SQLITE_CORRUPT); }
+            } else if(kind=="decide") {
+                check=diag::Code::rule_history_draft_decision_transition;
+                if(!same_draft(*previous,draft)) fail(SQLITE_CORRUPT);
+            }
             else if(kind=="currency") {
+                check=diag::Code::rule_history_draft_currency_transition;
                 if(versions.integer(5)!=previous_decision || versions.bytes(6)!=previous_duplicate || versions.integer(7)!=previous_ordinal || draft.date!=previous->date || draft.payee!=previous->payee || draft.memo!=previous->memo || draft.transaction.original_imported_amount()!=previous->transaction.original_imported_amount() || !previous->transaction.effective_total().same_decimal(draft.transaction.effective_total())) fail(SQLITE_CORRUPT);
                 const auto& left=previous->transaction.allocations();const auto& right=draft.transaction.allocations();if(left.size()!=right.size())fail(SQLITE_CORRUPT);
                 for(std::size_t index=0;index<left.size();++index)if(left[index].identity!=right[index].identity || left[index].category!=right[index].category || left[index].memo!=right[index].memo || !left[index].amount.same_decimal(right[index].amount))fail(SQLITE_CORRUPT);
             }
-            else fail(SQLITE_CORRUPT);
+            else {
+                check=diag::Code::rule_history_draft_event;
+                fail(SQLITE_CORRUPT);
+            }
             previous_decision=versions.integer(5);previous_duplicate=versions.bytes(6);previous_ordinal=versions.integer(7);previous=std::move(draft);
         }
     }
+    check=diag::Code::rule_history_application_order;
     Statement applications(impl_->db,"SELECT id,batch,batch_before,batch_after,ruleset_revision,changed_count,evaluated FROM rule_applications WHERE id IN(SELECT rule_application FROM history_order WHERE sequence>(SELECT history_cut FROM document_session))");
+    const auto scope_sql=std::string("SELECT (")+rule_application_scope+exclude_automatic_rule_duplicates+
+        ") FROM rule_applications application WHERE application.id=?";
     while(applications.row()){
         if(context) context->checkpoint();
+        check=diag::Code::rule_history_application_order;
         Statement history(impl_->db,"SELECT sequence FROM history_order WHERE rule_application=?");history.text(1,applications.bytes(0));if(!history.row())fail(SQLITE_CORRUPT);
         const auto before=applications.integer(2),after=applications.integer(3),ruleset=applications.integer(4),changed=applications.integer(5),evaluated=applications.integer(6);
+        check=diag::Code::rule_history_application_ruleset;
         if(ruleset>0){Statement present(impl_->db,"SELECT 1 FROM rule_operations WHERE ruleset_after=?");present.integer(1,ruleset);if(!present.row())fail(SQLITE_CORRUPT);}
         // An unchanged Apply keeps the revision, so the event there belongs to the earlier command.
+        check=diag::Code::rule_history_application_result;
         if(changed==0){if(after!=before)fail(SQLITE_CORRUPT);}
         else {Statement event(impl_->db,"SELECT kind FROM events WHERE batch=? AND revision=?");event.text(1,applications.bytes(1));event.integer(2,after);if(!event.row() || event.bytes(0)!="apply_rules" || after!=before+1)fail(SQLITE_CORRUPT);Statement count(impl_->db,"SELECT count(*) FROM versions WHERE batch=? AND revision=?");count.text(1,applications.bytes(1));count.integer(2,after);if(!count.row() || count.integer(0)!=changed)fail(SQLITE_CORRUPT);}
-        Statement scope_count(impl_->db,"SELECT count(*) FROM records r WHERE r.batch=? AND EXISTS(SELECT 1 FROM versions v WHERE v.batch=r.batch AND v.ordinal=r.ordinal AND v.revision<=?2) AND NOT EXISTS(SELECT 1 FROM accepted_transactions a JOIN operations o ON o.id=a.operation WHERE a.batch=r.batch AND a.ordinal=r.ordinal AND o.revision<?2) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g JOIN ledger_operations l ON l.sequence=g.sequence JOIN history_order h ON h.operation=l.id WHERE g.batch=r.batch AND g.ordinal=r.ordinal AND h.sequence<?3)");scope_count.text(1,applications.bytes(1));scope_count.integer(2,before);scope_count.integer(3,history.integer(0));if(!scope_count.row() || scope_count.integer(0)!=evaluated)fail(SQLITE_CORRUPT);
+        check=diag::Code::rule_history_application_scope;
+        Statement scope_count(impl_->db,scope_sql.c_str());
+        scope_count.text(1,applications.bytes(0));
+        if(!scope_count.row())fail(SQLITE_CORRUPT);
+        const auto expected_scope=scope_count.integer(0);
+        if(expected_scope!=evaluated){
+            // Older v1 partial rollbacks recomputed this receipt including
+            // duplicates. Allow that exact count only after a recorded rollback
+            // of this batch. Fresh application receipts still require the exact scope.
+            const auto legacy_sql=std::string("SELECT (")+rule_application_scope+R"SQL(
+                ) FROM rule_applications application WHERE application.id=?1 AND application.changed_count>0
+                    AND EXISTS(SELECT 1 FROM events e JOIN history_order h
+                        ON h.batch=e.batch AND h.event_revision=e.revision
+                        WHERE e.batch=application.batch AND e.kind='rollback' AND h.sequence>?2)
+            )SQL";
+            Statement legacy(impl_->db,legacy_sql.c_str());
+            legacy.text(1,applications.bytes(0));legacy.integer(2,history.integer(0));
+            if(!legacy.row() || legacy.integer(0)!=evaluated)fail(SQLITE_CORRUPT);
+        }
     }
 }
 #endif

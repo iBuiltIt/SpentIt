@@ -295,7 +295,14 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     for(const auto* table:{"draft_allocation_meta","draft_fields","review_stamps","allocations","versions","retained_transfer_rows","records","source_occurrences"})erase_rows(table);
     if(rules_format(impl_->db)) {
         exec(impl_->db,"DELETE FROM history_order WHERE rule_application IN(SELECT id FROM rule_applications a WHERE a.batch_after>a.batch_before AND NOT EXISTS(SELECT 1 FROM versions v WHERE v.batch=a.batch AND v.revision=a.batch_after)); DELETE FROM operation_registry WHERE id IN(SELECT id FROM rule_applications a WHERE a.batch_after>a.batch_before AND NOT EXISTS(SELECT 1 FROM versions v WHERE v.batch=a.batch AND v.revision=a.batch_after)); DELETE FROM rule_applications WHERE batch_after>batch_before AND NOT EXISTS(SELECT 1 FROM versions v WHERE v.batch=rule_applications.batch AND v.revision=rule_applications.batch_after)");
-        exec(impl_->db,"UPDATE rule_applications SET changed_count=(SELECT count(*) FROM versions v WHERE v.batch=rule_applications.batch AND v.revision=rule_applications.batch_after),evaluated=(SELECT count(*) FROM records r WHERE r.batch=rule_applications.batch AND EXISTS(SELECT 1 FROM versions v WHERE v.batch=r.batch AND v.ordinal=r.ordinal AND v.revision<=rule_applications.batch_before) AND NOT EXISTS(SELECT 1 FROM accepted_transactions a JOIN operations o ON o.id=a.operation WHERE a.batch=r.batch AND a.ordinal=r.ordinal AND o.revision<rule_applications.batch_before)) WHERE batch_after>batch_before AND batch IN(SELECT id FROM rollback_batches)");
+        const auto update_scope=std::string(R"SQL(
+            UPDATE rule_applications AS application
+            SET changed_count=(SELECT count(*) FROM versions v
+                    WHERE v.batch=application.batch AND v.revision=application.batch_after),
+                evaluated=(
+        )SQL")+rule_application_scope+exclude_automatic_rule_duplicates+
+            ") WHERE batch_after>batch_before AND batch IN(SELECT id FROM rollback_batches)";
+        exec(impl_->db,update_scope.c_str());
     }
     exec(impl_->db,"DELETE FROM account_amount_revisions WHERE (batch,ordinal) IN(SELECT batch,ordinal FROM rollback_rows) AND kind IN(0,1)");
     exec(impl_->db,"DELETE FROM import_file_errors WHERE batch IN(SELECT id FROM rollback_batches); DELETE FROM import_completions WHERE batch IN(SELECT id FROM rollback_batches)");

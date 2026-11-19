@@ -13,6 +13,46 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Verify automatic rules after overlapping imports — 2026-11-18
+
+Rule-history verification now uses the duplicate decision at the automatic
+application's starting revision. Later Review decisions leave that scope
+intact. Explicit pending-batch Apply follows its own scope. See
+[rules storage](durable-rules.md). The release schema remains version 1.
+
+The synthetic overlapping QIF regression failed at opening-balance Redo
+before the fix and passed afterward. It checks the duplicate's disposition,
+the new transaction's rule assignment, exact balances, the durable Redo
+receipt, recovery after reopen, explicit Apply, and a later change to the
+duplicate decision. On macOS arm64 with Qt 6.12.0, it passed in the
+rules-enabled Release build and under AddressSanitizer and
+UndefinedBehaviorSanitizer with leak detection disabled. The focused offscreen
+Redo failure-message test also passed with diagnostics enabled. Fourteen
+Release CTest targets passed, including import Undo, account rollback, the
+Redo I/O and crash sweep, and offscreen smoke.
+
+## Identify rule-history failures during Redo — 2026-11-18
+
+When rule-history verification blocks Redo before commit, Change history
+explains that Undo is still in effect. Opt-in diagnostics report Redo as its
+own operation and include a fixed code for the failed check. See
+[diagnostics](application-diagnostics.md#redo-rule-history-checks) and
+[MAN-093](manual-update-backlog.md#open-items).
+
+A synthetic overlapping QIF import reproduced `rule_history_application_scope`.
+Automatic rules skipped a recognized duplicate and categorized a new transaction
+in the same batch. Verification included the duplicate in its count of evaluated
+transactions and failed even before the opening edit. Repeating the sequence
+with only the new transaction passed verification and Redo. The original
+session predates the detailed code, so the cause of that incident is unconfirmed.
+
+On macOS arm64 with Qt 6.12.0, the focused rules-enabled Release UI regression
+passed with diagnostics enabled and disabled. It covers successful Redo and
+checks that a rejected Redo preserves the opening and both history stacks
+across repeated attempts. Six CTest targets passed, including the diagnostic
+collector, transport, offscreen smoke, action Redo, action Redo I/O and crash
+sweep, and catalog deletion.
+
 ## Review after a transfer Link is broken — 2026-11-18
 
 Review can offer the original postings again when an edit breaks their saved

@@ -6,6 +6,8 @@
 #include <memory>
 #include <set>
 
+namespace spentit::diagnostics { enum class Code; }
+
 namespace spentit::storage {
 class ImportError : public std::runtime_error {
 public:
@@ -343,7 +345,7 @@ private:
     app::EntrySnapshot entry_snapshot(const imports::Occurrence&,std::int64_t,const qif::Record* = nullptr) const;
     std::vector<app::DependencyStamp> dependencies(const imports::Occurrence&,std::int64_t history_before=0) const;
     void verify_committed(const app::OperationContext* = nullptr) const;
-    void verify_rules(const app::OperationContext* = nullptr) const;
+    void verify_rules(const app::OperationContext*, diagnostics::Code& check) const;
     void verify_bulk(const app::OperationContext* = nullptr) const;
     void verify_rule_reapply(const app::OperationContext* = nullptr) const;
     void verify_account_commands(const app::OperationContext* = nullptr) const;

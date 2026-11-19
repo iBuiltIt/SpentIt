@@ -1825,7 +1825,15 @@ struct ImportModel::Worker {
             try {if(redoing)repo.redo_action(operation,preview);else repo.undo_action(operation,preview);}
             catch(...) {const auto failure=std::current_exception();std::optional<app::ActionReceipt> saved;
                 try{saved=redoing?repo.redo_action_outcome(operation,preview):repo.undo_action_outcome(operation,preview);}catch(...){gateway->close();active=false;throw std::runtime_error("Reopen the file and check the transactions before trying again.");}
-                if(!saved)std::rethrow_exception(failure);
+                if(!saved){
+                    try {std::rethrow_exception(failure);}
+                    catch(const app::RedoRuleHistoryError&){
+                        diagnosticUnchanged=true;
+                        throw std::runtime_error(preview.action.kind==app::ActionKind::opening
+                            ?"SpentIt couldn’t redo the opening balance change because it couldn’t verify the file’s rule history. The Undo is still in effect."
+                            :"SpentIt couldn’t redo the change because it couldn’t verify the file’s rule history. The Undo is still in effect.");
+                    }
+                }
             }
             observedSaved();
             const imports::Occurrence inspected{selectedBatch,selectedOrdinal};const auto priorSelection=selection;const auto priorFocus=selectionFocus,priorAnchor=selectionAnchor;

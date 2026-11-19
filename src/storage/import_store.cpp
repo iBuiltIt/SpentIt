@@ -2503,7 +2503,19 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     verify_link_exclusions();
     if(categories_supported()){diag::Span phaseSpan(diag::Code::categories);verify_categories(context);}
-    if(rules_format(impl_->db)){diag::Span phaseSpan(diag::Code::rules);verify_rules(context);}
+    if(rules_format(impl_->db)){
+        diag::Span phaseSpan(diag::Code::rules);
+        auto check=diag::Code::rule_history_baseline;
+        try {
+            verify_rules(context,check);
+        } catch(const app::OperationCancelled&) {
+            throw;
+        } catch(...) {
+            diag::verification_failed(check);
+            if(!impl_->redo_operation.empty())throw app::RedoRuleHistoryError();
+            throw;
+        }
+    }
     {diag::Span phaseSpan(diag::Code::transfers);verify_transfers(context);}{diag::Span phaseSpan(diag::Code::committed);verify_committed(context);}if(bulk_supported()){diag::Span phaseSpan(diag::Code::bulk);verify_bulk(context);}if(rules_format(impl_->db)){diag::Span phaseSpan(diag::Code::reapply);verify_rule_reapply(context);}
 }
 void ImportStore::backup_to(const std::filesystem::path& requested_destination,std::string_view password,

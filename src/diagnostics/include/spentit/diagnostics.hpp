@@ -8,13 +8,21 @@
 namespace spentit::diagnostics {
     using Id=std::uint64_t;
     enum class Action {
-        unclassified, apply_bulk, apply_category, apply_change, archive_account, backup, cancel_bulk, cancel_category_preview, cancel_change, cancel_import_mapping, cancel_merge, cancel_reapply, category_list, category_select, close, commit, correct_opening, create, create_account, decide, delete_account, discard, entry_history, evidence, group_abort, group_balance, group_resolve_transfers, history, import_file, inspect, map_import, open, opening, prepare_create, preview_bulk, preview_category, preview_change, probe, query, reactivate_account, reassign_currency, rename_account, resume, rules_apply, rules_discard, rules_load, rules_prefill, rules_preview, rules_reapply_apply, rules_reapply_preview, rules_save, save, select, select_account, transfer_accept, transfer_candidates, transfer_clear, transfer_clear_row, transfer_commit, transfer_from_draft, transfer_manual, transfer_match, transfer_merge, transfer_merge_apply, transfer_retarget, transfer_unmatch, undo_account, unlock, review_answer, review_undo, review_batch, accept_edit, undo_edit, resolve_import_categories, undo_action, change_password, unmerge, count
+        unclassified, apply_bulk, apply_category, apply_change, archive_account, backup, cancel_bulk, cancel_category_preview, cancel_change, cancel_import_mapping, cancel_merge, cancel_reapply, category_list, category_select, close, commit, correct_opening, create, create_account, decide, delete_account, discard, entry_history, evidence, group_abort, group_balance, group_resolve_transfers, history, import_file, inspect, map_import, open, opening, prepare_create, preview_bulk, preview_category, preview_change, probe, query, reactivate_account, reassign_currency, rename_account, resume, rules_apply, rules_discard, rules_load, rules_prefill, rules_preview, rules_reapply_apply, rules_reapply_preview, rules_save, save, select, select_account, transfer_accept, transfer_candidates, transfer_clear, transfer_clear_row, transfer_commit, transfer_from_draft, transfer_manual, transfer_match, transfer_merge, transfer_merge_apply, transfer_retarget, transfer_unmatch, undo_account, unlock, review_answer, review_undo, review_batch, accept_edit, undo_edit, resolve_import_categories, undo_action, change_password, unmerge, redo_action, count
     };
     enum class Code {
-        unclassified, startup, qml_creation, worker, snapshot, model_apply, cleanup, verify, integrity, accounts, groups, evidence, categories, rules, transfers, committed, bulk, reapply, ledger, search, catalog, metadata, group_cache, statement_prepare, statement_reuse, transaction, gateway, available, requested, sealed, capture, prepare, import_capture, import_prepare, import_populate, import_resolve_transfers, import_generate_transfers, review_build, review_write, review_refresh, import_category_resolution, import_category_assign, import_category_rules, count
+        unclassified, startup, qml_creation, worker, snapshot, model_apply, cleanup, verify, integrity, accounts, groups, evidence, categories, rules, transfers, committed, bulk, reapply, ledger, search, catalog, metadata, group_cache, statement_prepare, statement_reuse, transaction, gateway, available, requested, sealed, capture, prepare, import_capture, import_prepare, import_populate, import_resolve_transfers, import_generate_transfers, review_build, review_write, review_refresh, import_category_resolution, import_category_assign, import_category_rules,
+        rule_history_baseline, rule_history_save_revision, rule_history_save_order, rule_history_save_completion,
+        rule_history_save_request, rule_history_save_member, rule_history_save_definition, rule_history_save_category,
+        rule_history_heads, rule_history_snapshot, rule_history_regex, rule_history_draft_image, rule_history_draft_provenance,
+        rule_history_draft_event, rule_history_draft_initial_ownership, rule_history_draft_undo,
+        rule_history_draft_save_transition, rule_history_draft_apply_decision, rule_history_draft_apply_receipt,
+        rule_history_draft_apply_transition, rule_history_draft_decision_transition, rule_history_draft_currency_transition,
+        rule_history_application_order, rule_history_application_ruleset, rule_history_application_result,
+        rule_history_application_scope, count
     };
     enum class EventKind {
-        admitted, rejected_busy, deferred, superseded, rejected_invalid, started, finished, model_applied, cancellation, span, cache_hit, cache_miss, cache_bypass, invalidated, durable_stage
+        admitted, rejected_busy, deferred, superseded, rejected_invalid, started, finished, model_applied, cancellation, span, cache_hit, cache_miss, cache_bypass, invalidated, durable_stage, verification_failed
     };
     enum class Result {
         pending, succeeded, failed, cancelled, superseded, not_executed
@@ -35,6 +43,7 @@ namespace spentit::diagnostics {
         Persistence persistence=Persistence::unknown;
         Presentation presentation{};
         Code cancellation=Code::available;
+        Code error=Code::unclassified;
     };
     struct Event {
         Id sequence=0,time=0,operation=0,parent=0,duration=0,exclusive=0;
@@ -116,6 +125,7 @@ namespace spentit::diagnostics {
     struct Context {
         Id operation=0,parent=0;
         bool saved=false;
+        Code verification_failure=Code::unclassified;
     };
     Context& context() noexcept;
     class Scope {
@@ -135,4 +145,5 @@ namespace spentit::diagnostics {
     };
     void cache(Code,EventKind) noexcept;
     void durable(Code) noexcept;
+    void verification_failed(Code) noexcept;
 }
