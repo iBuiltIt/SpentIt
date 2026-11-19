@@ -681,8 +681,16 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
 SELECT sibling.id FROM batches b JOIN batches sibling ON sibling.source_id=b.source_id
 WHERE b.id=? AND EXISTS(SELECT 1 FROM events e WHERE e.batch=b.id AND e.kind='undo-import')
 AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='undo-import')
+UNION ALL
+SELECT sibling.id FROM batches b JOIN batches sibling ON sibling.source_id=b.source_id
+JOIN rollback_receipt r ON r.source=b.source_id
+WHERE b.id=?1 AND substr(r.operation,-length(b.source_id)-1)='.'||b.source_id
+ AND ?2=substr(r.operation,1,length(r.operation)-length(b.source_id)-1)||'-discard-source-'||
+        (SELECT count(*) FROM batches m WHERE m.source_id=b.source_id AND m.rowid<=b.rowid)
+ AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='discard')
 )SQL");
                 retired.text(1,request.origin->batch);
+                retired.text(2,events.bytes(0));
                 while(retired.row())retiring_batches.insert(retired.bytes(0));
             }
             const auto after=import_transition(before,account.identity,request.origin->batch,publish,retiring_batches);validate_transfer_set(after);

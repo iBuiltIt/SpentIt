@@ -12,6 +12,27 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Import Undo restores matched transfers — 2026-11-19
+
+Undoing an import that automatically matched a transfer restores the surviving
+bank posting and its earlier generated counterpart, including after Undo of
+acceptance. A multi-account import can also contain links between its own
+batches. Preview and save check the whole source in either batch order.
+The picker checks eligibility before showing the confirmation. Undo diagnostics
+distinguish a confirmed refusal, a saved change and an unreadable outcome.
+[Import Undo](import-undo.md) · [Diagnostics](application-diagnostics.md#action-outcome-inventory) · [MAN-103](manual-update-backlog.md#open-items)
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release regression
+`storage.import_transfer_undo` passed across 20 synthetic scenarios. It compares
+postings, allocations, live links, and current and committed balances in each
+account against its pre-import state after Undo and reopen. It also exercises
+a conflicting change, retries, disk-full and write failures, and a lost commit
+acknowledgement. It passed under AddressSanitizer and UndefinedBehaviorSanitizer
+with leak detection disabled. Eight synthetic files written and closed by the
+previous build passed import Undo and balance checks in the fixed build.
+The offscreen picker, diagnostics, Redo rejection and application startup
+checks passed. Native interactive use was unverified.
+
 ## Previous report comparisons — 2026-11-19
 
 Previous calendar month, Previous year, and Same period previous year

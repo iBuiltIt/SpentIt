@@ -71,8 +71,13 @@ app::UndoPreview ImportStore::preview_undo(std::string_view id,const app::Action
     }
     if(current->kind==app::ActionKind::import || current->kind==app::ActionKind::manual_creation) {
         if(current->kind==app::ActionKind::import && import_undo_held(current->payload)){result.refusal="Undo the other import before undoing this change.";return result;}
-        const auto scope=review_import_undo(current->payload);
-        result.accounts=scope.affected_accounts;result.action.count=integer(scope.transactions);
+        try {
+            const auto scope=review_import_undo(current->payload);
+            result.accounts=scope.affected_accounts;result.action.count=integer(scope.transactions);
+        } catch(const ImportError& error){
+            if(error.code()!=SQLITE_CONSTRAINT)throw;
+            result.refusal=error.what();
+        }
         return result;
     }
     Statement accounts(impl_->db,"SELECT DISTINCT b.account_id FROM review_members m JOIN batches b ON b.id=m.batch WHERE m.answer=?1 OR m.answer IN(SELECT id FROM review_answers WHERE question='batch-child:'||?1) ORDER BY b.account_id");accounts.text(1,id);

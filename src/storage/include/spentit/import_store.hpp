@@ -255,9 +255,30 @@ private:
     std::vector<app::HistoryFieldChange> history_named_fields(const app::ActionSummary&) const;
     void begin_import_action(std::string_view,std::string_view);
     void complete_import_action(std::string_view,bool awaiting_decision=false);
-    std::vector<std::string> import_link_undos(std::string_view) const;
-    app::RollbackReceipt undo_linked_import(std::string_view,std::string_view,const app::RollbackReview&,const std::vector<std::string>&);
-    app::RollbackReceipt rollback_scope(std::string_view,std::int64_t,std::string_view,bool collecting=false);
+    struct LinkUnmergeStep {
+        app::TransferView current,next;
+        int mode=1;
+    };
+    struct LinkUnmergePlan {
+        std::vector<LinkUnmergeStep> steps;
+        bool restores_generated=false;
+        std::string restored_where;
+        std::string source_answer;
+        std::string selection_request;
+    };
+    struct ImportUndoPlan {
+        app::RollbackReview review;
+        std::vector<std::string> link_answers;
+        std::map<std::string,LinkUnmergePlan> baseline_unmerges;
+        bool has_financial_history=false;
+        std::vector<std::pair<std::string,std::int64_t>> batches;
+        std::set<std::string> retiring;
+    };
+    std::vector<app::UndoableImport> import_candidates(std::string_view source) const;
+    ImportUndoPlan plan_import_undo(std::string_view) const;
+    void plan_import_links(std::string_view,ImportUndoPlan&,std::vector<app::TransferView>&) const;
+    app::RollbackReceipt undo_linked_import(std::string_view,std::string_view,const ImportUndoPlan&);
+    app::RollbackReceipt rollback_scope(std::string_view,std::int64_t,std::string_view,bool collecting=false,const ImportUndoPlan* plan=nullptr);
     std::vector<imports::Occurrence> duplicate_candidates(const qif::Record&,std::string_view,bool first_only) const;
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
@@ -290,18 +311,9 @@ private:
     void require_unlinked(const imports::Occurrence&) const;
     bool transfer_linked(const imports::Occurrence&) const;
     std::optional<std::string> active_unmerge(const std::vector<imports::Occurrence>&) const;
-    struct LinkUnmergeStep {
-        app::TransferView current,next;
-        int mode=1;
-    };
-    struct LinkUnmergePlan {
-        std::vector<LinkUnmergeStep> steps;
-        bool restores_generated=false;
-        std::string restored_where;
-        std::string source_answer;
-    };
-    std::optional<LinkUnmergePlan> link_unmerge_plan(const std::vector<imports::Occurrence>&) const;
-    app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&,const imports::Occurrence&);
+    std::optional<LinkUnmergePlan> link_unmerge_plan(const std::vector<imports::Occurrence>&,std::string_view identity={}) const;
+    std::set<imports::Occurrence> write_unmerge_links(std::string_view,const LinkUnmergePlan&);
+    app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&);
     struct DeletionPlan;
     DeletionPlan plan_deletion(const app::LedgerSelectionEdit&,const app::OperationContext&) const;
     app::ReviewReceipt delete_transactions(std::string_view,const app::LedgerSelectionEdit&,const app::OperationContext&);

@@ -89,8 +89,14 @@ public:
     app::ActionToken action_token() const override{return repo().action_token();}
     std::optional<app::ActionSummary> action_head() const override{return repo().action_head();}
     app::UndoPreview preview_undo(std::string_view id,const app::ActionToken& token) const override{return repo().preview_undo(id,token);}
-    app::ActionReceipt undo_action(std::string_view id,const app::UndoPreview& preview) override{return repo().undo_action(id,preview);}
-    std::optional<app::ActionReceipt> undo_action_outcome(std::string_view id,const app::UndoPreview& preview) const override{return repo().undo_action_outcome(id,preview);}
+    app::ActionReceipt undo_action(std::string_view id,const app::UndoPreview& preview) override{
+        const bool lose=groupBefore("undo_action");auto result=repo().undo_action(id,preview);
+        if(lose)throw std::runtime_error("Injected lost Undo acknowledgement");return result;
+    }
+    std::optional<app::ActionReceipt> undo_action_outcome(std::string_view id,const app::UndoPreview& preview) const override{
+        if(attempted && fault==unknown && groupFaultAction=="undo_action")throw app::OperationOutcomeUnknown();
+        return repo().undo_action_outcome(id,preview);
+    }
     app::AccountHistoryPage account_change_history(std::int64_t account,std::int64_t before,std::size_t limit,const std::optional<imports::Occurrence>& focus) const override {return repo().account_change_history(account,before,limit,focus);}
     std::string action_display_label(const app::ActionSummary& action) const override {return repo().action_display_label(action);}
     std::vector<app::HistoryFieldChange> action_field_changes(const app::ActionSummary& action) const override {return repo().action_field_changes(action);}
@@ -1377,17 +1383,33 @@ private slots:
         run(m,"commit");QVERIFY(m.state().value("undoableImports").toList().isEmpty());
     }
     void importUndoOutcomes() {
-        for(int mode=0;mode<4;++mode){
+        for(bool history:{false,true})for(int mode=0;mode<4;++mode){
             QTemporaryDir dir;auto gateway=std::make_unique<OutcomeGateway>();auto* fault=gateway.get();ImportModel m(std::move(gateway));create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
             run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT1\nPFirst\n^\n")}});
-            const auto source=m.state().value("undoableImports").toList().first().toMap().value("source");run(m,"preview_import_undo",{{"source",source}});
+            const auto source=m.state().value("undoableImports").toList().first().toMap().value("source");
+            if(!history && mode==0){
+                run(m,"preview_import_undo",{{"source","missing-import"}},false);
+                if(m.diagnosticsEnabled()){
+                    const auto outcome=diagnostics::Collector::instance().snapshot().latest;
+                    QCOMPARE(outcome.action,diagnostics::Action::preview_import_undo);
+                    QCOMPARE(outcome.persistence,diagnostics::Persistence::not_applicable);
+                }
+            }
+            run(m,"preview_import_undo",{{"source",source}});
             const auto preview=m.state().value("importUndoPreview").toMap();
-            fault->groupFaultAction="undo_import";fault->fault=mode==0?OutcomeGateway::before:mode==2?OutcomeGateway::unknown:OutcomeGateway::after;fault->failReviewRefresh=mode==3;
-            run(m,"undo_import",{{"source",source},{"token",preview.value("token")}},mode==1);
+            fault->groupFaultAction=history?"undo_action":"undo_import";fault->fault=mode==0?OutcomeGateway::before:mode==2?OutcomeGateway::unknown:OutcomeGateway::after;fault->failReviewRefresh=mode==3;
+            const auto args=history?m.state().value("actionUndo").toMap():QVariantMap{{"source",source},{"token",preview.value("token")}};
+            run(m,fault->groupFaultAction,args,mode==1);
+            if(m.diagnosticsEnabled()){
+                const auto outcome=diagnostics::Collector::instance().snapshot().latest;
+                QCOMPARE(outcome.action,history?diagnostics::Action::undo_action:diagnostics::Action::undo_import);
+                QCOMPARE(outcome.persistence,mode==0?diagnostics::Persistence::confirmed_unchanged:
+                    mode==2?diagnostics::Persistence::unknown:diagnostics::Persistence::confirmed_saved);
+            }
             if(mode==0){QVERIFY(m.state().value("active").toBool());QCOMPARE(m.state().value("balance").toString(),"1.00");}
             if(mode==1){QCOMPARE(m.state().value("balance").toString(),"0.00");QVERIFY(m.state().value("undoableImports").toList().isEmpty());}
             if(mode>=2)QVERIFY(!m.state().value("active").toBool());
-            if(mode==3)QVERIFY(m.error().contains("undone"));
+            if(mode==3)QVERIFY(m.error().contains(history?"saved":"undone"));
         }
     }
     void reviewCleanup() {

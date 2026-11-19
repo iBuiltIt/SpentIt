@@ -20,11 +20,16 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
   contributions, failures and exclusively owned new transactions. A transaction
   supported by another source remains; removing its final source later collects
   it. An accepted transaction is never deleted by import undo.
-- A later import can match a committed transfer. Undoing the later import removes
-  its match and restores the prior transfer arrangement, including a pre-existing
-  generated counterpart. A Review Link into committed work is reversed through
-  persistent history when its recorded transaction and link results are unchanged.
-  Later conflicting edits/links refuse the operation atomically.
+- When a later import automatically links two bank postings, Undo restores the
+  earlier posting and any generated counterpart it had before the import.
+  This applies in either transfer direction, including after Undo of acceptance.
+  If the import also linked postings between its own accounts, the source is
+  removed as one operation in either account order.
+- Preview checks the saved results of the match against the current postings and
+  links. A conflicting edit to any pair blocks the whole Undo. The file-wide
+  Undo control becomes unavailable and Change history explains the refusal. After
+  closing and reopening, eligible automatic matches can still be reversed from
+  **Review → Undo import…** using their saved transfer history.
 - Account/category creation, confirmed account aliases and opening settings remain,
   as with account-wide discard. Undo does not move the mistaken import into another
   account; import the file again into the correct account afterward.
@@ -69,8 +74,7 @@ other import first can be required. **Undo import…** omits it until that other
 import is undone. Change history keeps the row and names the import to undo
 first. No force override is provided.
 
-Both paths verify before durability and store a retry receipt in the existing
-one-slot rollback receipt. Retry identities include the selected source. A stale
+Both paths verify before durability and store a retry receipt for the operation. Retry identities include the selected source. A stale
 preview refuses; an unknown durable outcome closes the document and asks for
 reopening. A lost acknowledgement is resolved from the receipt. A refresh failure
 after success reports that the import was undone and requires reopening.

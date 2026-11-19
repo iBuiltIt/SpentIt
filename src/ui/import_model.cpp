@@ -1894,6 +1894,7 @@ struct ImportModel::Worker {
         if(action=="query" || action=="select_account")revealManual.reset();
         if(action=="redo_action" || action=="undo_action" || action=="undo_edit" || action=="undo_manual") {
             const bool redoing=action=="redo_action";
+            diagnosticUnchanged=true; // Preview reads cannot have saved an Undo or Redo.
             const auto head=repo.action_head();
             if(!redoing && action!="undo_action" && (!head || (action=="undo_manual"?head->kind!=app::ActionKind::manual_creation:head->kind!=app::ActionKind::transaction)))throw std::logic_error("Undo the latest action first.");
             const app::ActionToken token=(redoing || action=="undo_action")?app::ActionToken{a.value("session").toString().toLongLong(),a.value("epoch").toString().toLongLong(),str(a.value(redoing?"head":"id"))}:repo.action_token();
@@ -1901,13 +1902,14 @@ struct ImportModel::Worker {
             if(redoing){const auto redo=repo.redo_history();if(redo.empty() || redo.front().id!=str(a.value("id")))throw std::logic_error("There is no action to redo.");preview.token=token;preview.action=redo.front();}
             else preview=repo.preview_undo(token.head,token);
             const auto operation=identity();
+            diagnosticUnchanged=false;
             try {if(redoing)repo.redo_action(operation,preview);else repo.undo_action(operation,preview);}
             catch(...) {const auto failure=std::current_exception();std::optional<app::ActionReceipt> saved;
                 try{saved=redoing?repo.redo_action_outcome(operation,preview):repo.undo_action_outcome(operation,preview);}catch(...){gateway->close();active=false;throw std::runtime_error("Reopen the file and check the transactions before trying again.");}
                 if(!saved){
+                    diagnosticUnchanged=true;
                     try {std::rethrow_exception(failure);}
                     catch(const app::RedoRuleHistoryError&){
-                        diagnosticUnchanged=true;
                         throw std::runtime_error(preview.action.kind==app::ActionKind::opening
                             ?"SpentIt couldn’t redo the opening balance change because it couldn’t verify the file’s rule history. The Undo is still in effect."
                             :"SpentIt couldn’t redo the change because it couldn’t verify the file’s rule history. The Undo is still in effect.");
@@ -2777,11 +2779,13 @@ struct ImportModel::Worker {
             QVariantList accounts;for(const auto id:preview.affected_accounts)accounts.push_back(QString::number(id));
             importUndoPreview={{"source",text(source)},{"token",QString::number(preview.token)},{"transactions",static_cast<qlonglong>(preview.transactions)},{"failures",static_cast<qlonglong>(preview.failures)},{"accounts",accounts}};
         } else if(action=="undo_import") {
+            diagnosticUnchanged=true;
             const auto source=str(a.value("source"));
             if(importUndoPreview.value("source").toString()!=text(source) || importUndoPreview.value("token")!=a.value("token"))throw std::logic_error("Review this import before undoing it.");
             const auto operation="undo-import-"+identity();std::optional<app::RollbackReceipt> result;
+            diagnosticUnchanged=false;
             try{result=repo.undo_import(operation,source,a.value("token").toString().toLongLong());}
-            catch(...){const auto failure=std::current_exception();try{result=repo.import_undo_outcome(operation,source);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("SpentIt could not confirm whether the import was undone. Reopen the file and check the transactions before trying again.");}if(!result)std::rethrow_exception(failure);}
+            catch(...){const auto failure=std::current_exception();try{result=repo.import_undo_outcome(operation,source);}catch(...){gateway->close();active=false;selected.clear();selectedBatch.clear();throw std::runtime_error("SpentIt could not confirm whether the import was undone. Reopen the file and check the transactions before trying again.");}if(!result){diagnosticUnchanged=true;std::rethrow_exception(failure);}}
             observedSaved();importUndoPreview.clear();selected.clear();selectedBatch.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();
             receipt={{"operation",text(result->operation)},{"summary",QString("Import undone. Removed %1 new transactions and %2 import problems.").arg(result->transactions).arg(result->failures)}};
         } else if(action=="discard") {
@@ -3453,6 +3457,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
             catch(...) {worker->gateway->close();worker->active=false;worker->selected.clear();worker->selectedBatch.clear();result.error="Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.";}
             worker->invalidate();
         }
+        if(safeAction==diag::Action::preview_import_undo)persistence=diag::Persistence::not_applicable;
         if(worker->diagnosticUnchanged)persistence=diag::Persistence::confirmed_unchanged;
         if(worker->diagnosticSaved || diag::context().saved)persistence=diag::Persistence::confirmed_saved;
         if(worker->diagnosticPresentationFailed && outcome!=diag::Result::cancelled)presentation=diag::Presentation::failed;

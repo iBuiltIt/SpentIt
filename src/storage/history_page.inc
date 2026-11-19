@@ -455,7 +455,13 @@ app::AccountHistoryPage ImportStore::account_change_history(std::int64_t account
         if(in_page && (account==0 || history_touches(*current,account))){
             bool undoable=true;std::string wait;
             shown=account==0?true:history_offer(*current,account,undoable,wait);
-            if(account==0)undoable=current->id==head->id;
+            if(account==0){
+                undoable=current->id==head->id;
+                if(undoable && current->kind==app::ActionKind::import){
+                    wait=action_preparing()?"Finish or cancel the import first.":preview_undo(head->id,action_token()).refusal;
+                    undoable=wait.empty();
+                }
+            }
             if(shown){
                 if(page.actions.size()<limit){auto view=history_view(*current,account,true,false);
                     if(account==0 && view.accounts.size()==1){for(const auto& owner:accounts())if(owner.name==view.accounts.front()){view=history_view(*current,owner.identity,true,false);break;}}

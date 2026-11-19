@@ -127,7 +127,7 @@ bool ImportStore::preview_account_deletion() const {
     // expired. Do not retire an account that this live rollback would refill.
     std::set<std::string> import_inverses;
     for(const auto& source:undoable_imports()) {
-        try {for(const auto& answer:import_link_undos(source.source))import_inverses.insert(answer);}
+        try {for(const auto& answer:plan_import_undo(source.source).link_answers)import_inverses.insert(answer);}
         catch(const ImportError& error) {
             // Later changes already prevent this import reversal. Ordinary Undo
             // dependencies are checked below before deleting the account.

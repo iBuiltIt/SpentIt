@@ -13,6 +13,25 @@ DELETE FROM review_link_restorations WHERE (identity,restored) IN(
      AND NOT EXISTS(SELECT 1 FROM action_headers a JOIN transfer_versions p ON p.identity=r.identity AND p.sequence=r.prior JOIN transfer_versions v ON v.identity=r.identity AND v.sequence=r.restored WHERE a.id=u.answer AND a.state=2 AND p.payload=v.payload AND r.prior<r.consumed AND r.consumed<r.restored)))
 )SQL");
 }
+// A later in-session Undo can restore a previously certified baseline. Follow
+// only typed inverses and require the saved Undo event for that exact link.
+bool baseline_match_restored(sqlite3* db,const app::TransferView& current) {
+    Statement event(db,R"SQL(
+WITH RECURSIVE lineage(sequence) AS (
+    VALUES(?2)
+    UNION ALL
+    SELECT r.prior FROM lineage l JOIN review_link_restorations r ON r.identity=?1 AND r.restored=l.sequence
+    WHERE l.sequence>(SELECT financial_cut FROM document_session) AND r.prior<l.sequence
+)
+SELECT e.request,v.payload FROM lineage l JOIN transfer_versions v ON v.identity=?1 AND v.sequence=l.sequence
+JOIN ledger_operations op ON op.sequence=l.sequence JOIN transfer_events e ON e.operation=op.id
+WHERE l.sequence<=(SELECT financial_cut FROM document_session)
+)SQL");
+    event.text(1,current.link.identity);event.integer(2,current.sequence);
+    if(!event.row() || event.bytes(1)!=transfer_codec::encode(current))return false;
+    const auto request=transfer_codec::request(event.bytes(0));
+    return request.action==app::TransferAction::review_undo && request.allocation==current.link.identity && request.mode!=1;
+}
 }
 std::vector<std::string> ImportStore::import_undo_holders(std::string_view source) const {
     std::vector<std::string> holders;
@@ -27,11 +46,12 @@ std::vector<std::string> ImportStore::import_undo_holders(std::string_view sourc
     return holders;
 }
 bool ImportStore::import_undo_held(std::string_view source) const { return !import_undo_holders(source).empty(); }
-std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
+std::vector<app::UndoableImport> ImportStore::undoable_imports() const {return import_candidates({});}
+std::vector<app::UndoableImport> ImportStore::import_candidates(std::string_view source) const {
     std::vector<app::UndoableImport> result;
     Statement sources(impl_->db,R"SQL(
       SELECT s.id,h.format,s.rowid FROM sources s JOIN source_headers h ON h.source_id=s.id
-      WHERE h.format!='manual' AND EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND b.state IN(0,4))
+      WHERE (?1='' OR s.id=?1) AND h.format!='manual' AND EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND b.state IN(0,4))
       AND NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND (b.state NOT IN(0,4)
           OR EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=b.id)))
       AND EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND (
@@ -41,6 +61,7 @@ std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
           OR EXISTS(SELECT 1 FROM import_file_errors e WHERE e.batch=b.id)))
       ORDER BY s.rowid DESC
     )SQL");
+    sources.text(1,source);
     while(sources.row()) {
         app::UndoableImport item;item.source=sources.bytes(0);item.format=sources.bytes(1);item.order=sources.integer(2);
         if(import_undo_held(item.source))continue;
@@ -53,7 +74,16 @@ std::vector<app::UndoableImport> ImportStore::undoable_imports() const {
     return result;
 }
 app::RollbackReview ImportStore::review_import_undo(std::string_view source) const {
-    identifier(source);auto imports=undoable_imports();
+    const ActionChain chain(impl_->db);
+    chain.require_idle();
+    auto plan=plan_import_undo(source);
+    const auto head=chain.head();
+    if(head && (head->payload!=source || (head->kind!=app::ActionKind::import && head->kind!=app::ActionKind::manual_creation)))
+        chain.require_empty();
+    return plan.review;
+}
+ImportStore::ImportUndoPlan ImportStore::plan_import_undo(std::string_view source) const {
+    identifier(source);auto imports=import_candidates(source);
     const auto head=action_head();
     if(head && head->kind==app::ActionKind::manual_creation && head->payload==source) {
         Statement manual(impl_->db,"SELECT account_id FROM batches WHERE id=? AND parser='manual-v1' AND state=0 AND NOT EXISTS(SELECT 1 FROM accepted_transactions WHERE batch=?1)");manual.text(1,source);
@@ -61,7 +91,7 @@ app::RollbackReview ImportStore::review_import_undo(std::string_view source) con
     }
     const auto found=std::find_if(imports.begin(),imports.end(),[&](const auto& item){return item.source==source;});
     if(found==imports.end())fail(SQLITE_CONSTRAINT,"This import cannot be undone. Refresh the import list.");
-    app::RollbackReview result;Statement generation(impl_->db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!generation.row())fail(SQLITE_CORRUPT);result.token=generation.integer(0);
+    ImportUndoPlan plan;auto& result=plan.review;Statement generation(impl_->db,"SELECT revision FROM mutation_generation WHERE singleton=1");if(!generation.row())fail(SQLITE_CORRUPT);result.token=generation.integer(0);
     std::set<std::int64_t> affected(found->accounts.begin(),found->accounts.end());
     for(const auto account:affected) {
         // Source-owned removal can collect retained evidence from an empty,
@@ -92,9 +122,33 @@ app::RollbackReview ImportStore::review_import_undo(std::string_view source) con
     )SQL");lastOwners.text(1,source);
     while(lastOwners.row())if(removed.emplace(lastOwners.bytes(0),static_cast<std::size_t>(lastOwners.integer(1))).second){++result.transactions;affected.insert(lastOwners.integer(2));}
     Statement errors(impl_->db,"SELECT count(*) FROM import_file_errors e JOIN batches b ON b.id=e.batch WHERE b.source_id=?");errors.text(1,source);if(errors.row())result.failures+=static_cast<std::size_t>(errors.integer(0));
-    const auto restorable=import_link_undos(source);
+    Statement batches(impl_->db,"SELECT id,account_id FROM batches WHERE source_id=? ORDER BY rowid");
+    batches.text(1,source);
+    while(batches.row()){
+        plan.batches.emplace_back(batches.bytes(0),batches.integer(1));
+        plan.retiring.insert(batches.bytes(0));
+    }
+    const auto current=all_transfers();
+    auto restored=current;
+    plan_import_links(source,plan,restored);
+    if(!plan.link_answers.empty()){
+        Statement shared(impl_->db,"SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch WHERE b.source_id=?1 AND owner.source_id!=?1 LIMIT 1");
+        shared.text(1,source);
+        if(shared.row())fail(SQLITE_CONSTRAINT,"Another import now uses these linked transactions. Undo that import first.");
+    }
+    Statement financial(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");
+    financial.text(1,source);
+    plan.has_financial_history=financial.row();
+    if(!plan.link_answers.empty() || plan.has_financial_history){
+        for(const auto& [batch,account]:plan.batches){
+            for(const auto& value:restored)if(value.link.origin.endpoint.entry.batch==batch && transfers::protected_draft(value.link,account))
+                fail(SQLITE_CONSTRAINT,"Another accepted transfer still needs this import.");
+            restored=import_transition(std::move(restored),account,batch,false,plan.retiring);
+            validate_transfer_set(restored);
+        }
+    }
     const auto removes=[&](const transfers::Endpoint& e){return removed.contains({e.entry.batch,e.entry.ordinal});};
-    for(const auto& value:all_transfers()) {
+    for(const auto& value:current) {
         const auto& link=value.link;
         const bool ends=removes(link.origin.endpoint)||removes(link.destination.endpoint);
         bool proposal=false;
@@ -102,12 +156,12 @@ app::RollbackReview ImportStore::review_import_undo(std::string_view source) con
         if(!ends && !proposal)continue;
         affected.insert(link.origin.endpoint.account);affected.insert(link.destination.endpoint.account);
         if(ends) {
-            if((link.origin.state==transfers::State::committed || link.destination.state==transfers::State::committed) && restorable.empty())
+            if((link.origin.state==transfers::State::committed || link.destination.state==transfers::State::committed) && plan.link_answers.empty())
                 fail(SQLITE_CONSTRAINT,"Undo the later transfer link before undoing this import.");
             for(const auto* side:{&link.origin,&link.destination})if(local_side(*side) && side->state==transfers::State::draft && !side->proposed_evidence)++result.transactions;
         }
     }
-    result.affected_accounts.assign(affected.begin(),affected.end());return result;
+    result.affected_accounts.assign(affected.begin(),affected.end());return plan;
 }
 std::optional<app::RollbackReceipt> ImportStore::import_undo_outcome(std::string_view operation,std::string_view source) const {
     identifier(operation);identifier(source);
@@ -135,13 +189,12 @@ app::RollbackReceipt ImportStore::undo_import(std::string_view operation,std::st
         }
         ActionChain(impl_->db).require_empty();
     }
-    const auto linked=import_link_undos(source);
-    if(!linked.empty()) {
-        const auto review=review_import_undo(source);
-        if(review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review this import again.");
-        return undo_linked_import(operation,source,review,linked);
+    const auto plan=plan_import_undo(source);
+    if(!plan.link_answers.empty()) {
+        if(plan.review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review this import again.");
+        return undo_linked_import(operation,source,plan);
     }
-    auto result=rollback_scope(std::string(operation)+"."+std::string(source),expected,source);
+    auto result=rollback_scope(std::string(operation)+"."+std::string(source),expected,source,false,&plan);
     result.operation=operation;return result;
 }
 
@@ -178,51 +231,43 @@ app::RollbackReceipt ImportStore::rollback_account(std::string_view operation,st
     ActionChain(impl_->db).require_empty();
     identifier(operation);return rollback_scope(operation,expected,{});
 }
-app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std::int64_t expected,std::string_view source,bool collecting) {
+app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std::int64_t expected,std::string_view source,bool collecting,const ImportUndoPlan* plan) {
     if(!collecting)if(auto previous=rollback_outcome(operation)){Statement saved(impl_->db,"SELECT source,epoch FROM rollback_receipt WHERE operation=?");saved.text(1,operation);if(!saved.row() || saved.bytes(0)!=source || saved.integer(1)!=expected || (source.empty() && previous->account!=impl_->selected_account))fail(SQLITE_CONSTRAINT,"Rollback retry changed its request");return *previous;}
     Statement collision(impl_->db,"SELECT 1 FROM operation_registry WHERE id=?");collision.text(1,operation);if(collision.row())fail(SQLITE_CONSTRAINT,"Operation id is already used");
     if(source.empty())require_writable_account(impl_->db,impl_->selected_account);
-    const auto review=collecting?app::RollbackReview{}:source.empty()?rollback_review():review_import_undo(source);
+    std::optional<ImportUndoPlan> prepared;
+    if(!collecting && !source.empty() && !plan){
+        prepared=plan_import_undo(source);plan=&*prepared;
+    }
+    const auto review=plan?plan->review:collecting?app::RollbackReview{}:rollback_review();
     if(!collecting && review.token!=expected)fail(SQLITE_CONSTRAINT,"Work changed; review rollback again");
     const auto owner=impl_->selected_account;const auto aliases=account_aliases();
     if(collecting && (sqlite3_get_autocommit(impl_->db) || !impl_->cleaning || source.empty()))fail(SQLITE_MISUSE);
     std::unique_ptr<Atomic> transaction;if(!collecting)transaction=std::make_unique<Atomic>(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);
     struct Cleanup {bool& flag;bool prior;~Cleanup(){flag=prior;}} cleanup{impl_->cleaning,impl_->cleaning};impl_->cleaning=true;
-    if(!source.empty()) {
-        bool financial_history=false;
-        {Statement retained(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");retained.text(1,source);financial_history=retained.row();}
-        if(financial_history) {
-            if(collecting)fail(SQLITE_CORRUPT,"Retired source still has financial dependencies");
-            if(import_undo_held(source))fail(SQLITE_CONSTRAINT,"A retained import still owns transactions from this source.");
-            // Revoked acceptance still supplies this session's financial replay.
-            // Retire visibility now; close collects the no-longer-needed proof
-            // after publishing the current baseline. No deleted-row copies are made.
-            std::vector<std::pair<std::string,std::int64_t>> batches;
-            std::set<std::string> retiring_batches;
-            {
-                Statement rows(impl_->db,"SELECT id,revision FROM batches WHERE source_id=? AND state IN(0,4) ORDER BY rowid");
-                rows.text(1,source);
-                while(rows.row()){
-                    batches.emplace_back(rows.bytes(0),rows.integer(1));
-                    retiring_batches.insert(batches.back().first);
-                }
+    if(collecting){
+        Statement history(impl_->db,"SELECT 1 FROM entry_revisions e JOIN batches b ON b.id=e.batch WHERE b.source_id=? LIMIT 1");
+        history.text(1,source);
+        if(history.row())fail(SQLITE_CORRUPT,"Retired source still has financial dependencies");
+    }
+    if(plan && plan->has_financial_history){
+        // Preserve the revoked acceptance for replay until close publishes
+        // the baseline. The preview checked all retiring batches together.
+        {
+            GroupSelection selection(impl_->selected_account);
+            for(const auto& [id,account]:plan->batches){
+                impl_->selected_account=account;
+                (void)transfer_import_transition(id,std::string(operation)+"-retire-"+id,false,plan->retiring);
+                advance(impl_->db,id,batch(impl_->db,id).revision,"undo-import",2);
             }
-            {
-                GroupSelection selection(impl_->selected_account);
-                for(const auto& [id,revision]:batches) {
-                    impl_->selected_account=account_for_batch(id).identity;
-                    (void)transfer_import_transition(id,std::string(operation)+"-retire-"+id,false,retiring_batches);
-                    advance(impl_->db,id,revision,"undo-import",2);
-                }
-            }
-            // A reviewing group must still have pending batches. Discarded
-            // batches are valid only after the group is aborted.
-            Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();
-            Statement detach(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE source_id=?)");detach.text(1,source);detach.done();
-            Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();
-            release_collected_link_restorations(impl_->db);
-            if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
         }
+        // A reviewing group must still have pending batches. Discarded
+        // batches are valid only after the group is aborted.
+        Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();
+        Statement detach(impl_->db,"DELETE FROM source_associations WHERE source_batch IN(SELECT id FROM batches WHERE source_id=?)");detach.text(1,source);detach.done();
+        Statement receipt(impl_->db,"INSERT INTO rollback_receipt VALUES(?,?,?,?,?,?)");receipt.text(1,operation);receipt.integer(2,owner);receipt.integer(3,integer(review.transactions));receipt.integer(4,integer(review.failures));receipt.text(5,source);receipt.integer(6,expected);receipt.done();
+        release_collected_link_restorations(impl_->db);
+        finish([&]{verify();transaction->commit();},true);return {std::string(operation),owner,review.transactions,review.failures};
     }
     exec(impl_->db,"CREATE TEMP TABLE rollback_batches(id TEXT PRIMARY KEY); CREATE TEMP TABLE rollback_rows(batch TEXT,ordinal INTEGER,PRIMARY KEY(batch,ordinal)); CREATE TEMP TABLE rollback_operations(id TEXT PRIMARY KEY); CREATE TEMP TABLE rollback_links(id TEXT PRIMARY KEY)");
     if(source.empty())exec(impl_->db,"INSERT INTO rollback_batches SELECT id FROM batches WHERE account_id=spentit_account() AND state IN(0,3,4)");
@@ -354,56 +399,100 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
 }
 
-// A Review Link may have changed a committed relationship. Reverse its recorded
-// snapshots with ordinary persistent history rather than erasing that history.
-std::vector<std::string> ImportStore::import_link_undos(std::string_view source) const {
+// Include import-time automatic links even after Undo of acceptance makes both
+// postings New. Their prior images can own an earlier generated counterpart.
+void ImportStore::plan_import_links(std::string_view source,ImportUndoPlan& plan,std::vector<app::TransferView>& values) const {
     std::set<std::string> answers;
-    const auto values=all_transfers();
-    const auto belongs=[&](const transfers::Endpoint& e){Statement b(impl_->db,"SELECT 1 FROM batches WHERE id=? AND source_id=?");b.text(1,e.entry.batch);b.text(2,source);return b.row();};
+    Statement automatic(impl_->db,R"SQL(
+SELECT DISTINCT a.id FROM batches b JOIN review_choices c ON c.batch=b.id AND c.kind=1
+JOIN review_answers a ON a.id=c.answer
+WHERE b.source_id=? AND a.action=2 AND a.question LIKE 'link:%' AND substr(a.request,-5)='|auto'
+ AND EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=a.id)
+ AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+)SQL");
+    automatic.text(1,source);
+    while(automatic.row())answers.insert(automatic.bytes(0));
+    const auto automatic_answers=answers;
     for(const auto& value:values) {
         const auto& l=value.link;
         if(l.origin.state==transfers::State::removed && l.destination.state==transfers::State::removed)continue;
-        if(!belongs(l.origin.endpoint) && !belongs(l.destination.endpoint))continue;
+        if(!plan.retiring.contains(l.origin.endpoint.entry.batch) && !plan.retiring.contains(l.destination.endpoint.entry.batch))continue;
         if(l.origin.state!=transfers::State::committed && l.destination.state!=transfers::State::committed)continue;
         Statement h(impl_->db,"SELECT h.answer,h.result_payload FROM review_link_history h JOIN review_answers a ON a.id=h.answer WHERE h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=h.answer) ORDER BY a.sequence DESC LIMIT 1");h.text(1,l.identity);
         if(!h.row() || h.bytes(1)!=transfer_codec::encode(value))fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");
         answers.insert(h.bytes(0));
     }
-    std::vector<std::string> result;
+    if(answers.empty())return;
     Statement ordered(impl_->db,"SELECT id FROM review_answers ORDER BY sequence DESC");
     while(ordered.row())if(answers.contains(ordered.bytes(0))) {
         const auto answer=ordered.bytes(0);
-        Statement links(impl_->db,"SELECT identity,result_payload FROM review_link_history WHERE answer=?");links.text(1,answer);
+        bool compacted=false;
+        std::optional<imports::Occurrence> bank;std::string bank_link;
+        Statement links(impl_->db,"SELECT h.identity,h.result_payload,h.prior_payload,l.sequence,h.prior_sequence FROM review_link_history h LEFT JOIN ledger_operations l ON l.id=h.operation WHERE h.answer=?");links.text(1,answer);
         while(links.row()) {
             const auto current=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==links.bytes(0);});
-            if(current==values.end() || transfer_codec::encode(*current)!=links.bytes(1))fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");
+            if(current==values.end() || links.null(3) || transfer_codec::encode(*current)!=links.bytes(1))
+                fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");
+            if(!current->link.unresolved && current->link.origin.state!=transfers::State::removed &&
+               current->link.destination.state!=transfers::State::removed){bank=current->link.origin.endpoint.entry;bank_link=current->link.identity;}
+            if(!review_restores_link(impl_->db,links.bytes(0),current->sequence,links.integer(3))){
+                // A clean close prunes ordinary acceptance reversals. Only use
+                // the persistent Unmerge command for a verified baseline Undo
+                // with this exact automatic match still in effect.
+                if(!automatic_answers.contains(answer) || !baseline_match_restored(impl_->db,*current))
+                    fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");
+                compacted=true;
+            }
+            if(links.null(2))undo_new_relationship(*current);
+            else *current=transfer_codec::view(links.bytes(2));
+            current->sequence=links.integer(4);
         }
         Statement members(impl_->db,"SELECT batch,ordinal,committed,result FROM review_members WHERE answer=?");members.text(1,answer);
         while(members.row()) {
             Statement current(impl_->db,members.integer(2)?"SELECT revision FROM entry_heads WHERE batch=? AND ordinal=?":"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");current.text(1,members.bytes(0));current.integer(2,members.integer(1));
-            if(!current.row() || current.integer(0)!=members.integer(3))fail(SQLITE_CONSTRAINT,"Undo the later transaction edit before undoing this import.");
+            if(compacted || !current.row() || current.null(0) || !review_restores_revision(impl_->db,
+                {members.bytes(0),static_cast<std::size_t>(members.integer(1))},members.integer(2)!=0,current.integer(0),members.integer(3)))
+                fail(SQLITE_CONSTRAINT,"Undo the later transaction edit before undoing this import.");
         }
-        result.push_back(answer);
+        if(compacted){
+            auto unmerge=bank?link_unmerge_plan({*bank},bank_link):std::nullopt;
+            if(!unmerge || unmerge->source_answer!=answer)
+                fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");
+            // Use the same projected post-Unmerge links for preview and save.
+            for(const auto& step:unmerge->steps){
+                const auto target=std::find_if(values.begin(),values.end(),[&](const auto& v){return v.link.identity==step.next.link.identity;});
+                if(target==values.end())fail(SQLITE_CORRUPT,"Transfer restoration details are missing");
+                *target=step.next;
+            }
+            plan.baseline_unmerges.emplace(answer,std::move(*unmerge));
+        }
+        plan.link_answers.push_back(answer);
     }
-    return result;
 }
-app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,std::string_view source,const app::RollbackReview& review,const std::vector<std::string>& answers) {
+app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,std::string_view source,const ImportUndoPlan& plan) {
+    const auto& review=plan.review;
     if(operation.size()>60)fail(SQLITE_MISUSE,"Import undo operation identifier is too long");
     const auto key=std::string(operation)+"."+std::string(source);
-    Statement shared(impl_->db,"SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch WHERE b.source_id=?1 AND owner.source_id!=?1");shared.text(1,source);
-    if(shared.row())fail(SQLITE_CONSTRAINT,"Another import now uses these linked transactions. Undo that import first.");
     const auto selected=impl_->selected_account;
     struct Scope {Impl& impl;std::int64_t selected;bool cleaning;~Scope(){impl.selected_account=selected;impl.cleaning=cleaning;}} scope{*impl_,selected,impl_->cleaning};
     Atomic transaction(impl_->db,impl_->undo_joined?&impl_->undo_depth:nullptr);impl_->cleaning=true;
     std::size_t serial=0;
-    for(const auto& answer:answers)restore_review_answer(std::string(operation)+"-restore-"+std::to_string(++serial),answer);
-    Statement batches(impl_->db,"SELECT id,account_id FROM batches WHERE source_id=? ORDER BY rowid");batches.text(1,source);
-    std::vector<std::pair<std::string,std::int64_t>> retained;
-    while(batches.row())retained.emplace_back(batches.bytes(0),batches.integer(1));
+    for(const auto& answer:plan.link_answers){
+        const auto child=std::string(operation)+"-restore-"+std::to_string(++serial);
+        const auto saved=plan.baseline_unmerges.find(answer);
+        if(saved==plan.baseline_unmerges.end())restore_review_answer(child,answer);
+        else {
+            write_unmerge_links(child,saved->second);
+            Statement reversed(impl_->db,"INSERT INTO review_undos VALUES(?,?)");
+            reversed.text(1,child+"-undo");reversed.text(2,answer);reversed.done();
+        }
+    }
+    std::size_t batch_index=0;
+    const auto& retained=plan.batches;
     for(const auto& [id,account]:retained) {
         impl_->selected_account=account;
         if(!protected_import_rows(id).empty())fail(SQLITE_CONSTRAINT,"Another accepted transfer still needs this import.");
-        (void)transfer_import_transition(id,std::string(operation)+"-discard-"+std::to_string(++serial),false);
+        (void)transfer_import_transition(id,std::string(operation)+"-discard-source-"+std::to_string(++batch_index),false,plan.retiring);
         advance(impl_->db,id,batch(impl_->db,id).revision,"discard",2);
         Statement associations(impl_->db,"DELETE FROM source_associations WHERE source_batch=?");associations.text(1,id);associations.done();
         Statement errors(impl_->db,"DELETE FROM import_file_errors WHERE batch=?");errors.text(1,id);errors.done();

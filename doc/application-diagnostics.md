@@ -177,7 +177,8 @@ Observation is attached to the existing dispatch branches; it never issues a new
 | Existing actions | Successful outcome source |
 |---|---|
 | `create`, `create_account`, `rename_account`, `archive_account`, `reactivate_account`, `delete_account`, `correct_opening`, `reassign_currency`, `undo_account` | Existing gateway/complete repository return or validated existing outcome; marked before presentation work where available |
-| `redo_action` | Successful replay or confirmed receipt. A confirmed rule-history rejection leaves Undo in effect. |
+| `undo_action`, `undo_edit`, `redo_action`, `undo_import` | A preflight refusal or a failed write with a confirmed absent receipt reports confirmed unchanged. A returned or recovered receipt reports confirmed saved, including when refresh subsequently fails. A failed outcome lookup reports unknown. |
+| `preview_import_undo` | The picker preview reads the proposed removal. Persistence is not applicable, including when the preview refuses. |
 | `apply_change`, `apply_bulk`, `apply_category` | Existing command receipt, including strict/group Undo through the same action |
 | `rules_save`, `rules_apply`, `rules_reapply_apply` | Existing receipt; explicit unchanged/no-row-change result maps to confirmed unchanged |
 | `save`, `decide`, `opening`, `commit`, `discard` | Complete command return or existing commit receipt; unknown if the existing failure path cannot establish durability |

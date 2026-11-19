@@ -329,6 +329,8 @@ ImportStore destination_first_group(const std::filesystem::path& path) {
     return store;
 }
 
+#include "import_transfer_undo_cases.inc"
+
 void undo_destination_first_group(const std::filesystem::path& path) {
     {
         auto store=destination_first_group(path);
@@ -1387,6 +1389,9 @@ int main(int argc,char** argv){
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
     cycle_redo=std::getenv("SPENTIT_TEST_REDO") || (argc>1 && std::string_view(argv[1])=="redo");
     try {
+        if(argc>1 && std::string_view(argv[1])=="import_transfer_undo"){
+            import_transfer_undo_cases(path);return 0;
+        }
         if(argc>1 && std::string_view(argv[1])=="destination_first_undo"){
             undo_destination_first_group(std::filesystem::path(path)/"destination-first.db");return 0;
         }

@@ -22,12 +22,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-103. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-104. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- **MAN-103 · 2026-11-19** Update [Bring in transactions](../manual/import-transactions.md) and
+  [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
+  to describe undoing an import that automatically matched a transfer. Show
+  which bank posting disappears and which earlier generated posting returns.
+  Cover **Review → Undo import…** after a clean reopen and the refusal shown
+  when a later transfer change still applies. Review the import Undo preview
+  illustration against this example. [Contract](import-undo.md)
 
 - **MAN-102 · 2026-11-19** Update the About reference in
   [Backup and recovery](../manual/backup-recovery.md#if-you-still-need-help)
