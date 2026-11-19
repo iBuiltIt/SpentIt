@@ -3661,6 +3661,13 @@ private slots:
         QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_"+QString::number(row)));
         QTRY_VERIFY(visualItem(window->contentItem(),"ledgerRow_"+QString::number(row))->property("mergedMark").toBool());
         QVERIFY(m.state().value("reviewQuestions").toList().isEmpty());
+        QCOMPARE(m.state().value("newTransactions").toInt(),0);
+        QVERIFY(window->setProperty("currentPage","review"));
+        auto* review=visualItem(window->contentItem(),"reviewSheet");
+        QVERIFY(review);
+        auto* accept=visualItem(review,"commitImport");
+        QVERIFY(accept && accept->isVisible());
+        QTRY_COMPARE(qRound(accept->mapToItem(review,QPointF(accept->width(),0)).x()),qRound(review->width()));
         run(m,"close");run(m,"open",{{"path",path},{"password",""}});
         QVERIFY(m.state().value("autoMerge").toBool());QVERIFY(!m.state().value("autoLink").toBool());QCOMPARE(m.state().value("mergedRows").toMap().size(),1);
         run(m,"commit",{{"ignoreWarnings",true}});QVERIFY(m.state().value("mergedRows").toMap().isEmpty());

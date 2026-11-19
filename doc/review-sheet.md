@@ -33,9 +33,11 @@ uses the same selected identities and the richer survivor dialog.
 
 Accepted and implemented: supporting tools at the top, question-specific actions
 beside their items, and one **Accept transactions** action in a footer that states
-its all-account scope. Hide unavailable actions; remove the Review-only Close
-button and the read-only imported-category catalog button/dialog. Keep explicit
-Close or Cancel on dialogs. Required import-time missing-category decisions stay.
+its all-account scope. **Accept transactions** stays at the bottom right even
+when there are no new transactions and a result mark remains. Hide unavailable
+actions; remove the Review-only Close button and the read-only imported-category
+catalog button/dialog. Keep explicit Close or Cancel on dialogs. Required
+import-time missing-category decisions stay.
 
 - Group questions into possible duplicates, possible transfers and import
   problems, preserving account order within each kind. Merge/Link/Keep separate

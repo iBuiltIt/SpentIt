@@ -4447,6 +4447,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth:true;visible:(s.newTransactions||0)>0 || Object.keys(s.mergedRows||{}).length>0 || Object.keys(s.linkedRows||{}).length>0 || missingDestinationWarningRows.length>0
             Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.newTransactions||0)>0;text:(s.newTransactions||0)+((s.newTransactions||0)===1?" new transaction across all accounts":" new transactions across all accounts")+((s.importFailures||0)>0?" · "+s.importFailures+" import problems will remain":"")}
+            Item {Layout.fillWidth:true;visible:(s.newTransactions||0)===0}
             Label {objectName:"missingDestinationWarnings";visible:missingDestinationWarningRows.length>0;text:"Warnings ["+missingDestinationWarningRows.length+"]";Accessible.name:missingDestinationWarningRows.length===1?"1 warning":missingDestinationWarningRows.length+" warnings"}
             Button {objectName:"commitImport";text:"Accept transactions";enabled:!workflow.busy && !s.readOnly;onClicked:guard(requestCommit)}
         }
