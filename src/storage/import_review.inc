@@ -65,9 +65,10 @@ void ImportStore::prepare_review() {
     std::string names;
     for(const auto& alias:account_aliases())names+=std::to_string(alias.account)+":"+std::to_string(alias.name.size())+":"+alias.name;
     std::set<std::string> pending;
-    Statement batches(impl_->db,"SELECT id,revision,(SELECT count(*) FROM source_occurrences o WHERE o.batch=batches.id),blocked FROM batches WHERE state IN(0,4) ORDER BY rowid");
+    Statement batches(impl_->db,"SELECT id,revision,(SELECT count(*) FROM source_occurrences o WHERE o.batch=batches.id),blocked,state FROM batches WHERE state IN(0,4) OR (state=1 AND id IN(SELECT batch FROM restored_import_drafts)) ORDER BY rowid");
     while(batches.row()) {
         const auto id=batches.bytes(0);pending.insert(id);
+        const bool accepted_batch=batches.integer(4)==1;
         impl_->selected_account=account_for_batch(id).identity;
         auto& review=impl_->reviews[id];review.revision=batches.integer(1);
         review.included=0;review.excluded=0;review.amounts.clear();review.warning.clear();
@@ -81,8 +82,9 @@ void ImportStore::prepare_review() {
           (SELECT count(*) FROM source_associations WHERE ledger_batch=v.batch AND ledger_ordinal=v.ordinal),
           (SELECT count(*) FROM source_associations WHERE ledger_batch=v.duplicate_batch AND ledger_ordinal=v.duplicate_ordinal)
           FROM versions v LEFT JOIN review_targets h ON h.batch=v.duplicate_batch AND h.ordinal=v.duplicate_ordinal
-          WHERE v.batch=? AND NOT EXISTS(SELECT 1 FROM accepted_transactions accepted WHERE accepted.batch=v.batch AND accepted.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)
-          ORDER BY v.ordinal)SQL");rows.text(1,id);
+          WHERE v.batch=?1 AND (?2=0 OR EXISTS(SELECT 1 FROM restored_import_drafts r WHERE (r.batch,r.ordinal)=(v.batch,v.ordinal)))
+          AND NOT EXISTS(SELECT 1 FROM accepted_transactions accepted WHERE accepted.batch=v.batch AND accepted.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)
+          ORDER BY v.ordinal)SQL");rows.text(1,id);rows.integer(2,accepted_batch?1:0);
         std::set<std::size_t> present;
         while(rows.row()) {
             const auto ordinal=static_cast<std::size_t>(rows.integer(0));present.insert(ordinal);
@@ -132,7 +134,7 @@ void ImportStore::prepare_review() {
             }
         }
         for(auto i=review.rows.begin();i!=review.rows.end();)if(!present.contains(i->first))i=review.rows.erase(i);else ++i;
-        if(present.size()+accepted_row_count(impl_->db,id)!=static_cast<std::size_t>(batches.integer(2)) && batch(impl_->db,id).state!=app::BatchState::protected_drafts)
+        if(!accepted_batch && present.size()+accepted_row_count(impl_->db,id)!=static_cast<std::size_t>(batches.integer(2)) && batch(impl_->db,id).state!=app::BatchState::protected_drafts)
             review.warning="Resolve the blocked import before committing";
     }
     // Group opening/repair review has cross-account dependencies. Reuse the

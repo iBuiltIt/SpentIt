@@ -3,9 +3,8 @@
 Last updated: 2026-11-10
 
 Open and close follow [session history](session-history-baseline.md). The
-release rules database is version 1 and uses an encrypted `document_session`
-row. A file whose number is not 1 is refused, and its bytes stay the same.
-There is no migrator. There is no full-file hash cache.
+release rules database uses an encrypted `document_session` row. Opening a
+version-1 file verifies and upgrades it as described in [release schema](release-schema.md).
 
 ## Normal open and close
 

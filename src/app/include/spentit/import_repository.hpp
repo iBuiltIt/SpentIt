@@ -152,6 +152,7 @@ struct RowView {
     bool review_stale=false;
     bool excluded_by_clear=false;
     bool matched_generated=false;
+    bool restored_draft=false;
 };
 struct Receipt {
     std::string operation, batch;

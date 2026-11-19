@@ -12,7 +12,7 @@ The decision, category creation, and automatic rules commit atomically.
 Completed preparation awaiting this choice survives close and restart and blocks
 acceptance and rules on those rows. Closing the dialog defers it. The sidebar
 reopens it. Abort uses the existing import-owned operation. Repaired rows
-respect the saved choice. The release rules database is version 1. There is no migrator.
+respect the saved choice. See [release schema](release-schema.md) for the file format.
 
 Incomplete preparation is cleaned up on cancellation or the next open.
 Completed uncommitted imports remain. Account Discard is account-owned.
@@ -38,7 +38,7 @@ The explicit zero/reported choice is saved in encrypted immutable balance histor
 within account capture. It confirms the account opening immediately and does not
 become stale when transactions are repaired or linked. No later opening setup panel
 is shown for those accounts. Omitting the choice refuses before capture.
-The release rules database is version 1. A different number is refused, and the file bytes stay the same.
+See [release schema](release-schema.md) for the file format.
 See [feature 003](../features/003-qif-import-review.md). The legacy staged-balance
 path below is retired.
 
@@ -145,6 +145,6 @@ Verification requires exactly one fixed-choice record for each created mapping,
 checks it against source/creation facts and the current mapping, and rejects
 staged-choice values. Subsequent transaction revisions are not inputs to opening
 choice validation. No ordinary edit snapshots are retained for balance replay.
-The release rules database is version 1. A different number is refused, and the file bytes stay the same.
+See [release schema](release-schema.md) for the file format.
 No migration or silent repair is introduced. Ruleset retention is already in
 place. Other retention cleanup stays deferred. See [status](status.md).

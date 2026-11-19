@@ -253,7 +253,10 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
             const auto state=batch_state.row()?batch_state.integer(0):-1;const auto chosen=decision.row()?decision.integer(0):-1;
             const bool duplicate=chosen==static_cast<int>(imports::Disposition::duplicate);
             member.state=removed || duplicate?"Removed":"New";
-            member.in_ledger=!removed && !duplicate && !generated_match(impl_->db,id) && (chosen==0 || chosen==1) && (state==static_cast<int>(app::BatchState::pending) || state==static_cast<int>(app::BatchState::protected_drafts));
+            const bool pending=state==static_cast<int>(app::BatchState::pending) ||
+                state==static_cast<int>(app::BatchState::protected_drafts) ||
+                (state==static_cast<int>(app::BatchState::committed) && restored_draft(impl_->db,id));
+            member.in_ledger=pending && !removed && !duplicate && !generated_match(impl_->db,id) && (chosen==0 || chosen==1);
         }
         member.date=current.date;member.payee=current.payee;member.memo=current.memo;member.amount={current.total,current.definition};
         for(const auto& split:current.splits)member.splits.push_back({split.category,split.memo,{split.units,current.definition}});
@@ -383,7 +386,9 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
             Statement ledger(impl_->db,"SELECT l.before,l.change,l.after,h.sequence FROM ledger_operations l JOIN history_order h ON h.operation=l.id WHERE l.id=? AND l.kind IN(1,2,3)");ledger.text(1,item.child);
             if(ledger.row()){effect.ledger=true;effect.ok=true;effect.before=ledger.integer(0);effect.change=ledger.integer(1);effect.after=ledger.integer(2);effect.sequence=ledger.integer(3);effect.definition=currency_as_of(impl_->db,account,effect.sequence).definition_id();}
             else if(prior.present && result.present && prior.definition==result.definition && !prior.definition.empty()){const auto before_units=prior.has_active && !prior.active?0:prior.total;const auto after_units=result.has_active && !result.active?0:result.total;effect.ok=true;effect.change=after_units-before_units;effect.definition=prior.definition;}
-        } else if(repair && result.present && !result.definition.empty()){effect.ok=true;effect.definition=result.definition;effect.change=result.total;}
+        } else if((repair || question=="unmerge") && result.present && !result.definition.empty()){
+            effect.ok=true;effect.definition=result.definition;effect.change=result.total;
+        }
         else if(prior.present && !prior.definition.empty() && ((question=="ledger-delete" && item.answer==action.id) || (result.present && prior.definition==result.definition))){
             effect.ok=true;effect.definition=prior.definition;effect.change=question=="ledger-delete" && item.answer==action.id?-prior.total:result.total-prior.total;
         }

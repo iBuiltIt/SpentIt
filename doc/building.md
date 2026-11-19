@@ -2,10 +2,9 @@
 
 Last updated: 2026-11-14
 
-The release rules database is version 1. A file whose number is not 1 is
-refused, and its bytes stay the same. There is no migrator. The rules-off
-build still writes version 69 and is not the release format. The application
-version is 1.0.1.
+The release rules database is version 2 and upgrades version-1 files on open.
+The rules-off build still writes version 69. The application version is 1.0.1.
+See [release schema](release-schema.md) for upgrade behavior.
 
 ## Prerequisites
 

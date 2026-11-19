@@ -512,7 +512,7 @@ void legacy() {
     Directory dir;prepare(dir.path/"doc");
     sqlite3* db=nullptr;check(sqlite3_open((dir.path/"doc").c_str(),&db)==SQLITE_OK);
     check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
-    check(sqlite3_exec(db,"PRAGMA user_version=2",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
+    check(sqlite3_exec(db,"PRAGMA user_version=3",nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);
     const auto before=bytes(dir.path/"doc");rejects([&]{ImportStore::open(dir.path/"doc",password);});check(bytes(dir.path/"doc")==before);no_leaks(dir.path);
 }
 
@@ -543,7 +543,7 @@ void validation() {
         "DROP TRIGGER ledger_operations_immutable;UPDATE ledger_operations SET result_revision=7 WHERE id='corrupt-correction'",
         ("INSERT INTO ledger_operations(id,kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision) "
         "SELECT 'duplicate-revision',kind,batch,ordinal,prior_revision,result_revision,before,change,after,undo_of,preview_sequence,catalog_revision FROM ledger_operations WHERE id='corrupt-correction'"),
-        "PRAGMA user_version=2"
+        "PRAGMA user_version=3"
     };
     for(std::size_t index=0;index<std::size(damage);++index) {
         const auto* sql=damage[index];

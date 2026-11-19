@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-18
 
-The release rules database is version 1. Incomplete preparation is cleaned up on
+The release rules database is version 2. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
 transactions accepts the file. Account Discard is account-owned.
 
@@ -396,9 +396,8 @@ per-account date setting or schema change is introduced.
 
 ## Persistence and Undo
 
-New datasets use release schema version 1. A different number is refused, and
-the file bytes stay the same. There is no migrator. See the
-[file format](../AGENTS.md#current-file-format).
+See [release schema](release-schema.md) for the current file format and
+upgrade policy.
 
 Review decisions, source associations, row changes, link changes and their history
 are saved atomically in encrypted storage. No success is reported until durable
@@ -587,6 +586,20 @@ write/sync boundaries with alternating disk-full/I/O failures and 133 with
 process exit, checking both account projections, acceptance, and durable retries.
 The UI cases `unmergeSelectionUsesOnePreview`, `ledgerSamePayment`,
 `selectedReviewMerge`, and `commonUndoDirtyTargetAndTextUndo` passed offscreen.
+
+### Unmerge after acceptance — 2026-11-18
+
+In the rules-enabled application, a keep-one Unmerge restores the excluded
+transaction as New even if its original batch has been accepted. It keeps the
+original posting identity and bank evidence. The kept transaction retains its
+acceptance and later edits. The displayed balance includes the restored amount
+immediately. The accepted balance changes when the restored transaction is
+itself accepted.
+
+Restoration, source reassociation, and the Unmerge Undo record save together.
+Undo rejoins the postings and Redo restores them again. Ordinary file-wide
+acceptance can publish the restored row separately. The original publication
+still records its historical exclusion. See [release schema](release-schema.md).
 The Release application was rebuilt. Sanitizers and other platforms were not run.
 
 The separate `transferstore.management` failure also reproduced in a clean
@@ -661,7 +674,7 @@ accepted. Marks persist across close/reopen. Accept is available when only these
 marks remain; clearing them is undoable, and Undo of Accept restores them.
 An accepted survivor can be unmerged when the removed row and source
 relationships still satisfy the existing checks. Successful close expires
-ordinary Undo, but does not remove the result marks or eligible Unmerge.
+ordinary Undo while preserving the result marks and eligible Unmerge.
 
 Automatic Review requests carry an optional `|auto` suffix in the existing
 request payload. Older requests remain unchanged and do not acquire new marks

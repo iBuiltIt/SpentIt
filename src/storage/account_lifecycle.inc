@@ -86,6 +86,14 @@ WHERE h.state=1
 
     Statement pending(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND state IN(0,3,4) LIMIT 1");pending.integer(1,acct.identity);
     if(pending.row()) fail(SQLITE_CONSTRAINT,"Finish or discard the pending import before archiving");
+    Statement restored(impl_->db,"SELECT r.batch,r.ordinal FROM restored_import_drafts r JOIN batches b ON b.id=r.batch WHERE b.account_id=? AND b.state=1");
+    restored.integer(1,acct.identity);
+    while(restored.row()){
+        const imports::Occurrence id{restored.bytes(0),static_cast<std::size_t>(restored.integer(1))};
+        const auto row=load_row(id,false);
+        if(!row.excluded_by_clear && row.decision.disposition!=imports::Disposition::duplicate)
+            fail(SQLITE_CONSTRAINT,"Accept or delete the restored transactions before archiving this account.");
+    }
     Atomic transaction(impl_->db);CommandFlag flag(impl_->account_command);
     insert_account_op(impl_->db,id,acct.identity,1,acct.name,acct.name,acct.currency.definition_id(),acct.currency.definition_id(),acct.opening.units(),acct.opening.units(),acct.opening_date,acct.opening_date,1,0,0,"",content,acct.revision,acct.frozen?1:0,acct.opening_confirmed?1:0);
     Statement existing(impl_->db,"SELECT 1 FROM account_status WHERE identity=?");existing.integer(1,acct.identity);
@@ -197,9 +205,11 @@ app::AccountCommandReceipt ImportStore::reassign_currency(std::string_view opera
     std::map<std::string,std::vector<DraftPlan>> drafts;std::map<std::string,std::pair<std::int64_t,int>> batch_state;
     std::vector<EntryPlan> entries;std::vector<LinkPlan> links;
     auto consider_draft=[&](const app::BatchInfo& info){
-        if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts) return;
-        Statement heads(impl_->db,"SELECT ordinal,revision,decision,duplicate_batch,duplicate_ordinal,total FROM versions v WHERE batch=? AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) ORDER BY ordinal");
-        heads.text(1,info.id);
+        const bool accepted=info.state==app::BatchState::committed;
+        if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts &&
+           !(accepted && restored_batch(impl_->db,info.id)))return;
+        Statement heads(impl_->db,"SELECT ordinal,revision,decision,duplicate_batch,duplicate_ordinal,total FROM versions v WHERE batch=?1 AND (?2=0 OR EXISTS(SELECT 1 FROM restored_import_drafts r WHERE (r.batch,r.ordinal)=(v.batch,v.ordinal))) AND revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal) ORDER BY ordinal");
+        heads.text(1,info.id);heads.integer(2,accepted?1:0);
         while(heads.row()) {
             imports::Occurrence occ{info.id,static_cast<std::size_t>(heads.integer(0))};
             const auto source=load_row(occ,false).source;

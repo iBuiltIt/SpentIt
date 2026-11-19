@@ -377,7 +377,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
             else viewed.draft=entry_snapshot(id,accepted.integer(2)).draft;
             evaluate(std::move(viewed));
         }
-        Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND b.state IN(0,4) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
+        Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");
         while(pending.row()){context.checkpoint();evaluate(load_row({pending.bytes(0),static_cast<std::size_t>(pending.integer(1))},false));}
     };
     if(ledger) {

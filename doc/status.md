@@ -2,16 +2,38 @@
 
 Last updated: 2026-11-18
 
-SpentIt is the local rules-enabled application. The release rules database is
-version 1, and the application version is 1.0.1. A file whose number is not 1
-is refused, and its bytes stay the same. There is no migrator. The rules-off
-build still writes version 69 and is not the release format. The SpentIt
-exchange file is JSON version 1.
+SpentIt is the local rules-enabled application. The current rules database is
+version 2, and the application version is 1.0.1. Opening a version-1 file
+upgrades it transactionally. The rules-off build still writes version 69.
+The SpentIt exchange file is JSON version 1. See [release schema](release-schema.md).
 
 Build and launch are in the [README](../README.md) and [building](building.md).
 macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
+
+## Unmerge after acceptance — 2026-11-18
+
+The rules-enabled build can restore an excluded posting as New without
+reversing its import's acceptance. The restored posting keeps its original
+identity and bank evidence. The kept posting remains accepted, including
+later edits. One Undo reverses the restoration. The version-1 upgrade
+verifies the file and its history in the encrypted transaction before
+committing version 2.
+See [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18)
+and [MAN-095](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the upgraded build opened synthetic clean and
+unclean files created by the previous version-1 build. The unclean file kept
+its Undo head. Both files passed post-upgrade verification and Unmerge. The
+schema test checks that probing, cancellation, disk-full failure, and an
+unsupported version leave the file bytes intact. The Unmerge regression
+checks the original bank record, exact balances, reimport recognition,
+Undo and Redo, later acceptance, account Discard, reopening, and failures
+before commit and after durable commit. Nineteen targeted rules-enabled
+Release CTest targets and four offscreen UI cases passed. The focused Unmerge
+and schema cases passed under AddressSanitizer and UndefinedBehaviorSanitizer
+with leak detection disabled. The rules-off Unmerge regression passed.
 
 ## Create a transfer from a new transaction — 2026-11-18
 

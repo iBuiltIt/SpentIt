@@ -52,8 +52,10 @@ app::AcceptanceReview ImportStore::acceptance_review(const std::set<std::int64_t
         const auto info=batch(impl_->db,id);const auto owner=account_for_batch(id);
         const auto accepted=accepted_row_count(impl_->db,id);
         Statement count(impl_->db,"SELECT count(*) FROM source_occurrences WHERE batch=?");count.text(1,id);if(!count.row())fail(SQLITE_CORRUPT);const auto remaining=static_cast<std::size_t>(count.integer(0));
-        if(remaining>=review.rows.size()+accepted)result.failed_records+=remaining-review.rows.size()-accepted;
-        if(info.blocked && remaining==review.rows.size()+accepted)++result.failed_records;
+        if(info.state!=app::BatchState::committed) {
+            if(remaining>=review.rows.size()+accepted)result.failed_records+=remaining-review.rows.size()-accepted;
+            if(info.blocked && remaining==review.rows.size()+accepted)++result.failed_records;
+        }
         for(const auto& [ordinal,item]:review.rows) {
             if(item.row.excluded_by_clear || !item.row.draft)continue;
             if(item.row.decision.disposition!=imports::Disposition::duplicate || !item.warning.empty())++result.transactions;
@@ -163,7 +165,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
         exec(impl_->db,"DELETE FROM retained_category_names");
     }
     std::vector<std::string> batches;
-    Statement pending(impl_->db,"SELECT id FROM batches WHERE state IN(0,4) ORDER BY rowid");while(pending.row())batches.push_back(pending.bytes(0));
+    Statement pending(impl_->db,"SELECT id FROM batches WHERE state IN(0,4) OR (state=1 AND id IN(SELECT batch FROM restored_import_drafts)) ORDER BY rowid");while(pending.row())batches.push_back(pending.bytes(0));
     std::size_t serial=0;
     const auto child=[&]{return std::string(operation)+"-"+std::to_string(++serial);};
     const auto member=[&](std::string_view id){Statement m(impl_->db,"INSERT INTO acceptance_operations VALUES(?,?)");m.text(1,operation);m.text(2,id);m.done();};
@@ -175,7 +177,7 @@ app::AcceptanceReceipt ImportStore::accept_all(std::string_view operation,bool i
             const auto revision=batch(impl_->db,id).revision;
             item.row.decision={imports::Disposition::include,{}};item.row.review_stale=false;item.warning.clear();
             version(impl_->db,{id,ordinal},revision+1,*item.row.draft,item.row.decision);
-            advance(impl_->db,id,revision,"decide");prepared.revision=revision+1;
+            advance(impl_->db,id,revision,"decide",batch(impl_->db,id).state==app::BatchState::committed?1:0);prepared.revision=revision+1;
         }
         prepared.included=0;prepared.excluded=0;prepared.amounts.clear();
         for(const auto& [ordinal,item]:prepared.rows) {

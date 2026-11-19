@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-095. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-096. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -72,6 +72,12 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   removes them together. Refresh any picture or caption that shows the
   initial Category list or the previous two-step workflow.
   [Manual transactions](manual-transactions.md#accepted-interaction).
+
+- **MAN-095 — Unmerge after acceptance, 2026-11-18.** In Review duplicates
+  and transfers, show that Unmerge restores a hidden posting as New with its
+  original bank record, even after acceptance. The kept posting stays accepted.
+  Cover combined balance, later acceptance, and one-step Undo and Redo.
+  [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).
 
 ## Recapturing pictures
 

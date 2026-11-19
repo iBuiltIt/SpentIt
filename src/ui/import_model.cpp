@@ -1170,19 +1170,20 @@ struct ImportModel::Worker {
         if(row.matched_generated){selected["diagnostic"]="Already present as an accepted generated transfer. This import adds source ownership only.";selected["editable"]=false;return;}
         if(source.diagnostic) selected["diagnostic"]=selected["diagnostic"].toString()+" — saved interpretation repair; original diagnostic retained.";
         selected["original"]=original?(source.original_amount?money(*source.original_amount,amountFormat):QString("Unavailable")):QString();
-        selected["editable"]=found->state==app::BatchState::pending && !repo.transaction_accepted({batch,ordinal});
+        const bool pendingRow=found->state==app::BatchState::pending || row.restored_draft;
+        selected["editable"]=pendingRow && !repo.transaction_accepted({batch,ordinal});
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
         if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" Choose whether this is already imported or a separate transaction.";
         const auto transferLinks=repo.transfers();
         const auto accountAliases=repo.account_aliases();
-        if(found->state==app::BatchState::pending)for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) || std::any_of(accountAliases.begin(),accountAliases.end(),[&](const auto& alias){return app::account_name_matches(alias.name,allocation.category);})) {
+        if(pendingRow)for(const auto& allocation:row.draft->transaction.allocations())if(qif::transfer_destination(allocation.category) || std::any_of(accountAliases.begin(),accountAliases.end(),[&](const auto& alias){return app::account_name_matches(alias.name,allocation.category);})) {
             const transfers::Endpoint endpoint{acct.identity,{batch,ordinal},allocation.identity};bool resolved=false;
             for(const auto& value:transferLinks)for(const auto* side:{&value.link.origin,&value.link.destination})if(side->state!=transfers::State::removed)
                 resolved|=side->endpoint==endpoint || (side->attached_evidence && side->attached_evidence->endpoint==endpoint) || (side->proposed_evidence && side->proposed_evidence->endpoint==endpoint);
             if(!resolved)selected["diagnostic"]=selected.value("diagnostic").toString()+" Choose a destination for this transfer: "+text(allocation.category)+". In Transfers, choose the destination for this split or match an existing transfer.";
         }
-        selected["transferEligible"]=found->state==app::BatchState::pending && !repo.transaction_accepted({batch,ordinal}) && row.decision.disposition==imports::Disposition::include;
+        selected["transferEligible"]=pendingRow && !repo.transaction_accepted({batch,ordinal}) && row.decision.disposition==imports::Disposition::include;
         const bool committed=repo.transaction_accepted({batch,ordinal}) && row.decision.disposition==imports::Disposition::include && !row.excluded_by_clear;
         selected["committed"]=committed;
         if(committed && repo.committed_changes_supported()) {
@@ -1191,7 +1192,7 @@ struct ImportModel::Worker {
         }
         QVariantList candidates;
         // Committed/discarded rows are read-only and have no duplicate actions.
-        if(found->state==app::BatchState::pending && !committed) for(const auto& id:row.candidates) {
+        if(pendingRow && !committed) for(const auto& id:row.candidates) {
             auto prior=repo.row(id);
             const auto basis=imports::candidate_basis(row.source,prior.source);
             const bool removed=repo.transaction_accepted(id) && !repo.committed_entry(id).current.active;
@@ -1966,7 +1967,12 @@ struct ImportModel::Worker {
         if(action=="unmerge") {
             const auto op=identity();
             try{repo.unmerge(op,std::vector<imports::Occurrence>(selection.begin(),selection.end()));}
-            catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);}
+            catch(...) {
+                const auto failure=std::current_exception();
+                std::optional<app::ReviewReceipt> outcome;
+                try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}
+                if(!outcome){diagnosticUnchanged=true;std::rethrow_exception(failure);}
+            }
             diagnosticSaved=true;return;
         }
         if(action=="transfer_candidates"){

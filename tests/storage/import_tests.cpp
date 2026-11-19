@@ -554,7 +554,7 @@ void validation(){
     auto alter=[&](const char* sql){sqlite3* db=nullptr;check(sqlite3_open((d.path/"doc").c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);};
     bool rules=false;{auto open=ImportStore::open(d.path/"doc",password);rules=open.rules_supported();}
     alter("PRAGMA user_version=99");fails([&]{ImportStore::open(d.path/"doc",password);});
-    alter(rules?"PRAGMA user_version=1":"PRAGMA user_version=69");
+    alter(rules?"PRAGMA user_version=2":"PRAGMA user_version=69");
     alter("DROP TRIGGER allocation_immutable; UPDATE allocations SET units=units+1 WHERE batch='first' AND ordinal=0 AND position=0");
     fails([&]{ImportStore::open(d.path/"doc",password);});
 }

@@ -1,15 +1,19 @@
-# Release schema version 1
+# Release schema version 2
 
-Last updated: 2026-11-14
+Last updated: 2026-11-18
 
-Status: **done.** The owner said to make the release schema on 2026-11-11.
-The application version is 1.0.1.
+The owner approved version 2 on 2026-11-18 for restoring merged transactions
+after acceptance. The application version is 1.0.1.
 
-The rules database is version 1. A new rules file reads back `user_version` 1.
-A file whose number is not 1 is refused, and its bytes stay the same. There is
-no migrator and no `src/storage/migrations/`. The next schema change is version
-2. That later application is the one that upgrades a version-1 file. It must
-not refuse a version-1 file.
+New rules-enabled databases use `user_version` 2. Opening an authenticated
+version-1 file runs the upgrade under its normal document lock. The upgrade
+installs the restoration journal and its integrity rules and verifies the
+result before committing the version change. The single encrypted transaction
+also marks the session open. Cancellation before the commit seal or an error
+before durable completion rolls back the upgrade. Probing a file does not
+upgrade it. Existing posting identities, source bytes, publication membership
+and eligible Undo survive the upgrade. An older SpentIt version requires a
+copy made before upgrade to open the file.
 
 The rules-off build still writes version 69. That schema is a different set of
 tables. It is not the release format and it is not numbered 1.
@@ -21,7 +25,5 @@ These are not the database schema number:
 - The SpentIt export file, which is JSON version 1.
 - `manual-v1`.
 
-Open still checks that the tables match. A file numbered 1 whose tables do not
-match is refused, and its bytes stay the same. After a file has opened, the
-code uses the current tables and does not ask the version number which feature
-exists.
+Open checks for the expected tables and rejects unsupported or inconsistent
+versions before the upgrade can write. See [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).

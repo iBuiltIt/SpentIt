@@ -2,9 +2,9 @@
 
 Last updated: 2026-11-17
 
-The release rules database is version 1. The parser is bank-v6. A different number is refused, and the file bytes stay the same. There is no migrator. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
+The parser is bank-v6. See [release schema](release-schema.md) for the file format. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
 
-The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md). A file whose number is not 1 is refused, and its bytes stay the same. There is no migrator.
+The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md).
 
 Current extension (2026-10-29): [account names and confirmed aliases](../features/010-categories-and-selection.md) identify transfers even without QIF brackets. Grouped matching uses allocation amounts, so an ordinary fee split does not prevent matching the transfer split. This supersedes the earlier bracket-only admission and same-named ordinary-category policy. Original source bytes are retained unchanged.
 

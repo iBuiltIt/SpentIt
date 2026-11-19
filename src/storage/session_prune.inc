@@ -101,6 +101,9 @@ INSERT OR IGNORE INTO session_keep SELECT 1,v.duplicate_batch,v.duplicate_ordina
 -- Transfer replay and import reversal have explicit snapshot dependencies.
 INSERT OR IGNORE INTO session_keep SELECT m.committed,m.batch,m.ordinal,m.prior FROM review_members m WHERE EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=m.answer);
 INSERT OR IGNORE INTO session_keep SELECT m.committed,m.batch,m.ordinal,m.result FROM review_members m WHERE EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=m.answer);
+INSERT OR IGNORE INTO session_keep SELECT 0,m.batch,m.ordinal,m.prior FROM review_members m JOIN restored_import_rows r USING(answer,batch,ordinal);
+INSERT OR IGNORE INTO session_keep SELECT 0,m.batch,m.ordinal,m.result FROM review_members m JOIN restored_import_rows r USING(answer,batch,ordinal);
+INSERT OR IGNORE INTO session_keep SELECT 0,m.batch,m.ordinal,m.result FROM review_members m JOIN restored_import_rows r ON (m.answer,m.batch,m.ordinal)=(r.merge_answer,r.batch,r.ordinal);
 )SQL");
     for(;;){const auto before=sqlite3_total_changes64(impl_->db);
         exec(impl_->db,"INSERT OR IGNORE INTO session_keep SELECT 0,s.batch,s.ordinal,s.review_revision FROM review_stamps s JOIN session_keep k ON k.kind=0 AND k.batch=s.batch AND k.ordinal=s.ordinal AND k.revision=s.revision");

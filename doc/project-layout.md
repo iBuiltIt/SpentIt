@@ -14,7 +14,6 @@ SpentIt/
 ├── src/
 │   ├── engine/             # Financial model and deterministic business logic
 │   ├── storage/            # SQLCipher persistence and storage recovery
-│   │   └── migrations/     # Only after the owner-announced release gate
 │   ├── app/                # Use cases, document lifecycle, executable wiring
 │   └── ui/                 # Qt adapters, models, QML, and presentation assets
 ├── tests/
@@ -34,7 +33,7 @@ SpentIt/
 
 The root CMake files, `cmake/`, `src/engine/`, and `tests/engine/` now exist alongside the documentation. `third_party/iso4217/` holds the pinned currency reference snapshot and provenance; `tools/` contains its offline generator/checker. `SpentIt::engine` exposes only its own headers and the C++20 requirement, with no UI, storage, or application dependencies. The test executable links this library. See [building and verification](building.md) for the validated toolchain. Introduce remaining directories only with actual work. The repository license is [LICENSE](../LICENSE).
 
-`src/storage/` and `tests/storage/` hold the SQLCipher document store and its failure tests. The storage target depends on the engine and privately links SQLCipher. Engine-only builds do not fetch or link storage. `third_party/sqlcipher/` contains the dependency pin and notices. Downloaded sources stay in ignored `build/dependencies/`. `src/app/` holds application commands. `src/ui/` holds the Qt adapter and QML. There is no migration layer. See [building](building.md).
+`src/storage/` and `tests/storage/` hold the SQLCipher document store and its failure tests. The storage target depends on the engine and privately links SQLCipher. Engine-only builds do not fetch or link storage. `third_party/sqlcipher/` contains the dependency pin and notices. Downloaded sources stay in ignored `build/dependencies/`. `src/app/` holds application commands. `src/ui/` holds the Qt adapter and QML. The storage layer owns the [format upgrade](release-schema.md). See [building](building.md).
 
 ## Responsibilities
 

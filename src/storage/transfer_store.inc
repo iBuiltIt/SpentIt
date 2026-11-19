@@ -418,7 +418,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
             if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
             const bool committed=transaction_accepted(fact.endpoint.entry);
-            const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
+            const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts || restored_draft(impl_->db,fact.endpoint.entry));
             if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");}
             else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
             std::optional<imports::DraftRow> row;
@@ -459,7 +459,7 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
                 if(!recorded)fail(SQLITE_CONSTRAINT,"Invalid transfer command");
             }else if((fact.imported || fact.ledger_entry) && fact.state==transfers::State::draft){
                 const auto info=batch(impl_->db,fact.endpoint.entry.batch);
-                if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
+                if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts && !restored_draft(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
                 const auto loaded=load_row(fact.endpoint.entry,false);if(!loaded.draft)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
                 const auto canonical=rewrite(*loaded.draft,loaded.draft,loaded.source,info.revision+1,false);
                 auto write_category=[&]{version(impl_->db,fact.endpoint.entry,info.revision+1,canonical,loaded.decision,false);advance(impl_->db,fact.endpoint.entry.batch,info.revision,"save",static_cast<int>(info.state));};
@@ -499,7 +499,10 @@ app::TransferReceipt ImportStore::apply_transfer(std::string_view operation,cons
             draft=imports::DraftRow{request.date,request.payee,request.memo,Transaction::manual(*request.amount,{{"",request.memo,*request.amount,{},"manual"}})};
         }else{
             if(!request.origin || request.amount || request.evidence)fail(SQLITE_CONSTRAINT,"Choose a draft allocation");
-            require_account(request.origin->batch);expect(impl_->db,request.origin->batch,request.batch_revision);const auto row=load_row(*request.origin,false);
+            require_account(request.origin->batch);
+            if(restored_draft(impl_->db,*request.origin)){if(batch(impl_->db,request.origin->batch).revision!=request.batch_revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");}
+            else expect(impl_->db,request.origin->batch,request.batch_revision);
+            const auto row=load_row(*request.origin,false);
             if(transaction_accepted(*request.origin) || row.excluded_by_clear || row.matched_generated || !row.draft || row.decision.disposition!=imports::Disposition::include)fail(SQLITE_CONSTRAINT,"Resolve the draft before assigning a transfer");
             draft=*row.draft;origin.entry=*request.origin;origin.allocation=request.allocation;
         }
@@ -1130,7 +1133,7 @@ app::TransferPreview ImportStore::preview_transfer(const app::TransferRequest& r
         if(info.revision!=revision)fail(SQLITE_CONSTRAINT,"Import changed; refresh before retrying");
         if(generated_match(impl_->db,fact.endpoint.entry))fail(SQLITE_CONSTRAINT,"Use the existing transfer rather than its matched source");
             const bool committed=transaction_accepted(fact.endpoint.entry);
-        const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts);
+        const bool editable=!committed && (info.state==app::BatchState::pending || info.state==app::BatchState::protected_drafts || restored_draft(impl_->db,fact.endpoint.entry));
         if(fact.state==transfers::State::committed){if(!committed)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");}
         else if(fact.state!=transfers::State::draft || !editable)fail(SQLITE_CONSTRAINT,"This transfer changed. Select it again before continuing.");
         std::optional<imports::DraftRow> row;

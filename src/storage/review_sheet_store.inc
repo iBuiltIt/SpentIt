@@ -1226,6 +1226,23 @@ app::ReviewReceipt ImportStore::unmerge(std::string_view operation,const std::ve
     Statement listed(impl_->db,"SELECT batch,ordinal FROM review_merges WHERE answer=? ORDER BY batch,ordinal");listed.text(1,*original);
     while(listed.row())losers.push_back({imports::Occurrence{listed.bytes(0),static_cast<std::size_t>(listed.integer(1))}});
     if(losers.empty())fail(SQLITE_CORRUPT,"Merge details are missing");
+    for(const auto& loser:losers) {
+        if(batch(impl_->db,loser.id.batch).state!=app::BatchState::committed)continue;
+        if(rules_format(impl_->db)) {
+            require_writable_account(impl_->db,account_for_batch(loser.id.batch).identity);
+            if(generated_match(impl_->db,loser.id))fail(SQLITE_CONSTRAINT,"Unmerge cannot restore a transaction that now matches a transfer.");
+            continue;
+        }
+        if(const auto head=action_head();head && head->kind==app::ActionKind::acceptance) {
+            Statement accepted(impl_->db,R"SQL(
+                SELECT 1 FROM operations
+                WHERE batch=?1 AND (id=?2 OR id IN(SELECT operation FROM acceptance_operations WHERE parent=?2))
+            )SQL");
+            accepted.text(1,loser.id.batch);accepted.text(2,head->payload);
+            if(accepted.row())fail(SQLITE_CONSTRAINT,"The hidden transaction belongs to an accepted import. Undo Accept transactions in Change history, then try Unmerge again.");
+        }
+        fail(SQLITE_CONSTRAINT,"Unmerge cannot restore the hidden transaction because its import has already been accepted.");
+    }
     const auto& survivor=selected.front();
     std::string request=*original+"\n"+survivor.batch+"\n"+std::to_string(integer(survivor.ordinal))+"\n"+std::to_string(losers.size())+"\n";
     for(const auto& loser:losers)request+=loser.id.batch+"\n"+std::to_string(integer(loser.id.ordinal))+"\n";
@@ -1246,9 +1263,14 @@ app::ReviewReceipt ImportStore::unmerge(std::string_view operation,const std::ve
     std::size_t child=0;
     for(const auto& loser:losers){
         const auto row=load_row(loser.id,false);if(!row.draft)fail(SQLITE_CORRUPT,"Merged transaction is missing");
+        if(batch(impl_->db,loser.id.batch).state==app::BatchState::committed) {
+            Statement restore(impl_->db,"INSERT INTO restored_import_rows(answer,merge_answer,batch,ordinal) VALUES(?,?,?,?)");
+            restore.text(1,operation);restore.text(2,*original);restore.text(3,loser.id.batch);restore.integer(4,integer(loser.id.ordinal));restore.done();
+        }
         write_review_row(operation,std::string(operation)+"-"+std::to_string(++child),loser.id,*row.draft,{imports::Disposition::include,{}},true);
         restored.insert(loser.id);
     }
+    (void)balance_for(impl_->selected_account);
     impl_->cleaning=true;
     for(const auto& move:moves){
         Statement recorded(impl_->db,"INSERT INTO review_sources VALUES(?,?,?,?,?,?,?)");
@@ -1460,6 +1482,8 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             // Unmerge only changes the duplicate decision. Restore that decision on the current text.
             const auto current_row=root_kind.bytes(0)=="unmerge"?load_row(id,false):app::RowView{};
             const auto& restored_draft=root_kind.bytes(0)=="unmerge"&&current_row.draft?*current_row.draft:review_draft(id,members.integer(3));
+            struct Cleanup {bool& flag;bool prior;~Cleanup(){flag=prior;}} cleanup{impl_->cleaning,impl_->cleaning};
+            if(root_kind.bytes(0)=="unmerge" && batch(impl_->db,id.batch).state==app::BatchState::committed)impl_->cleaning=true;
             write_review_row(answer,next_child(),id,restored_draft,value,true,true,!editor_undo);
         }
     }
@@ -1834,7 +1858,8 @@ app::ReviewReceipt ImportStore::edit_transaction_impl(std::string_view operation
         original=current.current.draft;canonical=preview.after_entry.draft;
         links=plan_entry_links(before_links,id,current.current.draft,canonical,false);
     }else{
-        if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This draft is not editable");
+        if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts &&
+           !restored_draft(impl_->db,id))fail(SQLITE_CONSTRAINT,"This draft is not editable");
         if(info.revision==INT64_MAX)fail(SQLITE_FULL);
         if(transfer){
             if(!info.manual)fail(SQLITE_CONSTRAINT,"Choose a New manually entered transaction.");

@@ -69,7 +69,7 @@ void definitions(){
     const auto kept=s.rule_image();s.ingest("temporary",plain_source,qif::DateOrder::dmy);s.undo_import("undo-temporary","temporary",s.ledger_edit_generation());check(s.rule_image().revision==kept.revision&&s.rule_image().ordered.size()==kept.ordered.size()&&s.rule_image().ordered[0].label==kept.ordered[0].label);
     apply_category(s,"erase-fees",change(app::CategoryAction::erase,"fees"));const auto remaining=s.category_catalog().categories;check(std::any_of(remaining.begin(),remaining.end(),[](const auto& category){return category.identity=="fees" && category.deleted;}));
     const imports::Occurrence row{"assigned",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto draft=*s.row(row).draft;bind(s,draft,1,"parking");s.save(row,0,draft);s.commit(row.batch,1,"publish-assigned");check(s.committed_balance().units()==-2931&&s.committed_entry(row).current.draft.transaction.allocations()[1].category_binding->identity=="parking");s.verify();}
-    check(query(path,"PRAGMA user_version")=="1");no_leaks(dir.path);
+    check(query(path,"PRAGMA user_version")=="2");no_leaks(dir.path);
 }
 
 void application(){
@@ -176,10 +176,25 @@ void schema(){
     fault_vfs::install();
     Directory dir("spentit-rulestore-schema-XXXXXX");const auto path=dir.path/"doc";
     {auto s=create(path);s.verify();}
-    check(query(path,"PRAGMA user_version")=="1");
+    check(query(path,"PRAGMA user_version")=="2");
     auto alter=[&](const char* sql){sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);check(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)==SQLITE_OK);check(sqlite3_close(db)==SQLITE_OK);};
-    alter("PRAGMA user_version=2");const auto rejected=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected&&!fs::exists(fs::path(path.string()+"-journal")));check(query(path,"PRAGMA user_version")=="2");
-    alter("PRAGMA user_version=1");{auto s=ImportStore::open(path,password);s.verify();}
+    alter("PRAGMA user_version=3");const auto rejected=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"This dataset format is not supported by this version of SpentIt; the file has not been changed");check(bytes(path)==rejected&&!fs::exists(fs::path(path.string()+"-journal")));check(query(path,"PRAGMA user_version")=="3");
+    // Exercise the upgrade on the version-1 table layout. The migration
+    // replaces the four triggers before making its first document write.
+    alter("DROP VIEW restored_import_drafts; DROP TABLE restored_import_rows; PRAGMA user_version=1");
+    const auto original=bytes(path);
+    ImportStore::probe(path,password);
+    check(bytes(path)==original);
+    app::OperationContext context;
+    context.progress=[&](auto phase){if(phase=="Saving the version 2 upgrade")context.request();};
+    rejects_text([&]{ImportStore::open(path,password,&context);},"");
+    check(query(path,"PRAGMA user_version")=="1" && bytes(path)==original);
+    fault_vfs::arm(1,SQLITE_FULL);
+    rejects_text([&]{ImportStore::open(path,password);},"");
+    fault_vfs::disarm();
+    check(query(path,"PRAGMA user_version")=="1" && bytes(path)==original);
+    {auto s=ImportStore::open(path,password);s.verify();}
+    check(query(path,"PRAGMA user_version")=="2");
     alter("DROP TABLE account_creations");const auto mismatched=bytes(path);rejects_text([&]{ImportStore::open(path,password);},"Account structure does not match format version");check(bytes(path)==mismatched);
     const auto sibling=bytes(path);fault_vfs::arm(1,SQLITE_FULL);rejects_text([&]{ImportStore::create(dir.path/"other",password,"Synthetic account",cad,"2026-08-01");},"");fault_vfs::disarm();check(bytes(path)==sibling);
 }

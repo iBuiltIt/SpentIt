@@ -145,6 +145,23 @@ app::ActionReceipt ImportStore::undo_action(std::string_view operation,const app
 }
 
 void ImportStore::verify_action_restorations() const {
+    Statement restored(impl_->db,R"SQL(
+SELECT 1 FROM restored_import_rows r
+JOIN review_answers a ON a.id=r.answer
+LEFT JOIN review_members m USING(answer,batch,ordinal)
+LEFT JOIN versions prior ON (prior.batch,prior.ordinal,prior.revision)=(r.batch,r.ordinal,m.prior)
+LEFT JOIN versions result ON (result.batch,result.ordinal,result.revision)=(r.batch,r.ordinal,m.result)
+LEFT JOIN review_members merge ON (merge.answer,merge.batch,merge.ordinal)=(r.merge_answer,r.batch,r.ordinal)
+LEFT JOIN review_answers joined ON joined.id=r.merge_answer
+LEFT JOIN versions merged ON (merged.batch,merged.ordinal,merged.revision)=(r.batch,r.ordinal,merge.result)
+WHERE a.question!='unmerge' OR a.action!=0 OR m.committed IS NOT 0
+ OR prior.decision IS NOT 2 OR result.decision IS NOT 1
+ OR joined.action IS NOT 1 OR merge.committed IS NOT 0 OR merged.decision IS NOT 2
+ OR prior.duplicate_batch IS NOT merged.duplicate_batch OR prior.duplicate_ordinal IS NOT merged.duplicate_ordinal
+ OR joined.sequence>=a.sequence OR merge.result>m.prior
+ OR m.prior>=m.result
+)SQL");
+    if(restored.row())fail(SQLITE_CORRUPT,"Restored import history is inconsistent");
     Statement payloads(impl_->db,R"SQL(
 SELECT 1 FROM action_headers h WHERE h.state IN(0,1) AND (
  (h.kind IN(0,1,2) AND (NOT EXISTS(SELECT 1 FROM review_answers a WHERE a.id=h.payload) OR NOT EXISTS(SELECT 1 FROM review_stack s WHERE s.answer=h.payload)))

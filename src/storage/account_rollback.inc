@@ -152,6 +152,12 @@ app::RollbackReview ImportStore::rollback_review() const {
     std::set<std::int64_t> affected;
     Statement rows(impl_->db,"SELECT count(*) FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND b.state IN(0,3,4) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision!=2 AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=r.batch AND g.ordinal=r.ordinal) AND NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=r.batch AND a.ordinal=r.ordinal)");
     if(rows.row())result.transactions=static_cast<std::size_t>(rows.integer(0));
+    Statement restored(impl_->db,R"SQL(
+        SELECT r.batch,r.ordinal FROM restored_import_drafts r JOIN batches b ON b.id=r.batch
+        WHERE b.account_id=spentit_account() AND b.state=1
+        AND (SELECT decision FROM versions v WHERE (v.batch,v.ordinal)=(r.batch,r.ordinal) ORDER BY revision DESC LIMIT 1)!=2
+    )SQL");
+    while(restored.row())if(!pending_removed(impl_->db,{restored.bytes(0),static_cast<std::size_t>(restored.integer(1))}))++result.transactions;
     Statement errors(impl_->db,"SELECT (SELECT count(*) FROM source_occurrences o JOIN batches b ON b.id=o.batch WHERE b.account_id=spentit_account() AND b.state IN(0,3,4) AND NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=o.batch AND r.ordinal=o.ordinal))+(SELECT count(*) FROM batches b WHERE account_id=spentit_account() AND (state=3 OR EXISTS(SELECT 1 FROM import_file_errors e WHERE e.batch=b.id)))");
     if(errors.row())result.failures=static_cast<std::size_t>(errors.integer(0));
     if(result.transactions || result.failures)affected.insert(impl_->selected_account);
@@ -322,6 +328,29 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
     // before durability so any broken retained relationship rolls back intact.
     exec(impl_->db,"DELETE FROM review_merges WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.batch AND r.ordinal=review_merges.ordinal) OR NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_merges.target_batch AND r.ordinal=review_merges.target_ordinal); DELETE FROM review_choices WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_choices.batch AND r.ordinal=review_choices.ordinal); DELETE FROM review_sources WHERE NOT EXISTS(SELECT 1 FROM source_occurrences o WHERE o.batch=source_batch AND o.ordinal=source_ordinal); DELETE FROM review_undo_members WHERE original_child IN(SELECT child FROM review_members m WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=m.batch AND r.ordinal=m.ordinal)); DELETE FROM review_members WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.batch=review_members.batch AND r.ordinal=review_members.ordinal); DELETE FROM review_link_restorations WHERE prior=0 AND undo_id IN(SELECT u.id FROM review_undos u JOIN review_link_history h ON h.answer=u.answer WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=h.operation)); DELETE FROM review_link_history WHERE NOT EXISTS(SELECT 1 FROM transfer_events e WHERE e.operation=review_link_history.operation); DELETE FROM review_stack WHERE NOT EXISTS(SELECT 1 FROM action_headers h WHERE h.id=review_stack.answer AND h.state=1)");
     release_collected_link_restorations(impl_->db);
+    if(source.empty() && rules_format(impl_->db)) {
+        // Preserve the evidence and accepted batch. Use the existing
+        // New-row deletion journal without publishing a separate Undo action.
+        std::vector<imports::Occurrence> restored;
+        Statement rows(impl_->db,"SELECT r.batch,r.ordinal FROM restored_import_drafts r JOIN batches b ON b.id=r.batch WHERE b.state=1 AND b.account_id=?");
+        rows.integer(1,owner);
+        while(rows.row()) {
+            imports::Occurrence id{rows.bytes(0),static_cast<std::size_t>(rows.integer(1))};
+            const auto row=load_row(id,false);
+            if(!row.excluded_by_clear && row.decision.disposition!=imports::Disposition::duplicate)restored.push_back(std::move(id));
+        }
+        if(!restored.empty()) {
+            const auto answer=std::string(operation)+"-restored";
+            Statement journal(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'ledger-delete',?,?)");
+            journal.text(1,answer);journal.text(2,"");journal.integer(3,ledger_edit_generation());journal.done();
+            std::size_t serial=0;
+            for(const auto& id:restored) {
+                const auto row=load_row(id,false);
+                if(!row.draft)fail(SQLITE_CORRUPT,"Restored transaction is missing");
+                write_review_row(answer,answer+"-"+std::to_string(++serial),id,*row.draft,row.decision,false);
+            }
+        }
+    }
     if(!collecting){finish([&]{verify();transaction->commit();},true);}return {std::string(operation),owner,review.transactions,review.failures};
 }
 

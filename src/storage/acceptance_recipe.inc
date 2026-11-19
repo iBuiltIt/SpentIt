@@ -14,7 +14,7 @@ struct AcceptanceBaseline {
 AcceptanceBaseline acceptance_baseline(sqlite3* db,const std::vector<app::TransferView>& links) {
     AcceptanceBaseline result;result.links=links;
     Statement accounts(db,"SELECT singleton,frozen FROM account");while(accounts.row())result.accounts.push_back({accounts.integer(0),accounts.integer(1)!=0});
-    Statement batches(db,"SELECT id,state,revision FROM batches WHERE state IN(0,4)");while(batches.row())result.batches.push_back({batches.bytes(0),batches.integer(1),batches.integer(2)});
+    Statement batches(db,"SELECT id,state,revision FROM batches WHERE state IN(0,4) OR (state=1 AND id IN(SELECT batch FROM restored_import_drafts))");while(batches.row())result.batches.push_back({batches.bytes(0),batches.integer(1),batches.integer(2)});
     Statement groups(db,"SELECT id,state,coalesce(publication,'') FROM import_groups WHERE state=1");while(groups.row())result.groups.push_back({groups.bytes(0),groups.integer(1),groups.bytes(2)});
     return result;
 }

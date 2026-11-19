@@ -396,10 +396,9 @@ A crash can lose the unaccepted buffer; the saved transaction remains balanced.
 No crash recovery draft or automatic editor restoration is added. Escape in the
 editor retains the existing explicit discard behavior.
 
-The release rules database is version 1. The encrypted draft
-and entry revision metadata stores the balancing identity and manual-mode flag
-alongside every complete transaction snapshot, including Undo history. A different number is
-refused, and the file bytes stay the same. There is no migrator. See [status](status.md) for verification.
+The encrypted draft and entry revision metadata stores the balancing identity
+and manual-mode flag alongside every complete transaction snapshot, including
+Undo history. See [status](status.md) for verification.
 
 
 ## Amount expressions — owner Go 2026-11-03
@@ -462,9 +461,8 @@ parsers; only the resulting Money value is stored.
 The encrypted singleton preference is updated atomically without changing financial
 rows, account revisions or ledger mutation generation. Failed saves are read back
 before UI success; unknown outcomes require reopening. Preference changes invalidate
-cached presentation. The release rules database is version 1. A different
-number is refused, and the file bytes stay the same. There is no migrator. See [status](status.md)
-for actual verification and platform limits.
+cached presentation. See [status](status.md) for verification and platform
+limits.
 
 ## Text-field Home and End — owner Go 2026-11-03
 

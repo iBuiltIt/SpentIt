@@ -5,6 +5,7 @@
 #include <iostream>
 #include <unistd.h>
 #include "fault_vfs.hpp"
+#include "session_test_helpers.hpp"
 #include <sys/wait.h>
 
 using namespace spentit;
@@ -47,7 +48,7 @@ void linear_stack(const std::filesystem::path& directory) {
     int expected_format=1;
     {
         auto store=ImportStore::create(path,"synthetic","Checking",Currency("CAD"),"2026-01-01");
-        expected_format=store.rules_supported()?1:69;
+        expected_format=store.rules_supported()?2:69;
         store.ingest("import",source("Original"),qif::DateOrder::dmy);
         edit(store,"first",{"import",0},"First");edit(store,"second",{"import",0},"Second");
         store.undo_action("u2",store.preview_undo("second",store.action_token()));
@@ -93,7 +94,7 @@ void linear_stack(const std::filesystem::path& directory) {
         check(!store.redo_history().empty(),"Recovered Undo can prepare new Redo");store.certify({});check(store.redo_history().empty(),"Successful close clears Redo");
     }
     sqlite3* db=nullptr;check(sqlite3_open(path.c_str(),&db)==SQLITE_OK,"Open synthetic schema check");check(sqlite3_key(db,"synthetic",9)==SQLITE_OK,"Unlock synthetic schema check");
-    sqlite3_stmt* version=nullptr;check(sqlite3_prepare_v2(db,"PRAGMA user_version",-1,&version,nullptr)==SQLITE_OK && sqlite3_step(version)==SQLITE_ROW && sqlite3_column_int(version,0)==expected_format,"Redo keeps the existing schema version (release version 1)");sqlite3_finalize(version);sqlite3_close(db);
+    sqlite3_stmt* version=nullptr;check(sqlite3_prepare_v2(db,"PRAGMA user_version",-1,&version,nullptr)==SQLITE_OK && sqlite3_step(version)==SQLITE_ROW && sqlite3_column_int(version,0)==expected_format,"Redo keeps the existing schema version");sqlite3_finalize(version);sqlite3_close(db);
 }
 void redo_faults(const std::filesystem::path& directory) {
     fault_vfs::install();const auto seed=directory/"redo-seed.db";
@@ -1030,6 +1031,90 @@ void unmerge_kept(const std::filesystem::path& path) {
      check(!reopened.action_head() && reopened.can_unmerge({{"twins",0}}),"Unmerge remains after Change history is cleared");
      reopened.unmerge("unmerge-closed",{{"twins",0}});reopened.verify();
      check(on_ledger(reopened,"twins",1) && reopened.row({"twins",0}).draft->payee=="Red kept","Unmerge after close restores the hidden transaction and keeps the later edit");}
+    {
+        const auto accepted_file=path.string()+"-accepted";
+        auto store=ImportStore::create(accepted_file,"synthetic","Checking",cad,"2026-01-01");
+        const std::string evidence="!Type:Bank\nD03/01/2026\nT-4.00\nPRed\n^\nD03/01/2026\nT-4.00\nPBlue\n^\n";
+        store.ingest("twins",evidence,qif::DateOrder::dmy);
+        const imports::Occurrence kept{"twins",0},hidden{"twins",1};
+        ReviewAnswer merge;
+        merge.question="selected";merge.action=ReviewAction::merge;
+        merge.generation=store.review_sheet().generation;
+        merge.selected={kept,hidden};merge.survivor=kept;
+        store.answer_review("merge-accepted",merge);
+        store.accept_all("accept");
+        if(!store.rules_supported()){
+            bool explained=false;
+            try {store.unmerge("unmerge-accepted",{kept});}
+            catch(const storage::ImportError& error){
+                explained=std::string_view(error.what()).find("Undo Accept transactions")!=std::string_view::npos;
+            }
+            check(explained && !on_ledger(store,"twins",1),"Rules-off gives the accepted import refusal");
+            return;
+        }
+        edit(store,"edit-kept",kept,"Kept edit");
+        test_session::close_reopen(store,accepted_file,"synthetic");
+        check(store.can_unmerge({kept}),"Accepted merge is available after close");
+        const auto confirmed=store.committed_entry(kept);
+        const auto before=store.action_token();
+        const auto check_joined=[&]{
+            check(!on_ledger(store,"twins",1) && store.committed_balance()==Money(-400,cad) &&
+                  store.balance()==Money(-400,cad),"Joined posting contributes only once");
+        };
+        const auto check_restored=[&]{
+            check(store.transaction_accepted(kept) && !store.transaction_accepted(hidden) && on_ledger(store,"twins",1),
+                  "Only the restored posting is New");
+            check(store.committed_entry(kept).token.revision==confirmed.token.revision &&
+                  store.committed_entry(kept).current.draft.payee=="Kept edit","Unmerge preserves the accepted posting and edits");
+            const auto original=store.row(hidden);
+            check(original.restored_draft && original.source.payee=="Blue" && original.source.original_amount==Money(-400,cad) &&
+                  original.draft->payee=="Blue" && store.imported_original(hidden)==hidden &&
+                  store.evidence("twins")==evidence,"Restored row retains its original bank evidence and values");
+            check(store.committed_balance()==Money(-400,cad) && store.balance()==Money(-800,cad) &&
+                  store.projected_balance()==Money(-800,cad),"Only the New balance includes the restored posting");
+        };
+        store.observer([](storage::ImportPhase phase){
+            if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("Interrupted Unmerge");
+        });
+        bool interrupted=false;
+        try{store.unmerge("unmerge-accepted",{kept});}catch(const std::runtime_error&){interrupted=true;}
+        store.observer({});
+        check(interrupted && store.action_token()==before && !store.review_outcome("unmerge-accepted"),"Interrupted Unmerge leaves no receipt or Undo step");
+        check_joined();store.verify();
+        store.observer([](storage::ImportPhase phase){
+            if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("Lost Unmerge acknowledgement");
+        });
+        interrupted=false;
+        try{store.unmerge("unmerge-accepted",{kept});}catch(const std::runtime_error&){interrupted=true;}
+        store.observer({});
+        check(interrupted && store.review_outcome("unmerge-accepted").has_value(),"Unmerge receipt survives a lost acknowledgement");
+        check_restored();store.verify();
+        const auto history=history_page(store,1,hidden);
+        const auto* restoration=find_action(history,"unmerge-accepted");
+        check(restoration && restoration->members.size()==1 && restoration->members.front().in_ledger &&
+              restoration->members.front().state=="New" && restoration->balance.change.units==-400,
+              "Change history shows the restored posting and its balance change");
+        const auto token=store.action_token();
+        store.unmerge("unmerge-accepted",{kept});
+        check(token==store.action_token(),"Unmerge retry creates no extra action");
+        undo(store,"undo-unmerge-accepted","unmerge-accepted");check_joined();
+        store.redo_action("redo-unmerge",redo_preview(store));check_restored();
+        check(store.accept_all("accept-restored").transactions==1 && store.transaction_accepted(hidden) &&
+              store.committed_balance()==Money(-800,cad),"Accept publishes only the restored posting");
+        undo(store,"undo-restored-accept","accept-restored");check_restored();
+        test_session::close_reopen(store,accepted_file,"synthetic");
+        check_restored();store.verify();
+        store.ingest("reimport",evidence,qif::DateOrder::dmy);
+        check(store.import_result("reimport").already_present==2,"Reimport recognizes both original occurrences");
+        store.verify();
+        test_session::close_reopen(store,accepted_file,"synthetic");
+        const auto removal=store.rollback_review();
+        check(removal.transactions==1,"Discard counts the restored New posting");
+        store.rollback_account("discard-restored",removal.token);
+        check_joined();
+        check(store.transaction_accepted(kept) && store.evidence("twins")==evidence,"Discard preserves acceptance and bank evidence");
+        store.verify();
+    }
 }
 void unmerge_linked(const std::filesystem::path& path) {
     const Currency cad("CAD");
@@ -1308,7 +1393,10 @@ int main(int argc,char** argv){
         if(argc>1 && std::string_view(argv[1])=="close_after_group_undo"){
             close_after_grouped_acceptance_undo(std::filesystem::path(path)/"close-group-undo.db");return 0;
         }
-        linear_stack(path);redo_dependencies(path);if(argc>1 && std::string_view(argv[1])=="redo_faults"){redo_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+        if(argc>1 && std::string_view(argv[1])=="unmerge"){
+            unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;
+        }
+        linear_stack(path);redo_dependencies(path);if(argc>1 && std::string_view(argv[1])=="redo_faults"){redo_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

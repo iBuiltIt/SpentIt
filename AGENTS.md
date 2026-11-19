@@ -43,11 +43,11 @@ records into the repository.
 
 ## Current file format
 
-The release rules database is version 1. A file whose number is not 1 is
-refused, and its bytes stay the same. There is no migrator. The next schema
-change is version 2, and that later application is the one that upgrades a
-version-1 file. Do not refuse a version-1 file. The rules-off build still
-writes version 69 and is not the release format. See
+The release rules database is version 2. Opening an authenticated version-1
+file upgrades it in one encrypted transaction after full verification. Preserve
+the original financial history and the current Undo session. Unsupported versions
+are refused without changing the file. The rules-off build still writes
+version 69 and is outside the release upgrade path. See
 [release schema](doc/release-schema.md).
 
 The independent SpentIt exchange file is JSON version 1. It is not the database

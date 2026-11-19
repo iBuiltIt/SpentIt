@@ -232,6 +232,47 @@ private slots:
         QVERIFY(!m.state().value("canUnmerge").toBool());
         QVERIFY(m.state().value("unmergeNotice").toString().isEmpty());
     }
+    void unmergeRestoresNewPostingAfterAcceptance() {
+        QTemporaryDir dir;ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        create(m,dir.path()+"/doc");
+        run(m,"import",{{"path",fixture(dir.path(),"D3/1/2026\nT-4\nPRed\n^\nD3/1/2026\nT-4\nPBlue\n^\n")},{"profile","DMY"}});
+        const auto batch=selected(m).value("batch").toString();
+        const QVariantMap kept{{"batch",batch},{"ordinal",0}},hidden{{"batch",batch},{"ordinal",1}};
+        run(m,"review_answer",{{"question","selected"},{"generation",m.state().value("reviewGeneration")},
+            {"answer","merge"},{"selected",QVariantList{kept,hidden}},{"survivor",kept}});
+        run(m,"commit");
+        run(m,"inspect",kept);
+        const auto undo=m.state().value("actionUndo");
+        auto* menu=engine.rootObjects().front()->findChild<QObject*>("unmergeSelection");
+        QVERIFY(menu && menu->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"triggered"));
+        QTRY_VERIFY(!m.busy());
+        const bool rules=m.state().value("rulesSupported").toBool();
+        if(rules) {
+            QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+            QVERIFY(m.state().value("actionUndo")!=undo);
+            QCOMPARE(m.state().value("balance").toString(),QString("-8.00"));
+            QVERIFY(m.occurrenceIndex(batch,1)>=0);
+        } else {
+            QVERIFY(m.error().contains("Undo Accept transactions in Change history"));
+            QCOMPARE(m.state().value("actionUndo"),undo);
+            QCOMPARE(m.state().value("balance").toString(),QString("-4.00"));
+            QVERIFY(m.occurrenceIndex(batch,1)<0);
+        }
+        if(qEnvironmentVariableIsSet("SPENTIT_TEST_DIAGNOSTICS")){
+            const auto observed=diagnostics::Collector::instance().snapshot().latest;
+            QCOMPARE(observed.action,diagnostics::Action::unmerge);
+            QCOMPARE(observed.persistence,rules?diagnostics::Persistence::confirmed_saved:diagnostics::Persistence::confirmed_unchanged);
+        }
+        if(rules) {
+            run(m,"inspect",hidden);
+            QVERIFY(selected(m).value("editable").toBool());
+            QVERIFY(selected(m).value("hasImportedOriginal").toBool());
+            QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),QString("Blue"));
+        }
+    }
     void commonUndoDirtyTargetAndTextUndo() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());

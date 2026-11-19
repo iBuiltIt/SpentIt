@@ -196,7 +196,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
             if(committed){if(plan_entry_links(before_links,id,before,draft,false).changed.empty())continue;}
             else{
                 require_unlinked(id);
-                if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
+                if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts && !restored_draft(impl_->db,id))fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
                 continue;
             }
         }
@@ -208,7 +208,7 @@ app::ReviewReceipt ImportStore::edit_transactions(std::string_view operation,con
         }else{
             if(removing && transfer_linked(id))fail(SQLITE_CONSTRAINT,"Unlink this transfer before deleting it.");
             require_unlinked(id);
-            if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts)fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
+            if(info.state!=app::BatchState::pending && info.state!=app::BatchState::protected_drafts && !restored_draft(impl_->db,id))fail(SQLITE_CONSTRAINT,"This transaction cannot be edited.");
             if(info.revision==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");
             draft=canonical_draft(id,draft,before,info.revision+1,false);
             imports::validate_draft(row.source,draft,row.source.source_currency && *row.source.source_currency!=draft.transaction.effective_total().currency());

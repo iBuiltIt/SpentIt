@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-12
 
-Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. The release rules database is version 1. A different number is refused, and the file bytes stay the same. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
+Grammar for the bank and credit-card statement slice of [feature 003](003-qif-import-review.md). This profile does not add investment records or automatic transfer repair. See [release schema](../doc/release-schema.md) for the file format. `aso` remains a legal file label. Account commands are in [feature 002](002-accounts-money-splits.md).
 
 ## Specification used
 

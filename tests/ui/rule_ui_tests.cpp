@@ -433,7 +433,7 @@ private slots:
         run(current.model,"close");QSettings().clear();
         Session legacy;createDocument(legacy,"Foreign version");
         run(legacy.model,"close");
-        setUserVersion(legacy.path(),"PRAGMA user_version=2");
+        setUserVersion(legacy.path(),"PRAGMA user_version=3");
         QSettings().clear();
         run(legacy.model,"open",{{"path",legacy.path()}},false);
         QVERIFY(!legacy.model.state().value("active").toBool());
