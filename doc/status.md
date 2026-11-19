@@ -3,7 +3,7 @@
 Last updated: 2026-11-19
 
 SpentIt is the local rules-enabled application. The current rules database is
-version 2, and the application version is 1.0.1. Opening a version-1 file
+version 2, and the application version is 1.0.2. Opening a version-1 file
 upgrades it transactionally. The rules-off build still writes version 69.
 The SpentIt exchange file is JSON version 1. See [release schema](release-schema.md).
 
@@ -1041,7 +1041,7 @@ other platforms, and the full repository suite were not run.
   produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
   used. Publication is not approved. `./build/SpentIt` stays the development
   build.
-- The release schema is version 1 and the application version is 1.0.1. The
+- The release schema is version 2 and the application version is 1.0.2. The
   installers recorded above were built as 0.1.0 before the 1.0.0 stamp.
   Rebuild them before publication. See [release schema](release-schema.md).
 
