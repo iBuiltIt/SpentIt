@@ -22,12 +22,17 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-102. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-103. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- **MAN-102 · 2026-11-19** Update the About reference in
+  [Backup and recovery](../manual/backup-recovery.md#if-you-still-need-help)
+  to mention that **License and terms** identifies the Unlicense.
+  [Contract](../features/007-licensing-and-distribution.md#about)
 
 - **MAN-101 · 2026-11-19** Update [Reports](../manual/reports.md) to explain
   Previous calendar month, Previous year, and Same period previous year.

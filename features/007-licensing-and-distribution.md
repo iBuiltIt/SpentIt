@@ -18,9 +18,9 @@ relinking obligations when distributing. Avoid GPL-only Qt modules.
 ## About
 
 About shows the application identity and version, **© 2026 Stefan Wessels**,
-and offline third-party notices. The Unlicense text lives in the repository
-LICENSE file. About does not display that text. Notices must work without a
-network.
+and offline third-party notices. **License and terms** names the Unlicense,
+summarizes its permissions, and refers to [LICENSE](../LICENSE) for the full
+terms. Notices must work without a network.
 
 ## Packaging
 

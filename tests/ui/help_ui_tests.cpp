@@ -217,8 +217,11 @@ private slots:
         QCOMPARE(about->property("page").toInt(), 1);
         auto* text = object(about, "aboutNoticeText");
         QVERIFY(text);
-        QVERIFY(text->property("text").toString().contains("© 2026 Stefan Wessels"));
-        QVERIFY(text->property("text").toString().contains("final distribution license has not yet been selected"));
+        const auto terms = text->property("text").toString();
+        QVERIFY(terms.contains("© 2026 Stefan Wessels"));
+        QVERIFY(terms.contains("SpentIt is released under the Unlicense."));
+        QVERIFY(terms.contains("You may use, copy, modify, sell, and redistribute SpentIt for any purpose."));
+        QVERIFY(terms.contains("Third-party software is covered by its own licenses"));
         QVERIFY(text->property("readOnly").toBool());
         if (!capture.isEmpty()) {
             QTest::qWait(100);
