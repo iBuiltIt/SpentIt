@@ -560,7 +560,7 @@ The ledger command for two rows in the current account is **Merge**.
 
 **Link to other account…** is offered for one selected transaction. Choose it, switch accounts, select the other transaction, and choose it again. Both transactions stay. It is not offered while two transactions in the current account are selected.
 
-Until a transaction is accepted, the ledger adds a result mark:
+The ledger shows result marks:
 
 - An indigo edge means this transaction was kept when another was merged into it. The tooltip says **Merged**.
 - A green edge means this transaction is linked to a transaction that stays in another account. The tooltip names that account.
@@ -670,18 +670,23 @@ import they are written with that import, not as later Undo steps. Import Undo
 removes them with the import. Unmerge remains available for one pair. An
 uncertain durable outcome closes the session for recovery.
 
-Indigo Merged and green linked-account result marks remain until a later explicit
-Accept transactions, including when an automatic survivor or linked endpoint was already
-accepted. Marks persist across close/reopen. Accept is available when only these
-marks remain; clearing them is undoable, and Undo of Accept restores them.
+The indigo **Merged** mark appears on the kept transaction after a manual or
+automatic keep-one Merge, even if that transaction was already accepted.
+It remains until the next **Accept transactions**, Undo of the merge, or
+Unmerge. The green linked-account mark for automatic links also remains until
+a later Accept, including when a linked endpoint was already accepted.
+Marks persist across close and reopen. Accept is available when only these
+marks remain. Undo of Accept restores the marks it cleared.
 An accepted survivor can be unmerged when the removed row and source
 relationships still satisfy the existing checks. Successful close expires
 ordinary Undo while preserving the result marks and eligible Unmerge.
 
-Automatic Review requests carry an optional `|auto` suffix in the existing
-request payload. Older requests remain unchanged and do not acquire new marks
-on accepted rows. Close retains the latest non-reversed Accept request as the
-mark boundary, without keeping its ordinary Undo stack or changing the schema.
+For an already accepted transaction, the merge must be newer than the latest
+non-reversed Accept to show **Merged**. This also applies to merges saved
+before this change. Automatic Review requests carry an optional `|auto` suffix
+in the existing request payload, which still identifies automatic links.
+Close retains the latest non-reversed Accept request as the mark boundary,
+without keeping its ordinary Undo stack or changing the schema.
 
 ## Automatic follow-on links after a manual Link — owner Go, 2026-11-16
 

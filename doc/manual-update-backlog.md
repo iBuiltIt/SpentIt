@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-096. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-097. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -78,6 +78,14 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   original bank record, even after acceptance. The kept posting stays accepted.
   Cover combined balance, later acceptance, and one-step Undo and Redo.
   [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).
+
+- **MAN-096 — Merged mark after manual Merge, 2026-11-18.** In Review
+  duplicates, show the same indigo **Merged** mark after manual and automatic
+  merges, including when the kept transaction was already accepted. Explain
+  that Accept transactions clears the mark and that it survives reopening
+  until cleared. Show Accept transactions at the bottom right of Review when
+  a mark remains and there are no new transactions.
+  [Review](review-sheet.md#ledger-same-payment-and-result-marks--owner-go-2026-11-13).
 
 ## Recapturing pictures
 

@@ -90,10 +90,12 @@ acceptance explicit. Same-day pairs take priority, followed by mutually unique a
 Ambiguous relationships, survivor choices,
 multiple eligible split pairs, and amount differences stay manual. A unique
 matching split can link without changing the other allocations. Those pairs are
-one save inside the import, not separate Undo steps. Cancel saves none of them. Accepted survivors
-also keep their result marks until the next Accept. The exact eligibility, local
-preference scope, failure behavior, and Undo contract are in the automatic-review
-section of [doc/review-sheet.md](../doc/review-sheet.md).
+one save inside the import, not separate Undo steps. Cancel saves none of them.
+Manual and automatic keep-one merges both show **Merged**, even when the
+kept transaction was already accepted. Accept, Undo of the merge, or Unmerge
+clears the mark. The exact eligibility, local preference scope, failure
+behavior, and Undo contract are in the automatic-review section of
+[doc/review-sheet.md](../doc/review-sheet.md).
 
 With Auto Link enabled, a manual Review Link also resolves remaining unambiguous
 pairs in its original connected suggestion group. That manual decision and its

@@ -401,6 +401,57 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
         QVERIFY(click("ledgerDuplicateNone"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));QCOMPARE(m.state().value("reviewCount").toInt(),0);QCOMPARE(m.rowCount(),5);
     }
+    void ledgerManualMergeMarksAcceptedSurvivor() {
+        QTemporaryDir dir;
+        ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&m);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->show();
+        create(m,dir.path()+"/doc");
+        QVERIFY(!m.state().value("autoMerge").toBool());
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOlder\n^\n")}});
+        run(m,"commit");
+        run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPNew download\n^\n")}});
+        const auto questions=m.state().value("reviewQuestions").toList();
+        QCOMPARE(questions.size(),1);
+        QVariantMap fresh,kept;
+        for(const auto& value:questions.front().toMap().value("rows").toList()){
+            const auto row=value.toMap();
+            if(row.value("committed").toBool())kept=row;
+            else fresh=row;
+        }
+        QVERIFY(!kept.isEmpty() && !fresh.isEmpty());
+        window->setProperty("currentPage","ledger");
+        window->setProperty("editorClosed",true);
+        const auto freshIndex=m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt());
+        QVERIFY(freshIndex>=0);
+        const auto freshItem="ledgerRow_"+QString::number(freshIndex);
+        QTRY_VERIFY(visualItem(window->contentItem(),freshItem));
+        QVERIFY(visualItem(window->contentItem(),freshItem)->property("possibleDuplicate").toBool());
+        run(m,"select",{{"row",freshIndex}});
+        QTRY_COMPARE(window->property("duplicateOriginKey").toString(),fresh.value("key").toString());
+        QVERIFY(QMetaObject::invokeMethod(window,"openLedgerContext",Q_ARG(QVariant,freshIndex)));
+        QTRY_VERIFY(!m.busy());
+        auto* menu=window->findChild<QObject*>("duplicateMergeSelection");
+        QVERIFY(menu && menu->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(menu,"triggered"));
+        QTRY_COMPARE(m.state().value("balance").toString(),QString("-10.00"));
+        QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QVERIFY(m.state().value("mergedRows").toMap().contains(kept.value("key").toString()));
+        QCOMPARE(m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt()),-1);
+        const auto keptIndex=m.occurrenceIndex(kept.value("batch").toString(),kept.value("ordinal").toInt());
+        QVERIFY(keptIndex>=0);
+        const auto keptItem="ledgerRow_"+QString::number(keptIndex);
+        QTRY_VERIFY(visualItem(window->contentItem(),keptItem));
+        QTRY_VERIFY(visualItem(window->contentItem(),keptItem)->property("mergedMark").toBool());
+        QVERIFY(!visualItem(window->contentItem(),keptItem)->property("possibleDuplicate").toBool());
+        run(m,"commit");
+        QTRY_VERIFY(!visualItem(window->contentItem(),keptItem)->property("mergedMark").toBool());
+    }
     void ledgerDuplicateViewport() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->resize(1200,650);
         create(m,dir.path()+"/doc");run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

@@ -10,12 +10,12 @@ bool ImportStore::transaction_accepted(const imports::Occurrence& id) const {
 }
 std::vector<imports::Occurrence> ImportStore::merge_survivors() const {
     std::vector<imports::Occurrence> out;
-    Statement rows(impl_->db,R"SQL(SELECT DISTINCT target_batch,target_ordinal FROM review_merges m
+    Statement rows(impl_->db,R"SQL(SELECT DISTINCT m.target_batch,m.target_ordinal FROM review_merges m
+        JOIN review_answers merge ON merge.id=m.answer
         WHERE EXISTS(SELECT 1 FROM records r WHERE r.batch=m.target_batch AND r.ordinal=m.target_ordinal)
           AND (NOT EXISTS(SELECT 1 FROM accepted_transactions a WHERE a.batch=m.target_batch AND a.ordinal=m.target_ordinal)
-            OR ((SELECT substr(request,-5) FROM review_answers WHERE id=m.answer)='|auto'
-              AND (SELECT sequence FROM review_answers WHERE id=m.answer) >
-                (SELECT coalesce(max(a.sequence),0) FROM review_answers a JOIN acceptance_states s ON s.id=a.id WHERE s.undo_id IS NULL))))SQL");
+            OR merge.sequence >
+                (SELECT coalesce(max(a.sequence),0) FROM review_answers a JOIN acceptance_states s ON s.id=a.id WHERE s.undo_id IS NULL)))SQL");
     while(rows.row())out.push_back({rows.bytes(0),static_cast<std::size_t>(rows.integer(1))});
     return out;
 }

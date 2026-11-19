@@ -12,6 +12,21 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Merged mark after manual Merge — 2026-11-18
+
+Manual and automatic keep-one merges use the same indigo **Merged** mark,
+including on an already accepted kept transaction. The mark survives closing
+and reopening. Accept transactions clears it, and Undo of Accept restores it.
+Undo of the merge or Unmerge removes it. The database format stays at version 2.
+See [Review](review-sheet.md#ledger-same-payment-and-result-marks--owner-go-2026-11-13)
+and [MAN-096](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release build passed four
+storage suites, including the disk-write and crash sweep, four focused offscreen
+UI cases, and offscreen startup. The tests cover the context-menu Merge with
+auto-merge off, the displayed mark, exact balance, acceptance, Undo and Redo,
+reopening, and Unmerge. Native interactive testing was unverified.
+
 ## Unmerge after acceptance — 2026-11-18
 
 The rules-enabled build can restore an excluded posting as New without

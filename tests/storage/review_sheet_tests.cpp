@@ -1397,10 +1397,35 @@ void automatic_review_tests(const std::filesystem::path& dir) {
         s.undo_import("undo-split-import","in",s.ledger_edit_generation());s.select_account(1);
         check(s.pending_review_links().empty() && s.row({"out",0}).draft->transaction.effective_total()==before.transaction.effective_total(),"Import Undo removes split link and preserves outgoing total");s.verify();
     }
-    {const auto legacy_path=dir/"legacy-marks";auto s=ImportStore::create(legacy_path,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
-    s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");s.ingest("new",source("New"),qif::DateOrder::dmy);
-    answer(s,"manual-merge",ReviewAction::merge,{{"old",0},{"new",0}},imports::Occurrence{"old",0});
-    test_session::close_reopen(s,legacy_path,"test");check(s.merge_survivors().empty(),"Older manual requests do not gain accepted-result marks");s.verify();}
+    {
+        const auto manual_path=dir/"manual-marks";
+        auto s=ImportStore::create(manual_path,"test","Checking",cad,"2026-01-01");
+        s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("old",source("Old"),qif::DateOrder::dmy);
+        s.accept_all("accept-old");
+        s.ingest("new",source("New"),qif::DateOrder::dmy);
+        const imports::Occurrence kept{"old",0},hidden{"new",0};
+        const std::vector<imports::Occurrence> marked{kept};
+        answer(s,"manual-merge",ReviewAction::merge,{kept,hidden},kept);
+        check(s.merge_survivors()==marked,"Manual merge marks an accepted survivor");
+        check(s.balance().units()==-1000 && s.transaction_accepted(kept) && !s.transaction_accepted(hidden),"Manual merge preserves acceptance and counts the payment once");
+        s.undo_action("undo-manual-merge",s.preview_undo("manual-merge",s.action_token()));
+        check(s.merge_survivors().empty() && s.balance().units()==-2000,"Undo manual merge removes its mark");
+        UndoPreview manual_redo;
+        manual_redo.token=s.action_token();
+        manual_redo.action=s.redo_history().front();
+        s.redo_action("redo-manual-merge",manual_redo);
+        test_session::close_reopen(s,manual_path,"test");
+        check(s.merge_survivors()==marked && s.balance().units()==-1000,"Manual merge mark survives Redo and close");
+        s.accept_all("accept-manual-mark");
+        check(s.merge_survivors().empty(),"Accept clears the manual merge mark without new postings");
+        s.undo_action("undo-accept-manual-mark",s.preview_undo("accept-manual-mark",s.action_token()));
+        check(s.merge_survivors()==marked,"Undo Accept restores the manual merge mark");
+        s.unmerge("unmerge-manual",marked);
+        check(s.merge_survivors().empty() && s.balance().units()==-2000,"Unmerge removes the manual mark and restores the hidden posting");
+        check(s.transaction_accepted(kept) && !s.transaction_accepted(hidden),"Unmerge preserves the two acceptance states");
+        s.verify();
+    }
     {const auto retained=dir/"retained-accept";auto s=ImportStore::create(retained,"test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));
     s.ingest("old",source("Old"),qif::DateOrder::dmy);s.accept_all("accept-old");s.ingest("new",source("New"),qif::DateOrder::dmy);
     s.answer_automatic_review("automatic",s.automatic_review_plan({"new"},true,false).front());s.accept_all("accept-result");
