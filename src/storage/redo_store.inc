@@ -75,7 +75,10 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
     for(const auto& account:available)if(deletion_affects_action(action,account.identity,{},true))frame.accounts.insert(account.identity);
     frame.categories=action_categories(action,true);
     if(action.kind==app::ActionKind::manual_creation) {
-        const auto id=action.payload;const auto owner=account_for_batch(id).identity;const auto draft=*load_row({id,0},false).draft;
+        const auto id=action.payload;
+        const auto owner=account_for_batch(id).identity;
+        impl_->selected_account=owner;
+        const auto draft=*load_row({id,0},false).draft;
         frame.replay=[id,owner,draft](ImportStore& store,std::string_view operation){store.impl_->selected_account=owner;store.impl_->redo_names["batch:"+id]=std::string(operation);store.create_manual(operation,draft);};return frame;
     }
     if(action.kind==app::ActionKind::opening || action.kind==app::ActionKind::currency) {

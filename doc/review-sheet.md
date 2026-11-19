@@ -107,6 +107,10 @@ direction does not return. **Link** is unchanged. The Review count is the
 number of questions after this collapse. Duplicate groups and import-problem
 cards still count. Missing-destination warnings stay in their own count.
 
+If an edit breaks a saved Link, Review can offer those postings again when
+they meet the current matching criteria. A saved **Not this transfer** decision
+still suppresses its pair until the decision is undone.
+
 ## Link card — owner Go, 2026-11-12
 
 **Link** joins the two imported lines on the card and removes the created

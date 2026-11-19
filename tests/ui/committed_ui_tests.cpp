@@ -416,6 +416,67 @@ private slots:
         run(model,"history");QVERIFY(model.state().value("history").toList().isEmpty());
         QCOMPARE(selected(model).value("draft").toMap().value("payee").toString(),"Corrected merchant");
     }
+    void historyManualUndoRedoAcrossAccounts() {
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();
+
+        run(model,"create",{{"path",dir.path()+"/document"},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","20.00"}});
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"begin_manual");
+        auto draft=selected(model).value("draft").toMap();
+        draft["date"]="2026-01-02";
+        draft["payee"]="Synthetic purchase";
+        draft["total"]="-2.50";
+        auto splits=draft.value("splits").toList();
+        QCOMPARE(splits.size(),1);
+        auto split=splits.front().toMap();
+        split["amount"]="-2.50";
+        splits[0]=split;
+        draft["splits"]=splits;
+        run(model,"save_manual",draft);
+        QCOMPARE(model.state().value("balance").toString(),"-2.50");
+
+        run(model,"select_account",{{"id","1"}});
+        QVERIFY(click(root,"historyNavigation"));
+        wait(model);
+        const auto savingsBalance=[&]{
+            for(const auto& entry:model.state().value("accounts").toList()){
+                const auto account=entry.toMap();
+                if(account.value("id").toString()=="2")return account.value("balance").toString();
+            }
+            return QString{};
+        };
+        const auto history=model.state().value("history").toList();
+        QVERIFY(!history.isEmpty());
+        const auto added=history.front().toMap();
+        QCOMPARE(added.value("label").toString(),"Add transaction");
+        QVERIFY(click(root,"historyRow_0"));
+        QVERIFY(click(root,"historyUndo"));
+        wait(model);
+        QCOMPARE(model.state().value("accountId").toString(),"1");
+        QCOMPARE(model.state().value("balance").toString(),"20.00");
+        QCOMPARE(savingsBalance(),"0.00");
+
+        QVERIFY(click(root,"historyRedo"));
+        wait(model);
+        QCOMPARE(model.state().value("accountId").toString(),"1");
+        QCOMPARE(model.state().value("balance").toString(),"20.00");
+        QCOMPARE(savingsBalance(),"-2.50");
+        QVERIFY(!model.state().value("canRedoAction").toBool());
+        const auto restoredHistory=model.state().value("history").toList();
+        QVERIFY(!restoredHistory.isEmpty());
+        const auto restored=restoredHistory.front().toMap();
+        QCOMPARE(restored.value("label"),added.value("label"));
+        QVERIFY(restored.value("id")!=added.value("id"));
+        QVERIFY(restored.value("undoable").toBool());
+    }
     void historyOnlyOffersNewestUndo() {
         QTemporaryDir dir;ImportModel model(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

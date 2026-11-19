@@ -13,7 +13,9 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
   **Undo import**. An older import requires an empty file-wide Undo stack.
   Cancel changes nothing. See [older imports](action-undo-design.md#older-imports-and-discard).
 - Both commands affect the entire file import, including a file mapped to several
-  accounts. **Discard new transactions…** operates on the account.
+  accounts. After Undo of acceptance, a link between two batches in the same
+  import is cleared by that import's Undo regardless of the batches' order.
+  **Discard new transactions…** operates on the account.
 - Earlier imports and their edits remain. Undo removes only this source's
   contributions, failures and exclusively owned new transactions. A transaction
   supported by another source remains; removing its final source later collects

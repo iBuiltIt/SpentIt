@@ -408,6 +408,83 @@ void edit_manual_transfer(const std::filesystem::path& dir) {
     store.select_account(3);
     check(store.current_ledger().size()==1 && store.balance().units()==1000,"Reopen retains the generated destination");
 }
+void review_reopens_broken_manual_pair(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto path=dir/"broken-manual-review-link";
+    auto store=ImportStore::create(path,"test-password","Checking",cad,"2025-01-01");
+    store.create_account(2,"Savings",cad,"2025-01-01");
+    const auto left=store.create_manual("left-manual",manual());
+    store.select_account(2);
+    const auto right=store.create_manual("right-manual",manual("10.00"));
+    const auto find_pair=[&](const ReviewSheet& sheet){
+        return std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){
+            return q.kind==ReviewKind::link && q.rows.size()==2 && q.rows.front().identity==left && q.rows.back().identity==right;
+        });
+    };
+    const auto answer_pair=[&](std::string_view operation,ReviewAction action){
+        const auto sheet=store.review_sheet();
+        const auto question=find_pair(sheet);
+        check(question!=sheet.questions.end(),"Review offers the exact manual pair");
+        ReviewAnswer answer;
+        answer.generation=sheet.generation;answer.question=question->key;answer.action=action;
+        if(action==ReviewAction::link)answer.selected={left,right};
+        store.answer_review(operation,answer);
+    };
+    const auto offered=[&]{const auto sheet=store.review_sheet();return find_pair(sheet)!=sheet.questions.end();};
+    answer_pair("first-link",ReviewAction::link);
+    check(!offered(),"The current Link closes the pair");
+
+    store.select_account(1);
+    const auto original=*store.row(left).draft;
+    auto changed=original;
+    auto parts=changed.transaction.allocations();
+    parts.front().amount=Money(-1200,cad);
+    changed.transaction=changed.transaction.corrected(parts.front().amount,parts);
+    const auto revision=[&]{return store.batches().front().revision;};
+    const auto preview=store.edit_manual_transfer("break-link",left,revision(),changed,{});
+    check(!preview.confirmation.empty(),"Amount edit asks before breaking the independent Link");
+    store.edit_manual_transfer("break-link",left,revision(),changed,{{},preview.generation});
+    check(!offered(),"The different amounts remain outside Review matching policy");
+    store.edit_transaction("restore-match-amount",left,revision(),{},original);
+
+    for(const auto account:{1,2}){
+        store.select_account(account);
+        const auto& id=account==1?left:right;
+        auto request=category_requests(store,{id}).front();
+        request.mode=1;request.category_id.clear();request.category_path.clear();request.left->ledger_entry=true;
+        request.generated=transfers::Endpoint{3-account,{"~transfer-"+id.batch+"-replacement",0},"generated"};
+        request.generated_currency=cad.definition_id();
+        store.apply_transfer("assign-"+id.batch,request);
+    }
+    for(const auto account:{1,2}){
+        store.select_account(account);
+        check(store.current_ledger().size()==2 && store.balance().units()==(account==1?-2000:2000),"Each account has an original and a generated copy");
+    }
+    check(offered(),"The earlier, broken Link must let Review offer the pair again");
+    test_session::close_reopen(store,path,"test-password");
+    check(offered(),"The pair remains available after close and reopen");
+
+    answer_pair("reject-pair",ReviewAction::not_linked);
+    check(!offered(),"Not this transfer suppresses the pair");
+    store.undo_review("undo-rejection");
+    check(offered(),"Undo of Not this transfer makes the pair available again");
+    answer_pair("link-again",ReviewAction::link);
+    check(!offered(),"The replacement Link closes the pair again");
+    for(const auto account:{1,2}){
+        store.select_account(account);
+        const auto ledger=store.current_ledger();
+        check(ledger.size()==1 && ledger.front().identity==(account==1?left:right) &&
+              store.balance().units()==(account==1?-1000:1000),"Link keeps the two originals and removes both generated copies");
+    }
+    store.verify();
+    store.undo_review("undo-new-link");
+    check(offered(),"Undo of the replacement Link returns the pair to Review");
+    answer_pair("reject-again",ReviewAction::not_linked);
+    test_session::close_reopen(store,path,"test-password");
+    check(!offered(),"Explicit rejection survives close and reopen");
+    store.verify();
+}
+
 void origin_import_undo(const std::filesystem::path& dir) {
     const Currency cad("CAD");const auto path=dir/"origin-import-undo";
     {auto s=ImportStore::create(path,"test-password","Checking",cad,"2025-01-01");s.create_account(2,"Savings",cad,"2025-01-01");s.ingest("bank","!Type:Bank\nD01/01/2026\nT-10.00\nPBank\n^\n",qif::DateOrder::dmy);auto left=category_requests(s,{{"bank",0}}).front();
@@ -555,9 +632,12 @@ void recovery(const std::filesystem::path& dir) {
         auto s=ImportStore::open(trial,"test-password");check(s.current_ledger().size()==(phase==storage::ImportPhase::after_commit?1u:0u),"Durable boundary");s.create_manual("entry",manual());check(s.current_ledger().size()==1,"Crash retry");s.verify();
     }
 }
-int main(){
+int main(int argc,char** argv){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
+        if(argc==2 && std::string_view(argv[1])=="broken_review_link"){
+            review_reopens_broken_manual_pair(dir);std::filesystem::remove_all(dir);return 0;
+        }
         fault_vfs::install();origin_transfers(dir);new_transfer_date(dir);edit_manual_transfer(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
         {auto s=ImportStore::create(path,"test-password","Checking",Currency("CAD"),"2025-01-01");
         const auto id=s.create_manual("manual-one",manual());check(id.batch=="manual-one","Identity");

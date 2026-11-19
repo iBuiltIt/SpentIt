@@ -299,6 +299,108 @@ void grouped_import(const std::filesystem::path& path) {
     store.select_account(1);undo(store,"undoEarlierEdit","earlierEdit");check(store.row({"earlier",0}).draft->payee=="Earlier","Earlier action remains reachable after grouped import removal");store.verify();store.certify({});
 }
 
+ImportStore destination_first_group(const std::filesystem::path& path) {
+    const Currency cad("CAD");
+    auto store=ImportStore::create(path,"synthetic","Checking",cad,"2026-01-01");
+    store.opening(0,"2026-01-01",Money(0,cad));
+    store.create_account(2,"Savings",cad,"2026-01-01");
+    store.select_account(2);
+    store.opening(0,"2026-01-01",Money(0,cad));
+    store.create_account(3,"Card",cad,"2026-01-01");
+    store.select_account(3);
+    store.opening(0,"2026-01-01",Money(0,cad));
+    const std::string bytes=
+        "!Account\nNSavings\nTBank\n^\n!Type:Bank\nD2026-01-02\nT10\nPReceipt\nL[Checking]\n^\n"
+        "D2026-01-04\nT-3\nPCard payment\nL[Card]\n^\n"
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\nD2026-01-02\nT-10\nPPayment\nL[Savings]\n^\n"
+        "!Account\nNCard\nTBank\n^\n!Type:Bank\nD2026-01-04\nT3\nPCard receipt\nL[Savings]\n^\n";
+    OperationContext capture,materialize;
+    store.prepare_import_group("mapped",bytes,qif::DateOrder::dmy,{{0,2,{}},{1,1,{}},{2,3,{}}},capture);
+    store.resume_import_group("mapped",materialize);
+    store.select_account(2);
+    const auto links=store.transfers();
+    std::set<std::pair<std::string,std::string>> endpoints;
+    for(const auto& value:links)endpoints.emplace(value.link.origin.endpoint.entry.batch,value.link.destination.endpoint.entry.batch);
+    check(links.size()==2 && endpoints.contains({"mapped-account-1","mapped-account-0"}) &&
+          endpoints.contains({"mapped-account-0","mapped-account-2"}),"First batch is a destination and originates another transfer");
+    store.accept_all("accept-mapped",true);
+    undo(store,"undo-accept-mapped","accept-mapped");
+    return store;
+}
+
+void undo_destination_first_group(const std::filesystem::path& path) {
+    {
+        auto store=destination_first_group(path);
+        store.select_account(1);
+        const auto before=store.action_token();
+        const auto preview=store.preview_undo("mapped",before);
+        check(preview.refusal.empty() && preview.accounts.size()==3,"All three accounts are in the import Undo preview");
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("Injected before import Undo commit");});
+        bool failed=false;
+        try {store.undo_action("undo-mapped",preview);}
+        catch(const std::runtime_error& error){failed=std::string_view(error.what())=="Injected before import Undo commit";}
+        store.observer({});
+        check(failed,"Grouped Undo reaches the commit boundary");
+        check(store.action_token()==before && !store.undo_action_outcome("undo-mapped",preview) &&
+              store.account().identity==1 && store.balance().units()==-1000,"Failed Undo preserves the head, account and balance");
+        store.select_account(2);
+        check(store.balance().units()==700,"Failed Undo preserves the destination balance");
+        store.select_account(1);
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("Injected after import Undo commit");});
+        failed=false;
+        try {store.undo_action("undo-mapped",preview);}
+        catch(const std::runtime_error& error){failed=std::string_view(error.what())=="Injected after import Undo commit";}
+        store.observer({});
+        check(failed && store.undo_action_outcome("undo-mapped",preview),"The saved Undo receipt resolves a lost acknowledgement");
+        store.undo_action("undo-mapped",preview);
+        check(!store.action_head() && store.account().identity==1 && store.current_ledger().empty() &&
+              store.balance().units()==0,"Retry removes the origin and pops the import once");
+        for(const auto account:{2,3}){
+            store.select_account(account);
+            check(store.current_ledger().empty() && store.balance().units()==0,"Undo also removes the other postings");
+        }
+        store.verify();
+    }
+    auto reopened=ImportStore::open(path,"synthetic");
+    reopened.verify();
+    check(!reopened.action_head() && reopened.accounts().size()==3,"Unclean reopen keeps the rollback and all accounts");
+    reopened.certify({});
+}
+
+void close_after_grouped_acceptance_undo(const std::filesystem::path& path) {
+    {
+        auto store=destination_first_group(path);
+        store.accept_all("accept-mapped-again",true);
+        undo(store,"undo-accept-mapped-again","accept-mapped-again");
+        const auto before=store.action_token();
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("Injected before close commit");});
+        bool failed=false;
+        try {store.certify({});}
+        catch(const std::runtime_error& error){failed=std::string_view(error.what())=="Injected before close commit";}
+        store.observer({});
+        check(failed && store.action_token()==before && !store.redo_history().empty(),"Failed close preserves Undo and Redo");
+        store.verify();
+        store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("Injected after close commit");});
+        store.certify({});
+    }
+    auto reopened=ImportStore::open(path,"synthetic");
+    check(!reopened.action_head() && reopened.redo_history().empty(),"Successful close expires the session stacks");
+    const auto groups=reopened.import_groups();
+    check(groups.size()==1 && groups.front().state==GroupState::reviewing,"The grouped import remains New");
+    const std::map<int,std::int64_t> balances{{1,-1000},{2,700},{3,300}};
+    for(const auto& [account,balance]:balances){
+        reopened.select_account(account);
+        const auto rows=reopened.current_ledger();
+        check(rows.size()==(account==2?2u:1u) && std::none_of(rows.begin(),rows.end(),[](const auto& row){return row.committed;}) &&
+              reopened.committed_balance().units()==0 && reopened.balance().units()==balance,
+              "Reopening preserves the exact New postings in all three accounts");
+    }
+    reopened.verify();
+    reopened.accept_all("accept-after-reopen",true);
+    reopened.verify();
+    reopened.certify({});
+}
+
 void composed_rules(const std::filesystem::path& path) {
     auto store=ImportStore::create(path,"synthetic","Checking",Currency("CAD"),"2026-01-01");
     if(!store.rules_supported())return;
@@ -1199,7 +1301,14 @@ int main(int argc,char** argv){
     if(!mkdtemp(path.data()))return 2;
     struct Cleanup{std::string path;~Cleanup(){std::filesystem::remove_all(path);}} cleanup{path};
     cycle_redo=std::getenv("SPENTIT_TEST_REDO") || (argc>1 && std::string_view(argv[1])=="redo");
-    try{linear_stack(path);redo_dependencies(path);if(argc>1 && std::string_view(argv[1])=="redo_faults"){redo_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
+    try {
+        if(argc>1 && std::string_view(argv[1])=="destination_first_undo"){
+            undo_destination_first_group(std::filesystem::path(path)/"destination-first.db");return 0;
+        }
+        if(argc>1 && std::string_view(argv[1])=="close_after_group_undo"){
+            close_after_grouped_acceptance_undo(std::filesystem::path(path)/"close-group-undo.db");return 0;
+        }
+        linear_stack(path);redo_dependencies(path);if(argc>1 && std::string_view(argv[1])=="redo_faults"){redo_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_faults"){unmerge_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="composed_faults"){composed_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="faults"){acceptance_faults(path);return 0;}if(argc>1 && std::string_view(argv[1])=="held_import"){held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);std::cout<<"Held import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="link_undo"){link_then_undo_import(path);std::cout<<"Link import Undo passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="merge_history"){merge_and_link_history(std::filesystem::path(path)/"merge-history.db");std::cout<<"Merge history passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge"){unmerge_kept(std::filesystem::path(path)/"unmerge.db");std::cout<<"Unmerge passed\n";return 0;}if(argc>1 && std::string_view(argv[1])=="unmerge_link"){unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");std::cout<<"Unmerge link passed\n";return 0;}corrupt_lineage(path);link_then_undo_import(path);merge_and_link_history(std::filesystem::path(path)/"merge-history.db");unmerge_kept(std::filesystem::path(path)/"unmerge.db");unmerge_linked(std::filesystem::path(path)/"unmerge-link.db");held_import_undo(path);older_acceptance_undo(path);older_acceptance_undo_many_accounts(path);held_import_other_account(path);grouped_import(std::filesystem::path(path)/"grouped.db");relationships(std::filesystem::path(path)/"relationships.db");currencies(std::filesystem::path(path)/"currencies.db");repair(std::filesystem::path(path)/"repair.db");composed_rules(std::filesystem::path(path)/"rules.db");run(std::filesystem::path(path)/"synthetic.db");committed(std::filesystem::path(path)/"committed.db");pending_acceptance(std::filesystem::path(path)/"pending.db");acceptance_decisions(std::filesystem::path(path)/"decisions.db");change_history(std::filesystem::path(path)/"history.db");connected_undo(path);
         {auto reopened=ImportStore::open(std::filesystem::path(path)/"committed.db","synthetic");reopened.verify();check(reopened.batches().empty() && !reopened.action_head(),"Retired import is collected at close");}
         std::cout<<"Repository action tests passed\n";}
     catch(const storage::ImportError& error){std::cerr<<error.what()<<" code="<<error.code()<<'\n';return 1;}

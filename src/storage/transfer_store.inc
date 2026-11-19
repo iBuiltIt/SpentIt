@@ -26,9 +26,14 @@ Money local_total(const std::vector<app::TransferView>& values,std::int64_t acco
            (projected || side->state==transfers::State::committed) && !(projected && side->proposed_evidence))amounts.push_back(side->amount);
     return imports::sum(currency,amounts);
 }
-std::vector<app::TransferView> import_transition(std::vector<app::TransferView> values,std::int64_t account,std::string_view batch,bool publish){
+std::vector<app::TransferView> import_transition(std::vector<app::TransferView> values,std::int64_t account,std::string_view batch,bool publish,
+    const std::set<std::string>& retiring_batches){
     std::set<imports::Occurrence> protected_origins;
-    for(const auto& value:values)if(value.link.origin.endpoint.account==account && value.link.origin.endpoint.entry.batch==batch && transfers::protected_draft(value.link,account))protected_origins.insert(value.link.origin.endpoint.entry);
+    for(const auto& value:values){
+        const auto& origin=value.link.origin.endpoint;
+        if((origin.entry.batch==batch || retiring_batches.contains(origin.entry.batch)) &&
+           transfers::protected_draft(value.link,origin.account))protected_origins.insert(origin.entry);
+    }
     for(auto& value:values){
         for(const auto* side:{&value.link.origin,&value.link.destination})if(side->endpoint.account==account && side->proposed_evidence && side->proposed_evidence->endpoint.entry.batch==batch){
             const auto evidence=*side->proposed_evidence;
@@ -40,7 +45,13 @@ std::vector<app::TransferView> import_transition(std::vector<app::TransferView> 
             else if(!protected_origins.contains(value.link.origin.endpoint.entry))value.link=transfers::clear_workspace(value.link,account);
         }else if((value.link.destination.independent_evidence || value.link.destination.ledger_entry) && value.link.destination.endpoint.account==account && value.link.destination.endpoint.entry.batch==batch && value.link.destination.state==transfers::State::draft){
             if(publish){if(!value.link.unresolved)value.link=transfers::commit(value.link,account);}
-            else if(!value.link.unresolved)fail(SQLITE_CONSTRAINT,"This import is linked as a transfer destination. Change the origin before discarding it");
+            else if(!value.link.unresolved) {
+                // Whole-import Undo clears the link when it processes the origin's batch.
+                const auto& origin=value.link.origin;
+                if(origin.state!=transfers::State::draft || !retiring_batches.contains(origin.endpoint.entry.batch) ||
+                   protected_origins.contains(origin.endpoint.entry))
+                    fail(SQLITE_CONSTRAINT,"This import is linked as a transfer destination. Change the origin before discarding it");
+            }
         }
     }
     return values;
@@ -545,8 +556,8 @@ Money ImportStore::transfer_import_adjustment(std::string_view operation) const 
     if(!order.row())fail(SQLITE_CORRUPT);
     return Money(event.integer(1),currency_as_of(impl_->db,event.integer(0),order.integer(0)));
 }
-Money ImportStore::transfer_import_transition(std::string_view batch_id,std::string_view operation,bool publish){
-    const auto account=this->account();const auto before=all_transfers();const auto after=import_transition(before,account.identity,batch_id,publish);validate_transfer_set(after);
+Money ImportStore::transfer_import_transition(std::string_view batch_id,std::string_view operation,bool publish,const std::set<std::string>& retiring_batches){
+    const auto account=this->account();const auto before=all_transfers();const auto after=import_transition(before,account.identity,batch_id,publish,retiring_batches);validate_transfer_set(after);
     if(financial_sequence(impl_->db)==INT64_MAX)fail(SQLITE_FULL,"Financial order capacity exhausted");
     const auto sequence=financial_sequence(impl_->db)+1;std::vector<std::size_t> changed;
     for(std::size_t i=0;i<before.size();++i)if(transfer_codec::encode(before[i])!=transfer_codec::encode(after[i]))changed.push_back(i);
@@ -641,7 +652,18 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
         if(imported){
             if(!request.origin || account_for_batch(request.origin->batch).identity!=account.identity)fail(SQLITE_CORRUPT);
             std::vector<app::TransferView> before;for(const auto& [id,value]:previous){(void)id;before.push_back(value);}
-            const auto after=import_transition(before,account.identity,request.origin->batch,request.action==app::TransferAction::import_commit);validate_transfer_set(after);
+            const bool publish=request.action==app::TransferAction::import_commit;
+            std::set<std::string> retiring_batches;
+            if(!publish){
+                Statement retired(impl_->db,R"SQL(
+SELECT sibling.id FROM batches b JOIN batches sibling ON sibling.source_id=b.source_id
+WHERE b.id=? AND EXISTS(SELECT 1 FROM events e WHERE e.batch=b.id AND e.kind='undo-import')
+AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='undo-import')
+)SQL");
+                retired.text(1,request.origin->batch);
+                while(retired.row())retiring_batches.insert(retired.bytes(0));
+            }
+            const auto after=import_transition(before,account.identity,request.origin->batch,publish,retiring_batches);validate_transfer_set(after);
             std::size_t changed=0;
             for(std::size_t i=0;i<after.size();++i)if(transfer_codec::encode(before[i])!=transfer_codec::encode(after[i])){
                 Statement stored(impl_->db,"SELECT payload FROM transfer_versions WHERE identity=? AND sequence=?");stored.text(1,after[i].link.identity);stored.integer(2,sequence);

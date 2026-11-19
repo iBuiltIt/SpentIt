@@ -56,6 +56,9 @@ close expires that journal.
 
 Do not reset conflict generations when compacting. Do not synthesize a
 balancing transaction or change an opening to make history shorter.
+Close removes a reversed grouped publication and its return to Review together
+before pruning the expired acceptance operation. The group's current state and
+any later publication remain available.
 
 Redo is held only by the open document connection. Failed/cancelled close keeps
 it; successful close or a crash discards it. Crash recovery still restores the

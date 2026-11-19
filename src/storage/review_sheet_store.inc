@@ -13,47 +13,21 @@ bool review_pair(sqlite3* db,int kind,const imports::Occurrence& a,const imports
       AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=p.answer))SQL");
     s.integer(1,kind);s.text(2,a.batch);s.integer(3,integer(a.ordinal));s.text(4,b.batch);s.integer(5,integer(b.ordinal));return s.row();
 }
-// Unmerge puts the extra entries back. The earlier Link stays recorded, and this
-// pair has to be asked again until a later Link or Not this transfer decides it.
-std::set<std::pair<imports::Occurrence,imports::Occurrence>> reopened_link_pairs(sqlite3* db) {
-    std::set<std::pair<imports::Occurrence,imports::Occurrence>> opened;
-    Statement unmerges(db,"SELECT id,sequence FROM review_answers WHERE question='unmerge-link' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=review_answers.id) ORDER BY sequence DESC");
-    while(unmerges.row()){
-        const auto answer=std::string(unmerges.bytes(0));const auto sequence=unmerges.integer(1);
-        Statement history(db,"SELECT identity,result_payload FROM review_link_history WHERE answer=?");history.text(1,answer);
-        std::vector<std::string> identities;bool live=true;
-        while(history.row()){
-            const auto identity=std::string(history.bytes(0));const auto result=std::string(history.bytes(1));
-            identities.push_back(identity);
-            Statement head(db,"SELECT v.payload FROM transfer_heads t JOIN transfer_versions v ON v.identity=t.identity AND v.sequence=t.sequence WHERE t.identity=?");head.text(1,identity);
-            if(!head.row() || std::string(head.bytes(0))!=result)live=false;
-        }
-        if(!live || identities.empty())continue;
-        Statement link(db,"SELECT a.id FROM review_answers a JOIN review_link_history h ON h.answer=a.id WHERE a.action=? AND a.question LIKE 'link:%' AND a.sequence<? AND h.identity=? AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id) ORDER BY a.sequence DESC LIMIT 1");
-        link.integer(1,static_cast<int>(app::ReviewAction::link));link.integer(2,sequence);link.text(3,identities.front());
-        if(!link.row())continue;
-        const auto link_answer=std::string(link.bytes(0));
-        std::set<imports::Occurrence> banks;bool readable=true;
-        for(const auto& identity:identities){
-            Statement recorded(db,"SELECT result_payload FROM review_link_history WHERE answer=? AND identity=?");recorded.text(1,link_answer);recorded.text(2,identity);
-            if(!recorded.row()){readable=false;break;}
-            const auto payload=std::string(recorded.bytes(0));
-            try{
-                const auto value=transfer_codec::view(payload);
-                for(const auto* side:{&value.link.origin,&value.link.destination}){
-                    if(side->state==transfers::State::removed || side->endpoint.entry.batch.starts_with("~transfer-"))continue;
-                    if(side->independent_evidence || side->ledger_entry)banks.insert(side->endpoint.entry);
-                }
-            }catch(const ImportError&){readable=false;break;}catch(const transfers::TransferError&){readable=false;break;}
-        }
-        if(!readable || banks.size()!=2)continue;
-        const auto left=*banks.begin();const auto right=*std::next(banks.begin());
-        Statement later(db,"SELECT 1 FROM review_answers a JOIN review_choices p ON p.answer=a.id AND p.kind=1 AND p.batch=?2 AND p.ordinal=?3 JOIN review_choices q ON q.answer=a.id AND q.kind=1 AND q.batch=?4 AND q.ordinal=?5 WHERE a.sequence>?1 AND a.action IN(?6,?7) AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)");
-        later.integer(1,sequence);later.text(2,left.batch);later.integer(3,integer(left.ordinal));later.text(4,right.batch);later.integer(5,integer(right.ordinal));later.integer(6,static_cast<int>(app::ReviewAction::link));later.integer(7,static_cast<int>(app::ReviewAction::not_linked));
-        if(later.row())continue;
-        opened.emplace(left<right?std::pair{left,right}:std::pair{right,left});
+// A positive decision settles a card while the relationship it saved still
+// connects the same postings and allocations. Dates and acceptance can change
+// on a live relationship without opening the card again.
+bool review_link_still_current(sqlite3* db,std::string_view answer,const std::map<std::string,const transfers::Link*>& live_links) {
+    Statement history(db,"SELECT identity,result_payload FROM review_link_history WHERE answer=?");
+    history.text(1,answer);
+    while(history.row()){
+        const auto current=live_links.find(history.bytes(0));
+        if(current==live_links.end())continue;
+        const auto saved=transfer_codec::view(history.bytes(1)).link;
+        if(!saved.unresolved && !saved.destination_released &&
+           saved.origin.endpoint==current->second->origin.endpoint &&
+           saved.destination.endpoint==current->second->destination.endpoint)return true;
     }
-    return opened;
+    return false;
 }
 std::string review_request(const app::ReviewAnswer& a) {
     std::string out=std::to_string(a.generation)+":"+std::to_string(static_cast<int>(a.action))+":";
@@ -454,7 +428,12 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::map<imports::Occurrence,std::set<std::string>> occupied;
     std::map<imports::Occurrence,std::string> repair_origins;
     const auto occupy=[&](const transfers::Endpoint& endpoint){occupied[endpoint.entry].insert(endpoint.allocation);};
-    for(const auto& v:all_transfers())if(!v.link.unresolved && !v.link.destination_released && v.link.origin.state!=transfers::State::removed && v.link.destination.state!=transfers::State::removed){
+    const auto relationships=all_transfers();
+    std::map<std::string,const transfers::Link*> live_review_links;
+    for(const auto& v:relationships)if(!v.link.unresolved && !v.link.destination_released && v.link.origin.state!=transfers::State::removed && v.link.destination.state!=transfers::State::removed){
+        if((v.link.origin.independent_evidence || v.link.origin.ledger_entry) &&
+           (v.link.destination.independent_evidence || v.link.destination.ledger_entry))
+            live_review_links.emplace(v.link.identity,&v.link);
         if((v.link.origin.independent_evidence || v.link.origin.ledger_entry) && !v.link.destination.independent_evidence && !v.link.destination.ledger_entry && !v.link.destination.attached_evidence && !v.link.destination.proposed_evidence)repair_origins.emplace(v.link.origin.endpoint.entry,"Replaces the generated counterpart; the selected transaction stays.");
         else {
             for(const auto* side:{&v.link.origin,&v.link.destination}){
@@ -509,8 +488,28 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }
     }
     impl_->link_rows=rows;impl_->link_edges=std::move(edges);impl_->link_alias_stamp=alias_stamp;impl_->link_occupied=occupied;
-    const auto reopened=reopened_link_pairs(impl_->db);
-    const auto pair_closed=[&](const imports::Occurrence& a,const imports::Occurrence& b){if(!review_pair(impl_->db,1,a,b))return false;const auto key=a<b?std::pair{a,b}:std::pair{b,a};return !reopened.contains(key);};
+    std::map<std::string,bool> current_review_answers;
+    const auto pair_closed=[&](const imports::Occurrence& a,const imports::Occurrence& b){
+        Statement decisions(impl_->db,R"SQL(
+SELECT answer.id,answer.action FROM review_choices p
+JOIN review_choices q ON q.answer=p.answer AND q.kind=p.kind
+JOIN review_answers answer ON answer.id=p.answer
+WHERE p.kind=1 AND p.batch=?1 AND p.ordinal=?2 AND q.batch=?3 AND q.ordinal=?4
+AND (p.resolved=1 OR q.resolved=1) AND answer.action IN(?5,?6)
+AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
+)SQL");
+        decisions.text(1,a.batch);decisions.integer(2,integer(a.ordinal));
+        decisions.text(3,b.batch);decisions.integer(4,integer(b.ordinal));
+        decisions.integer(5,static_cast<int>(app::ReviewAction::not_linked));
+        decisions.integer(6,static_cast<int>(app::ReviewAction::link));
+        while(decisions.row()){
+            if(decisions.integer(1)==static_cast<int>(app::ReviewAction::not_linked))return true;
+            auto [cached,inserted]=current_review_answers.try_emplace(decisions.bytes(0),false);
+            if(inserted)cached->second=review_link_still_current(impl_->db,cached->first,live_review_links);
+            if(cached->second)return true;
+        }
+        return false;
+    };
     const auto outgoing=[](const app::ReviewTransaction& row){
         return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});
     };
@@ -562,7 +561,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         }),choices.end());
     }
     std::erase_if(result.questions,[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()==1;});
-    for(const auto& value:all_transfers()){
+    for(const auto& value:relationships){
         const auto& link=value.link;
         if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
         const auto row=rows.find(link.origin.endpoint.entry);if(row==rows.end())continue;

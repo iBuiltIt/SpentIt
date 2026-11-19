@@ -192,13 +192,23 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
             // Retire visibility now; close collects the no-longer-needed proof
             // after publishing the current baseline. No deleted-row copies are made.
             std::vector<std::pair<std::string,std::int64_t>> batches;
-            {Statement rows(impl_->db,"SELECT id,revision FROM batches WHERE source_id=? AND state IN(0,4)");rows.text(1,source);while(rows.row())batches.emplace_back(rows.bytes(0),rows.integer(1));}
-            for(const auto& [id,revision]:batches) {
-                impl_->selected_account=account_for_batch(id).identity;
-                (void)transfer_import_transition(id,std::string(operation)+"-retire-"+id,false);
-                advance(impl_->db,id,revision,"undo-import",2);
+            std::set<std::string> retiring_batches;
+            {
+                Statement rows(impl_->db,"SELECT id,revision FROM batches WHERE source_id=? AND state IN(0,4) ORDER BY rowid");
+                rows.text(1,source);
+                while(rows.row()){
+                    batches.emplace_back(rows.bytes(0),rows.integer(1));
+                    retiring_batches.insert(batches.back().first);
+                }
             }
-            impl_->selected_account=owner;
+            {
+                GroupSelection selection(impl_->selected_account);
+                for(const auto& [id,revision]:batches) {
+                    impl_->selected_account=account_for_batch(id).identity;
+                    (void)transfer_import_transition(id,std::string(operation)+"-retire-"+id,false,retiring_batches);
+                    advance(impl_->db,id,revision,"undo-import",2);
+                }
+            }
             // A reviewing group must still have pending batches. Discarded
             // batches are valid only after the group is aborted.
             Statement group(impl_->db,"UPDATE import_groups SET state=3 WHERE id=? AND state=1");group.text(1,source);group.done();

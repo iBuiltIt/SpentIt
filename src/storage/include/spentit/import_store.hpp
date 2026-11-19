@@ -310,7 +310,7 @@ private:
     EntryLinkPlan plan_restore(std::string_view) const;
     bool later_relationship_blocks(const imports::Occurrence&,std::string_view) const;
     void write_entry_links(std::string_view,std::int64_t,app::TransferAction,std::int64_t,const std::vector<app::TransferView>&,const std::optional<imports::Occurrence>& = {},const std::map<std::size_t,std::int64_t>& = {});
-    Money transfer_import_transition(std::string_view,std::string_view,bool);
+    Money transfer_import_transition(std::string_view,std::string_view,bool,const std::set<std::string>& retiring_batches={});
     Money transfer_import_adjustment(std::string_view) const;
     std::set<std::size_t> protected_import_rows(std::string_view) const;
     app::Account account_by_id(std::int64_t) const;

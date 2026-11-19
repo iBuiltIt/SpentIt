@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-091. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-093. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -35,6 +35,12 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   its own date. Refresh any affected transfer editor pictures and captions.
   [Ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer).
 
+- **MAN-089 — Undo and Redo adding a transaction across accounts, 2026-11-18.**
+  In Add and correct transactions, include **Add transaction** as an example of
+  an action you can undo and redo from Change history while viewing a different
+  account. The existing pictures still apply.
+  [Change history](change-history-handoff.md).
+
 - **MAN-090 — Edit New manual transfers, 2026-11-18.** Update the transfer
   editor coverage from MAN-088 to show the full original editor,
   **Edit original transaction**, the link-break confirmation, and an amount sign
@@ -42,6 +48,17 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   independent postings and one-step Undo. Refresh the affected transfer editor
   and Review pictures together.
   [Ledger editing](ledger-editing.md#editing-a-new-manual-transfer).
+
+- **MAN-091 — Undo grouped imports after acceptance, 2026-11-18.** In Import
+  transactions, mention that after undoing acceptance, Undo can remove the
+  grouped import and clear transfer links between its own batches in one step.
+  The existing pictures still apply. [Import Undo](import-undo.md).
+
+- **MAN-092 — Review after a transfer Link is broken, 2026-11-18.** In Review
+  duplicates and transfers, explain that a matching pair can reappear after an
+  edit breaks its Link. **Not this transfer** continues to hide that pair until
+  the decision is undone. The existing pictures still apply.
+  [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
 
 ## Recapturing pictures
 

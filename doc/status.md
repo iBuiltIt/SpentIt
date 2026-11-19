@@ -13,6 +13,36 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Review after a transfer Link is broken — 2026-11-18
+
+Review can offer the original postings again when an edit breaks their saved
+Link and they still meet the matching criteria. A current Link keeps the
+previously answered choices settled. **Not this transfer** continues to hide
+its pair until the decision is undone. See
+[Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18)
+and [MAN-092](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the new manual-transfer regression failed before
+the fix and passed afterward. It covers breaking a Link, assigning both
+originals again, reopening, explicit rejection, Undo, and linking the originals
+with exact balances. Ten Release CTest targets passed, including the Review
+decision fault sweep. Four focused offscreen Review and ledger UI cases and
+`./build/SpentIt --smoke` also passed.
+
+## Undo and close after grouped acceptance — 2026-11-18
+
+After Undo of acceptance, whole-import Undo clears transfer links between its
+own batches even when the destination batch comes first. Closing the file
+after Undo of acceptance prunes the reversed grouped publication and its
+reversal together. See [Import Undo](import-undo.md) and
+[session history](session-history-baseline.md#close-and-recovery).
+
+On macOS arm64 with Qt 6.12.0, both regressions failed before the fixes and
+passed afterward. Ten rules-enabled Release CTest targets passed, including
+session-marker fault tests. The new cases check a three-account import,
+failures before and after commit, retry, recovery, and exact balances after
+reopening. `./build/SpentIt --smoke` passed offscreen.
+
 ## Editing New manual transfers — 2026-11-18
 
 A New manually entered transfer opens the full editor. Its eligible New
@@ -32,6 +62,19 @@ and an accepted bank posting, Undo, Redo, clean reopen, and injected disk-full,
 I/O and commit-boundary failures. The storage suite also passed under
 AddressSanitizer and UndefinedBehaviorSanitizer with leak detection disabled.
 Native interactive, Linux, Windows, and full repository checks were not run.
+
+## Undo and Redo a new transaction across accounts — 2026-11-18
+
+Change history can undo and redo **Add transaction** while another account is
+selected. SpentIt reads the saved transaction from the account it belongs to
+when preparing Redo. The selected account stays the same. See
+[Change history](change-history-handoff.md) and [MAN-089](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the new offscreen Change history regression
+reproduced the account error before the fix and passed afterward. Five
+rules-enabled Release CTest targets passed, including the committed UI suite,
+manual transactions, and the Redo write-failure and crash sweep.
+`./build/SpentIt --smoke` passed offscreen.
 
 ## Correcting New transfer dates — 2026-11-18
 

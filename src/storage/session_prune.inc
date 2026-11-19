@@ -41,6 +41,19 @@ CREATE TEMP TABLE IF NOT EXISTS expired_acceptance_operations(id TEXT PRIMARY KE
 DELETE FROM expired_acceptance_operations;
 INSERT INTO expired_acceptance_operations SELECT operation FROM acceptance_operations WHERE parent IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
 INSERT OR IGNORE INTO expired_acceptance_operations SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL AND id IN(SELECT id FROM operations);
+-- The adjacent publication and reversal cancel in the retained group history.
+-- Remove both before pruning the expired publication's ledger operation.
+WITH group_steps AS (
+ SELECT sequence,state,publication,
+   lead(sequence) OVER group_order AS next_sequence,lead(state) OVER group_order AS next_state
+ FROM import_group_events
+ WHERE group_id IN(SELECT group_id FROM import_group_events WHERE publication IN(SELECT id FROM expired_acceptance_operations))
+ WINDOW group_order AS (PARTITION BY group_id ORDER BY sequence)
+), reversed AS (
+ SELECT sequence,next_sequence FROM group_steps WHERE state=2 AND next_state=1
+ AND publication IN(SELECT id FROM expired_acceptance_operations)
+)
+DELETE FROM import_group_events WHERE sequence IN(SELECT sequence FROM reversed UNION ALL SELECT next_sequence FROM reversed);
 DELETE FROM review_link_restorations;
 DELETE FROM review_link_history WHERE answer IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
 DELETE FROM acceptance_operations WHERE parent IN(SELECT id FROM acceptance_states WHERE undo_id IS NOT NULL);
