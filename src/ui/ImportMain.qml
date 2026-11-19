@@ -2282,6 +2282,10 @@ ApplicationWindow {
             if(success && !contextInspection && (action==="inspect" || (action==="undo_edit" || action==="undo_action" || action==="redo_action") || action==="import"))editorClosed=false
             if(success)workspaceFeedback=action==="review_batch"?"Selected matches merged. Undo reverses the whole batch.":action==="unmerge"?(pendingUnmergeNotice.indexOf("back in")>=0?"Unmerged. The removed row is back.":pendingUnmergeNotice.length?"Unmerged. These are no longer one transfer.":"Unmerged. The transaction that left the ledger is back."):action==="review_answer"?"Review decision saved.":action==="review_undo"?"Review decision undone.":"Ready"
             if(transferMergeAnnounced && action==="review_link_preview"){transferMergeAnnounced=false;if(success && !(s.reviewLinkPreview||{}).common)workspaceFeedback="Payment merged. The extra entry was removed."}
+            if(success && action==="review_rejected_merge_preview" && (s.reviewLinkPreview||{}).rejectedMerge){
+                pendingTransferMerge=s.reviewLinkPreview
+                ledgerTransferMerge.open()
+            }
             if(success && action==="change_password"){
                 currentPassword.text=""
                 newPassword.text=""
@@ -3457,6 +3461,10 @@ ApplicationWindow {
             ledgerTransferMerge.open()
             return
         }
+        if(rows.length===2 && rows.filter(row=>String(row.batch).startsWith("~transfer-")).length===1){
+            workflow.command("review_rejected_merge_preview")
+            return
+        }
         if(keys.some(key=>transferDoubleRows[key])){
             workspaceFeedback=keys.length<2?"Select both rows of this payment.":"These rows are different payments. Select one pair."
             return
@@ -3476,11 +3484,14 @@ ApplicationWindow {
         const pair=pendingTransferMerge
         if(!pair)return
         pendingTransferMerge=null
-        transferMergeAnnounced=true
         ledgerTransferMerge.close()
         guard(function(){
             captureLedgerView("review")
-            workflow.command("review_link_preview",{question:pair.question,generation:s.reviewGeneration,answer:"link",selected:[{batch:pair.originBatch,ordinal:pair.originOrdinal},{batch:pair.counterpartBatch,ordinal:pair.counterpartOrdinal}],leftAllocation:pair.leftAllocation||"",rightAllocation:pair.rightAllocation||""})
+            if(pair.rejectedMerge)workflow.command("review_answer",pair.args)
+            else {
+                transferMergeAnnounced=true
+                workflow.command("review_link_preview",{question:pair.question,generation:s.reviewGeneration,answer:"link",selected:[{batch:pair.originBatch,ordinal:pair.originOrdinal},{batch:pair.counterpartBatch,ordinal:pair.counterpartOrdinal}],leftAllocation:pair.leftAllocation||"",rightAllocation:pair.rightAllocation||""})
+            }
         })
     }
     function showTransferPeer() {
@@ -3969,7 +3980,13 @@ ApplicationWindow {
         id:ledgerTransferMerge;objectName:"ledgerTransferMerge";title:"Merge this payment?";modal:true;anchors.centerIn:parent;width:Math.min(window.width-64,640)
         contentItem:ColumnLayout {
             Label {objectName:"ledgerTransferMergeText";Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText
-                text:"These two rows are the same payment. Merge keeps the bank transaction in this account and removes the extra entry. The payment in "+((pendingTransferMerge||{}).otherAccount||"the other account")+" stays and is connected to it."}
+                text:(pendingTransferMerge||{}).rejectedMerge
+                     ? "You previously chose Not this transfer for these postings. Merge links the two bank postings and removes the extra entries SpentIt created for this payment."
+                     : "These two rows are the same payment. Merge keeps the bank transaction in this account and removes the extra entry. The payment in "+((pendingTransferMerge||{}).otherAccount||"the other account")+" stays and is connected to it."}
+            Repeater {
+                model:(pendingTransferMerge||{}).postings||[]
+                Label {required property string modelData;text:modelData;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
+            }
         }
         footer:DialogButtonBox {
             Button {objectName:"cancelLedgerTransferMerge";text:"Cancel";enabled:!workflow.busy;DialogButtonBox.buttonRole:DialogButtonBox.RejectRole;onClicked:{pendingTransferMerge=null;ledgerTransferMerge.close()}}

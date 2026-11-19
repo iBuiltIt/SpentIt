@@ -44,6 +44,7 @@ struct ReviewSheet {
     bool can_undo=false;
 };
 enum class ReviewAction { separate, merge, link, not_linked, accept_missing };
+inline constexpr auto rejected_transfer_merge_question = "merge-rejected-transfer";
 struct ReviewAnswer {
     std::int64_t generation=0;
     std::string question;

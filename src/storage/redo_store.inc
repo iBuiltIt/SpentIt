@@ -126,7 +126,7 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
         app::LinkExclusion rule{saved.bytes(0),saved.bytes(1),saved.bytes(2),saved.integer(3),saved.integer(4)!=0,saved.integer(5)!=0};
         frame.replay=[rule](ImportStore& store,std::string_view operation){store.save_link_exclusion(operation,rule,store.ledger_edit_generation());};return frame;
     }
-    if(question=="batch" || question=="selected" || question.starts_with("same:") || question.starts_with("link:") || question.starts_with("waiting:")) {
+    if(question=="batch" || question=="selected" || question==app::rejected_transfer_merge_question || question.starts_with("same:") || question.starts_with("link:") || question.starts_with("waiting:")) {
         std::vector<app::ReviewAnswer> answers;
         if(question=="batch"){transfer_codec::Reader in{std::string_view(request).substr(6)};while(!in.bytes.empty())answers.push_back(redo_answer(in.text()));}else answers.push_back(redo_answer(request));
         std::vector<std::string> created_links;

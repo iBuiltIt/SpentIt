@@ -217,7 +217,8 @@ app::ReviewSheet ImportStore::review_sheet() const {
     auto result=build_review_sheet(link_exclusions());
     impl_->sheet_cache=result;impl_->sheet_changes=sqlite3_total_changes64(impl_->db);return result;
 }
-app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExclusion>& exclusions) const {
+app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExclusion>& exclusions,
+                                                const std::set<imports::Occurrence>& rejected_pair) const {
     ScopedStatements plans(impl_->db);
     struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
     app::ReviewSheet result;result.generation=review_generation(impl_->db);
@@ -489,26 +490,35 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     impl_->link_rows=rows;impl_->link_edges=std::move(edges);impl_->link_alias_stamp=alias_stamp;impl_->link_occupied=occupied;
     std::map<std::string,bool> current_review_answers;
-    const auto pair_closed=[&](const imports::Occurrence& a,const imports::Occurrence& b){
+    enum class PairDecision { open, linked, rejected };
+    const auto pair_decision=[&](const imports::Occurrence& a,const imports::Occurrence& b){
         Statement decisions(impl_->db,R"SQL(
-SELECT answer.id,answer.action FROM review_choices p
+SELECT answer.id,answer.action,answer.question FROM review_choices p
 JOIN review_choices q ON q.answer=p.answer AND q.kind=p.kind
 JOIN review_answers answer ON answer.id=p.answer
 WHERE p.kind=1 AND p.batch=?1 AND p.ordinal=?2 AND q.batch=?3 AND q.ordinal=?4
 AND (p.resolved=1 OR q.resolved=1) AND answer.action IN(?5,?6)
 AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
+ORDER BY answer.sequence DESC
 )SQL");
         decisions.text(1,a.batch);decisions.integer(2,integer(a.ordinal));
         decisions.text(3,b.batch);decisions.integer(4,integer(b.ordinal));
         decisions.integer(5,static_cast<int>(app::ReviewAction::not_linked));
         decisions.integer(6,static_cast<int>(app::ReviewAction::link));
+        // A saved override supersedes older rejections for these two occurrences.
+        // An undone override is filtered out above, exposing the old decision again.
+        bool overridden=false,rejected=false;
         while(decisions.row()){
-            if(decisions.integer(1)==static_cast<int>(app::ReviewAction::not_linked))return true;
+            if(decisions.integer(1)==static_cast<int>(app::ReviewAction::not_linked)){
+                rejected|=!overridden;
+                continue;
+            }
+            overridden|=decisions.bytes(2)==app::rejected_transfer_merge_question;
             auto [cached,inserted]=current_review_answers.try_emplace(decisions.bytes(0),false);
             if(inserted)cached->second=review_link_still_current(impl_->db,cached->first,live_review_links);
-            if(cached->second)return true;
+            if(cached->second)return PairDecision::linked;
         }
-        return false;
+        return rejected?PairDecision::rejected:PairDecision::open;
     };
     const auto outgoing=[](const app::ReviewTransaction& row){
         return std::any_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[](const auto& part){return part.amount.units()<0;});
@@ -519,6 +529,7 @@ AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
     };
     std::map<imports::Occurrence,std::size_t> link_sources;
     for(const auto& [id,left]:rows){
+        if(!rejected_pair.empty() && !rejected_pair.contains(id))continue;
         if(suppressed.contains(id) || linked.contains(id) || duplicate_rows.contains(id) || (left.committed && !repair_origins.contains(id)))continue;
         auto source=left;if(repair_origins.contains(id))source.note=repair_origins.at(id);
         std::vector<app::ReviewTransaction> candidates{source};
@@ -526,9 +537,12 @@ AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
         if(found!=impl_->link_edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 eligible counterparts; select this transfer manually",id.batch,id.ordinal,{left}});continue;}
         if(found!=impl_->link_edges.end())for(const auto& [other,difference]:found->second){
             const auto target=rows.find(other);if(target==rows.end())continue;const auto& right=target->second;
-            if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other) || pair_closed(id,other))continue;
+            if(!rejected_pair.empty() && !rejected_pair.contains(other))continue;
+            if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other))continue;
             if(repair_origins.contains(other) && !repair_origins.contains(id))continue;
             if(!right.committed && !repair_origins.contains(id) && !prefer_origin(left,right))continue;
+            const auto decision=pair_decision(id,other);
+            if(decision!=(rejected_pair.empty()?PairDecision::open:PairDecision::rejected))continue;
             auto candidate=right;
             candidate.note=(difference?"Explicit transfer destination; outgoing difference at most 4%; ":"Equal opposite allocation amounts; ")+std::to_string(std::abs(days.at(id)-days.at(other)))+" calendar day(s) apart";
             if(repair_origins.contains(other))candidate.note+=". "+repair_origins.at(other);
@@ -561,6 +575,7 @@ AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
         }),choices.end());
     }
     std::erase_if(result.questions,[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()==1;});
+    if(!rejected_pair.empty())return result;
     for(const auto& value:relationships){
         const auto& link=value.link;
         if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
@@ -584,6 +599,53 @@ AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=answer.id)
     }
     std::stable_sort(result.questions.begin(),result.questions.end(),[](const auto& a,const auto& b){return a.account<b.account;});
     return result;
+}
+app::ReviewSheet ImportStore::preview_rejected_transfer_merge(const std::vector<imports::Occurrence>& selected) const {
+    if(selected.size()!=2)return {};
+    const auto extra=[](const imports::Occurrence& id){return id.batch.starts_with("~transfer-");};
+    if(extra(selected[0])==extra(selected[1]))return {};
+    const auto& created=extra(selected[0])?selected[0]:selected[1];
+    const auto& bank=extra(selected[0])?selected[1]:selected[0];
+    if(account_for_batch(bank.batch).identity!=impl_->selected_account)return {};
+    for(const auto& value:all_transfers()){
+        const auto& link=value.link;
+        if(link.destination.endpoint.entry==created && link.destination.endpoint.account==impl_->selected_account &&
+           !link.unresolved && !link.destination_released && link.destination.state!=transfers::State::removed)
+            return rejected_transfer_merge({link.origin.endpoint.entry,bank},&created);
+    }
+    return {};
+}
+app::ReviewSheet ImportStore::rejected_transfer_merge(const std::set<imports::Occurrence>& pair,
+                                                     const imports::Occurrence* extra) const {
+    if(pair.size()!=2)return {};
+    auto sheet=build_review_sheet(link_exclusions(),pair);
+    const auto relationships=all_transfers();
+    for(auto& question:sheet.questions){
+        if(question.kind!=app::ReviewKind::link || question.rows.size()!=2)continue;
+        const auto& left=question.rows[0];
+        const auto& right=question.rows[1];
+        if(right.suggested_left_allocation.empty() || right.suggested_right_allocation.empty() ||
+           batch(impl_->db,left.identity.batch).manual || batch(impl_->db,right.identity.batch).manual)continue;
+        bool replaces_extra=false;
+        for(const auto& value:relationships){
+            const auto& link=value.link;
+            if(link.unresolved || link.destination_released || link.origin.state==transfers::State::removed ||
+               link.destination.state==transfers::State::removed)continue;
+            const auto& endpoint=link.origin.endpoint;
+            if(!(endpoint.entry==left.identity && endpoint.allocation==right.suggested_left_allocation) &&
+               !(endpoint.entry==right.identity && endpoint.allocation==right.suggested_right_allocation))continue;
+            const auto& destination=link.destination;
+            if(link.preserved_amounts || destination.independent_evidence || destination.ledger_entry || destination.manually_entered || destination.attached_evidence ||
+               destination.proposed_evidence || destination.accepted_unmatched || destination.state!=transfers::State::draft)return {};
+            const auto& bank=endpoint.entry==left.identity?right:left;
+            if(destination.endpoint.account!=bank.account)return {};
+            if(!extra || destination.endpoint.entry==*extra)replaces_extra=true;
+        }
+        if(!replaces_extra)continue;
+        question.key=app::rejected_transfer_merge_question;
+        return {sheet.generation,{std::move(question)}};
+    }
+    return {};
 }
 std::optional<app::ReviewReceipt> ImportStore::review_outcome(std::string_view operation) const {
     if(!impl_->composing_rule_save && !impl_->undo_joined && !sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
@@ -778,6 +840,8 @@ app::ReviewReceipt ImportStore::answer_automatic_review(std::string_view operati
     return write_automatic_review(operation,answer,{});
 }
 app::ReviewReceipt ImportStore::write_automatic_review(std::string_view operation,const app::ReviewAnswer& answer,std::string_view parent) {
+    if(answer.question==app::rejected_transfer_merge_question)
+        fail(SQLITE_CONSTRAINT,"Select the two rows in the ledger to merge this payment.");
     // A saved retry must match its original request. It does not rebuild Review.
     // The import batch is already inside its transaction, so this lookup is not
     // an outcome check across a commit boundary.
@@ -857,7 +921,22 @@ app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const a
     diag::Span span(diag::Code::review_write);
     identifier(operation);if(operation.size()>80)fail(SQLITE_MISUSE);const auto encoded=review_request(answer);
     if(const auto prior=review_outcome(operation)){Statement s(impl_->db,"SELECT request FROM review_answers WHERE id=?");s.text(1,operation);if(!s.row() || s.bytes(0)!=encoded)fail(SQLITE_CONSTRAINT,"Review retry changed its answer");return *prior;}
-    auto sheet=review_sheet();if(sheet.generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");if(sheet.generation!=answer.generation)fail(SQLITE_CONSTRAINT,"The transactions changed. Review them again.");
+    const auto generation=review_generation(impl_->db);
+    if(generation==INT64_MAX)fail(SQLITE_FULL,"Revision capacity exhausted");
+    if(generation!=answer.generation)fail(SQLITE_CONSTRAINT,"The transactions changed. Review them again.");
+    if(answer.question==app::rejected_transfer_merge_question){
+        if(answer.action!=app::ReviewAction::link || answer.automatic || answer.split_difference ||
+           answer.survivor || !answer.remainder_category.empty() || answer.selected.size()!=2)
+            fail(SQLITE_CONSTRAINT,"Select the two rows for this payment again.");
+        const auto sheet=rejected_transfer_merge({answer.selected.begin(),answer.selected.end()});
+        if(sheet.questions.empty())fail(SQLITE_CONSTRAINT,"These rows no longer match. Select the bank transaction and its extra entry again.");
+        const auto& rows=sheet.questions.front().rows;
+        if(answer.selected.front()!=rows.front().identity || answer.left_allocation!=rows.back().suggested_left_allocation ||
+           answer.right_allocation!=rows.back().suggested_right_allocation)
+            fail(SQLITE_CONSTRAINT,"These rows no longer match. Select the bank transaction and its extra entry again.");
+        return write_review_answer(operation,answer,sheet);
+    }
+    auto sheet=review_sheet();
     if(answer.question=="selected" && answer.action==app::ReviewAction::merge){
         const auto owner=account();app::ReviewQuestion manual{"selected",app::ReviewKind::same,owner.identity,owner.name,"Are these the same?","",{}, {}};
         const std::set<imports::Occurrence> wanted(answer.selected.begin(),answer.selected.end());

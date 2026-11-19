@@ -12,6 +12,23 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Merge after Not this transfer — 2026-11-19
+
+Selecting the bank posting and its extra entry in one ledger now lets **Merge**
+override the saved rejection for that pair. The confirmation shows both bank
+postings. The merge keeps and links them and removes their eligible extra
+entries. It saves one Undo action, and Undo restores the prior rejection.
+See [Review](review-sheet.md#merge-after-not-this-transfer) and
+[MAN-100](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, ten targeted rules-enabled Release CTest
+targets and five offscreen UI cases passed, including the repeated same-day
+payment sequence, other saved decisions, Cancel, Undo, Redo, and reopen.
+Storage checks covered stale and automatic requests, disk-full and write
+failures, retry, and process exit on each side of durable commit. The focused
+storage test also passed under AddressSanitizer and UndefinedBehaviorSanitizer
+with leak detection disabled. Native interactive testing was unverified.
+
 ## Date format in Current file settings — 2026-11-19
 
 The date format selector from file creation is also available under

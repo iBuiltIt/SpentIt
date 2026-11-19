@@ -1195,6 +1195,115 @@ private slots:
         run(m,"commit");QVERIFY(m.state().value("linkedRows").toMap().isEmpty());QCOMPARE(m.state().value("balance").toString(),QString("450.00"));
         run(m,"select_account",{{"id","1"}});QVERIFY(m.state().value("linkedRows").toMap().isEmpty());QCOMPARE(m.state().value("balance").toString(),QString("-450.00"));
     }
+    void ledgerMergeAfterTransferRejection() {
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        const auto path=dir.path()+"/doc";
+        run(model,"create",{{"path",path},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"automatic_review_settings",{{"kind","link"},{"enabled",false}});
+        const auto import=[&](bool outgoing){
+            QByteArray data;
+            for(int i=1;i<=3;++i){
+                data+=i==3?"D2026-03-01\n":"D2026-02-01\n";
+                data+=outgoing?"T-10\nPOutgoing ":"T10\nPIncoming ";
+                data+=QByteArray::number(i);
+                data+=outgoing?"\nL[Savings]\n^\n":"\nL[Checking]\n^\n";
+            }
+            run(model,"import",{{"path",fixture(dir.path(),data)}});
+        };
+        run(model,"select_account",{{"id","1"}});
+        import(true);
+        run(model,"select_account",{{"id","2"}});
+        import(false);
+        const auto card=[&](const QString& payee){
+            for(const auto& value:model.state().value("reviewQuestions").toList()){
+                const auto question=value.toMap();
+                const auto rows=question.value("rows").toList();
+                if(rows.size()>1 && rows.front().toMap().value("payee")==payee)return question;
+            }
+            return QVariantMap{};
+        };
+        for(const auto* payee:{"Outgoing 1","Outgoing 3"}){
+            const auto question=card(payee);
+            QVERIFY(!question.isEmpty());
+            run(model,"review_answer",{{"answer","not_linked"},{"question",question.value("key")},
+                                       {"generation",model.state().value("reviewGeneration")}});
+        }
+        const auto second=card("Outgoing 2");
+        const auto rows=second.value("rows").toList();
+        QCOMPARE(rows.size(),3);
+        QVariantMap secondBank;
+        for(const auto& row:rows)if(row.toMap().value("payee")=="Incoming 2")secondBank=row.toMap();
+        QVERIFY(!secondBank.isEmpty());
+        run(model,"review_answer",{{"answer","link"},{"question",second.value("key")},{"onlyThisPair",true},
+                                   {"generation",model.state().value("reviewGeneration")},
+                                   {"selected",QVariantList{rows.front(),secondBank}}});
+        run(model,"automatic_review_settings",{{"kind","link"},{"enabled",true}});
+        const auto prior=model.state().value("actionUndo").toMap().value("id");
+        QVERIFY(!prior.toString().isEmpty());
+        QVERIFY(card("Outgoing 1").isEmpty() && card("Outgoing 3").isEmpty());
+        QCOMPARE(model.state().value("balance").toString(),"50.00");
+        const auto selectRows=[&](const QString& incoming,const QString& extra){
+            int bank=-1,generated=-1;
+            for(int i=0;i<model.rowCount();++i){
+                const auto record=model.rowRecord(i);
+                const bool created=record.value("batch").toString().startsWith("~transfer-");
+                if(!created && record.value("payee")==incoming)bank=i;
+                if(created && record.value("payee")==extra)generated=i;
+            }
+            QVERIFY(bank>=0 && generated>=0);
+            run(model,"select",{{"row",bank}});
+            run(model,"select",{{"row",generated},{"toggle",true}});
+        };
+        selectRows("Incoming 3","Outgoing 1");
+        run(model,"review_rejected_merge_preview",{},false);
+        QCOMPARE(model.state().value("actionUndo").toMap().value("id"),prior);
+        selectRows("Incoming 1","Outgoing 1");
+        auto* dialog=window->findChild<QObject*>("ledgerTransferMerge");
+        QVERIFY(dialog);
+        auto* merge=window->findChild<QObject*>("duplicateMergeSelection");
+        QVERIFY(merge && merge->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(merge,"triggered"));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        const auto preview=model.state().value("reviewLinkPreview").toMap();
+        QVERIFY(preview.value("rejectedMerge").toBool());
+        QCOMPARE(preview.value("postings").toList().size(),2);
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("cancelLedgerTransferMerge"),"clicked"));
+        QVERIFY(!dialog->property("visible").toBool());
+        QCOMPARE(model.state().value("actionUndo").toMap().value("id"),prior);
+        QVERIFY(QMetaObject::invokeMethod(merge,"triggered"));
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(window->findChild<QObject*>("confirmLedgerTransferMerge"),"clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(!model.busy(),30000);
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.state().value("actionUndo").toMap().value("label").toString(),"Merge");
+        QCOMPARE(model.state().value("balance").toString(),"40.00");
+        QCOMPARE(model.state().value("linkedRows").toMap().size(),4);
+        QVERIFY(card("Outgoing 3").isEmpty());
+        run(model,"select_account",{{"id","1"}});
+        QCOMPARE(model.state().value("balance").toString(),"-40.00");
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        QCOMPARE(model.state().value("actionUndo").toMap().value("id"),prior);
+        QCOMPARE(model.state().value("balance").toString(),"-50.00");
+        QVERIFY(card("Outgoing 1").isEmpty() && card("Outgoing 3").isEmpty());
+        QCOMPARE(model.state().value("linkedRows").toMap().size(),2);
+        run(model,"redo_action",model.state().value("actionRedo").toMap());
+        QCOMPARE(model.state().value("balance").toString(),"-40.00");
+        run(model,"close");
+        run(model,"open",{{"path",path}});
+        QCOMPARE(model.state().value("balance").toString(),"-40.00");
+        QCOMPARE(model.state().value("linkedRows").toMap().size(),4);
+        QVERIFY(card("Outgoing 3").isEmpty());
+    }
     void unifiedReviewLinkDifference() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));QVERIFY(!engine.rootObjects().isEmpty());auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
         run(m,"create",{{"path",dir.path()+"/doc"},{"protected",false},{"name","Checking"},{"currency","CAD"},{"defaultCategories",true}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});

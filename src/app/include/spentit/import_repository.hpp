@@ -349,6 +349,7 @@ public:
     virtual LinkExclusionPreview preview_link_exclusion(const LinkExclusion&) const {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewReceipt save_link_exclusion(std::string_view,const LinkExclusion&,std::int64_t) {throw std::logic_error("Link exclusions unavailable");}
     virtual ReviewSheet review_sheet() const {return {};}
+    virtual ReviewSheet preview_rejected_transfer_merge(const std::vector<imports::Occurrence>&) const {return {};}
     // A fixed, conservative plan for pairs involving this completed import.
     virtual std::vector<ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const {return {};}
     virtual ReviewReceipt answer_automatic_review(std::string_view operation,const ReviewAnswer& answer) {return answer_review(operation,answer);}

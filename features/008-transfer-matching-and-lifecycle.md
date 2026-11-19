@@ -43,6 +43,10 @@ counterparts save together in one Undo step. See
   one selected transaction. A kept merge and a resolved link stay marked on new
   transactions until acceptance. The contract is
   [review sheet](../doc/review-sheet.md).
+- Selecting the imported bank posting and the eligible extra entry in one
+  account lets ledger Merge override a saved **Not this transfer** answer for
+  that pair. It saves as one Merge action. Undo restores the extra entries and
+  the prior answer. See [Merge after Not this transfer](../doc/review-sheet.md#merge-after-not-this-transfer).
 - Link of unequal amounts in one currency is refused unless the user uses the
   amount-difference action, which splits the larger allocation, categorizes
   the remainder, and links the common amount. No fee and no rate are invented.

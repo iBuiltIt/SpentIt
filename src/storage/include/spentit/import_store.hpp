@@ -190,6 +190,7 @@ public:
     app::LinkExclusionPreview preview_link_exclusion(const app::LinkExclusion&) const override;
     app::ReviewReceipt save_link_exclusion(std::string_view,const app::LinkExclusion&,std::int64_t) override;
     app::ReviewSheet review_sheet() const override;
+    app::ReviewSheet preview_rejected_transfer_merge(const std::vector<imports::Occurrence>&) const override;
     std::vector<app::ReviewAnswer> automatic_review_plan(const std::vector<std::string>&,bool,bool) const override;
     app::ReviewReceipt link_review_group(std::string_view,const app::ReviewAnswer&,const app::OperationContext&) override;
     app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
@@ -336,7 +337,10 @@ private:
     bool review_draft_undo(const imports::Occurrence&,std::int64_t,const imports::DraftRow&) const;
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t,bool historical_currency=false) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);
-    app::ReviewSheet build_review_sheet(const std::vector<app::LinkExclusion>&) const;
+    app::ReviewSheet build_review_sheet(const std::vector<app::LinkExclusion>&,
+                                       const std::set<imports::Occurrence>& rejected_pair={}) const;
+    app::ReviewSheet rejected_transfer_merge(const std::set<imports::Occurrence>&,
+                                            const imports::Occurrence* extra=nullptr) const;
     void verify_link_exclusions() const;
     struct Impl;
     std::unique_ptr<Impl> impl_;

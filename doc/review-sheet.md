@@ -111,7 +111,8 @@ cards still count. Missing-destination warnings stay in their own count.
 
 If an edit breaks a saved Link, Review can offer those postings again when
 they meet the current matching criteria. A saved **Not this transfer** decision
-still suppresses its pair until the decision is undone.
+still suppresses its pair until Undo or an explicit ledger Merge for that pair.
+See [Merge after Not this transfer](#merge-after-not-this-transfer).
 
 ## Link card — owner Go, 2026-11-12
 
@@ -570,6 +571,24 @@ The ledger shows result marks:
 - The ledger menu **Unmerge** is available on one joined row, including after the file is closed. On the kept row of a single keep-one merge, it puts the transaction that left back on the ledger as it was at the merge, and leaves a later edit of the kept row in place. On one green linked row, it asks before separating that link. If the join removed an extra entry, the message names every account that gets a row back. The blue edges come back on those rows while they are still new. Merge joins that payment again, and Review shows both lines with Link and Not this transfer. After Accept, Unmerge stays available on that payment. The accepted payments stay accepted, the extra entries come back and are not accepted, and those accepted rows have no blue edge. Review still shows both lines. If both transactions stayed, the message says both stay and they will no longer be one transfer. It stays unavailable when the selection is anything else, or when that row is part of more than one join. **Unmerge** is its own Change history row. Undo of that row puts the join back.
 
 Review's duplicate questions and transfer questions stay as they are.
+
+### Merge after Not this transfer
+
+Select the imported bank posting and the extra entry SpentIt created for the
+payment in the same account, then choose **Merge**. When the current transfer
+matching rules allow one exact allocation pair and a saved **Not this
+transfer** decision hides it, the confirmation shows both bank postings.
+Confirming keeps and links the originals and removes the extra entries for
+that payment. A generated entry already accepted without a bank match is
+outside this override.
+
+The explicit choice supersedes the rejection for the selected two bank
+postings, including when the rejection covered several possible partners.
+Other saved decisions remain effective. The merge saves as one **Merge**
+action, including when Auto Link is on. Undo restores the original
+relationships and makes the prior rejection effective again. Redo replays
+the same pair. This action is available after closing and reopening the file
+while the selected entries remain eligible.
 
 ### Unmerge safety and retries — 2026-11-14
 

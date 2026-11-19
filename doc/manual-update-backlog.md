@@ -22,14 +22,18 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-100. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-101. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
 
-None.
+- **MAN-100 · 2026-11-19** Update [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
+  to explain how to select both rows and use **Merge** after **Not this transfer**.
+  Add the confirmation showing the two bank postings and explain what one Undo
+  restores. Capture the confirmation with synthetic data.
+  [Contract](review-sheet.md#merge-after-not-this-transfer)
 
 ## Recapturing pictures
 

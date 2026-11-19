@@ -299,6 +299,7 @@ QString phaseFor(const QString& action){
     if(action=="exchange_export")return "Exporting SpentIt definitions…";
     if(action.startsWith("exchange_"))return "Preparing file exchange…";
     if(action=="review_answer")return "Saving Review decision";
+    if(action=="review_rejected_merge_preview")return "Checking the selected payment";
     if(action=="review_batch")return "Checking selected matches";
     if(action=="assign_transfer_batch")return "Assigning selected transfers";
     if(action=="release_transfer_batch")return "Changing categories";
@@ -1990,6 +1991,25 @@ struct ImportModel::Worker {
             else if(receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
             diagnosticSaved=true;selected.clear();return;
         }
+        if(action=="review_rejected_merge_preview"){
+            reviewLinkPreview.clear();
+            std::vector<imports::Occurrence> rows(selection.begin(),selection.end());
+            const auto preview=repo.preview_rejected_transfer_merge(rows);
+            if(preview.questions.empty())throw std::invalid_argument("These rows cannot be merged as a payment. Select a bank transaction and the extra entry for that payment.");
+            const auto& question=preview.questions.front();
+            const auto& partner=question.rows.back();
+            QVariantList selectedRows,postingDetails;
+            for(const auto& row:question.rows){
+                selectedRows.push_back(QVariantMap{{"batch",text(row.identity.batch)},{"ordinal",static_cast<int>(row.identity.ordinal)}});
+                postingDetails.push_back(QString("%1 · %2 · %3 · %4").arg(text(row.account_name),dateText(row.draft.date),text(row.draft.payee),
+                                          money(row.draft.transaction.effective_total(),amountFormat)));
+            }
+            QVariantMap args{{"question",text(question.key)},{"generation",QString::number(preview.generation)},
+                             {"answer","link"},{"onlyThisPair",true},{"selected",selectedRows},
+                             {"leftAllocation",text(partner.suggested_left_allocation)},{"rightAllocation",text(partner.suggested_right_allocation)}};
+            reviewLinkPreview={{"rejectedMerge",true},{"args",args},{"postings",postingDetails}};
+            return;
+        }
         if(action=="review_answer" || action=="review_link_preview") {
             reviewFeedback.clear();
             app::ReviewAnswer answer;answer.generation=a.value("generation").toString().toLongLong();answer.question=str(a.value("question"));
@@ -2011,10 +2031,12 @@ struct ImportModel::Worker {
                 }
             }
             const auto op=identity();app::ReviewReceipt receipt;
-            const bool follow=answer.action==app::ReviewAction::link && !a.value("onlyThisPair").toBool() && automaticReviewPreference("AutoLink");
+            const bool rejectedMerge=answer.question==app::rejected_transfer_merge_question;
+            const bool follow=answer.action==app::ReviewAction::link && !rejectedMerge && !a.value("onlyThisPair").toBool() && automaticReviewPreference("AutoLink");
             if(follow){auto sealed=app::OperationContext::sealed;if(context.state.compare_exchange_strong(sealed,app::OperationContext::available))context.observeState();}
             try{receipt=follow?repo.link_review_group(op,answer,context):repo.answer_review(op,answer);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
             if(receipt.linked_pairs>1)reviewFeedback=QString("Linked the selected pair and %1 additional %2. Undo reverses them together.").arg(receipt.linked_pairs-1).arg(receipt.linked_pairs==2?"pair":"pairs");
+            if(rejectedMerge)reviewFeedback="Payment merged. Undo restores the extra entries and the previous decision.";
             diagnosticSaved=true;reviewLinkPreview.clear();selected.clear();
             if(answer.action==app::ReviewAction::merge && answer.survivor){selection={*answer.survivor};selectionFocus=answer.survivor;selectionAnchor=answer.survivor;}
             return;

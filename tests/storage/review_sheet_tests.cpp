@@ -1852,11 +1852,116 @@ void decision_batch_faults(const std::filesystem::path& dir) {
     std::cout<<"Decision batch Link fault positions: "<<positions<<"\n";
 }
 
+void rejected_merge_faults(const std::filesystem::path& dir) {
+    fault_vfs::install();
+    const Currency cad("CAD");
+    const auto baseline=dir/"rejected-merge";
+    ReviewAnswer answer;
+    {
+        auto store=ImportStore::create(baseline,"test","Checking",cad,"2026-01-01");
+        store.opening(0,"2026-01-01",Money(0,cad));
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.ingest("out","!Type:Bank\nD01/02/2026\nT-10.00\nPOutgoing\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        store.select_account(2);
+        store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("in","!Type:Bank\nD01/02/2026\nT10.00\nPIncoming\nL[Checking]\n^\n",qif::DateOrder::dmy);
+        answer=disjoint_link_answers(store).at(0);
+        answer.action=ReviewAction::not_linked;
+        store.answer_review("reject",answer);
+        check(open_link_questions(store)==0,"Rejection hides the pair");
+        test_session::close_reopen(store,baseline,"test");
+        const auto links=store.transfers();
+        const auto extra=[&](int account){
+            const auto found=std::find_if(links.begin(),links.end(),[&](const auto& link){return link.link.destination.endpoint.account==account;});
+            check(found!=links.end(),"The extra entry exists");
+            return found->link.destination.endpoint.entry;
+        };
+        store.select_account(1);
+        const auto in_checking=store.preview_rejected_transfer_merge({{"out",0},extra(1)});
+        store.select_account(2);
+        const auto preview=store.preview_rejected_transfer_merge({extra(2),{"in",0}});
+        check(in_checking.questions.size()==1 && preview.questions.size()==1,"A rejected pair can be merged from either account after a clean close");
+        const auto& question=preview.questions.front();
+        answer.generation=preview.generation;
+        answer.question=question.key;
+        answer.action=ReviewAction::link;
+        answer.selected={question.rows.front().identity,question.rows.back().identity};
+        answer.left_allocation=question.rows.back().suggested_left_allocation;
+        answer.right_allocation=question.rows.back().suggested_right_allocation;
+        auto stale=answer;
+        --stale.generation;
+        bool refused=false;
+        try{store.answer_review("stale",stale);}catch(const storage::ImportError&){refused=true;}
+        check(refused && !store.review_outcome("stale"),"A stale Merge preview saves nothing");
+        auto automatic=answer;
+        automatic.automatic=true;
+        refused=false;
+        try{store.answer_automatic_review("automatic",automatic);}catch(const storage::ImportError&){refused=true;}
+        check(refused && !store.review_outcome("automatic"),"An automatic answer cannot override the rejection");
+    }
+    const auto verify=[](ImportStore& store,bool merged){
+        store.verify();
+        check(store.review_outcome("merge-rejected").has_value()==merged,"The Merge receipt matches the durable result");
+        check(open_link_questions(store)==0,"The pair stays out of suggestions before and after Merge");
+        for(const auto account:{1,2}){
+            store.select_account(account);
+            check(store.current_ledger().size()==(merged?1u:2u),"The two extra entries are retired together");
+            check(store.balance().units()==(account==1?-1:1)*(merged?1000:2000),"Both account balances reconcile after interruption");
+        }
+        if(merged)check(store.action_head() && store.action_head()->id=="merge-rejected" &&
+                        store.action_display_label(*store.action_head())=="Merge","Merge publishes one Undo action");
+    };
+    for(const auto error:{SQLITE_FULL,SQLITE_IOERR_WRITE}){
+        const auto trial=dir/("rejected-write-"+std::to_string(error));
+        std::filesystem::copy_file(baseline,trial);
+        {
+            auto store=ImportStore::open(trial,"test");
+            fault_vfs::arm(1,error);
+            try{store.answer_review("merge-rejected",answer);}catch(const std::exception&){}
+            const bool fired=fault_vfs::fired;
+            fault_vfs::disarm();
+            check(fired,"The injected write failed");
+        }
+        auto store=ImportStore::open(trial,"test");
+        verify(store,false);
+        store.answer_review("merge-rejected",answer);
+        store.answer_review("merge-rejected",answer);
+        verify(store,true);
+        store.undo_action("undo-merge",store.preview_undo("merge-rejected",store.action_token()));
+        check(store.current_ledger().size()==2 && open_link_questions(store)==0,"Undo restores the extra entries and the rejection");
+        store.verify();
+    }
+    for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const auto trial=dir/("rejected-crash-"+std::to_string(static_cast<int>(phase)));
+        std::filesystem::copy_file(baseline,trial);
+        const auto child=fork();
+        check(child>=0,"fork");
+        if(child==0){
+            try{
+                auto store=ImportStore::open(trial,"test");
+                store.observer([&](auto at){if(at==phase)_exit(71);});
+                store.answer_review("merge-rejected",answer);
+                _exit(72);
+            }catch(...){_exit(73);}
+        }
+        int status=0;
+        check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Merge was interrupted at the expected commit boundary");
+        auto store=ImportStore::open(trial,"test");
+        verify(store,phase==storage::ImportPhase::after_commit);
+        if(phase==storage::ImportPhase::after_commit){
+            store.unmerge("separate-payment",{{"in",0}});
+            check(open_link_questions(store)==1,"After Unmerge, the superseded rejection does not hide the pair");
+            store.verify();
+        }
+    }
+}
+
 int main(int argc,char** argv){
     char folder[]="/tmp/spentit-review-sheet-XXXXXX";const auto dir=mkdtemp(folder);if(!dir)return 2;const auto path=std::filesystem::canonical(dir)/"data";
     try{
         if(argc>1 && std::string(argv[1])=="follow"){follow_link_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="decision_faults"){decision_batch_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
+        if(argc>1 && std::string(argv[1])=="rejected_merge_faults"){rejected_merge_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="link_batch"){link_batch_tests(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="follow_faults"){follow_link_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
         if(argc>1 && std::string(argv[1])=="automatic_faults"){automatic_review_faults(std::filesystem::canonical(dir));std::filesystem::remove_all(dir);return 0;}
