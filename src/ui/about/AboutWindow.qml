@@ -47,10 +47,12 @@ ApplicationWindow {
     function showPage(next) {
         page = next
         Qt.callLater(function() {
+            if (about.page !== next) return
             if (next === 2) components.forceActiveFocus()
-            else licenseText.forceActiveFocus()
+            else noticePane.item.textArea.forceActiveFocus()
         })
     }
+    onPageChanged: noticePane.reload()
     onClosing: dismissed()
     Shortcut {
         sequence: "Escape"
@@ -124,23 +126,32 @@ ApplicationWindow {
                 highlighted: components.highlightedIndex === index
             }
             Accessible.name: "Third-party component"
-            onCurrentIndexChanged: noticeScroll.contentItem.contentY = 0
+            onCurrentIndexChanged: if (about.page === 2) noticePane.reload()
         }
-        ScrollView {
-            id: noticeScroll
+        Loader {
+            id: noticePane
+            active: false
             visible: about.page !== 0
             Layout.fillWidth: true; Layout.fillHeight: true
-            clip: true
-            contentWidth: availableWidth
-            TextArea {
-                id: licenseText; objectName: "aboutNoticeText"
-                text: about.page === 1 ? information.terms : ((components.model[components.currentIndex] || {}).text || "")
-                textFormat: TextEdit.PlainText
-                wrapMode: TextEdit.Wrap
-                readOnly: true; selectByMouse: true; activeFocusOnTab: true
-                Accessible.name: about.page === 1 ? "License and terms" : "Third-party notice"
-                background: Rectangle { color: about.palette.base; border.color: licenseText.activeFocus ? about.palette.highlight : about.palette.mid }
-                onTextChanged: { cursorPosition = 0; noticeScroll.contentItem.contentY = 0 }
+            function reload() {
+                // A long TextArea can leave its previously rendered slice in
+                // place after the text changes, even with contentY at the top.
+                active = false
+                active = about.page !== 0
+            }
+            sourceComponent: ScrollView {
+                property alias textArea: licenseText
+                clip: true
+                contentWidth: availableWidth
+                TextArea {
+                    id: licenseText; objectName: "aboutNoticeText"
+                    text: about.page === 1 ? information.terms : ((components.model[components.currentIndex] || {}).text || "")
+                    textFormat: TextEdit.PlainText
+                    wrapMode: TextEdit.Wrap
+                    readOnly: true; selectByMouse: true; activeFocusOnTab: true
+                    Accessible.name: about.page === 1 ? "License and terms" : "Third-party notice"
+                    background: Rectangle { color: about.palette.base; border.color: licenseText.activeFocus ? about.palette.highlight : about.palette.mid }
+                }
             }
         }
         RowLayout {

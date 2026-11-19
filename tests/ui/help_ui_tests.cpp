@@ -215,14 +215,14 @@ private slots:
         QVERIFY(tabTo(about, "aboutLicense"));
         QTest::keyClick(about, Qt::Key_Space);
         QCOMPARE(about->property("page").toInt(), 1);
-        auto* text = object(about, "aboutNoticeText");
-        QVERIFY(text);
-        const auto terms = text->property("text").toString();
+        auto* termsText = object(about, "aboutNoticeText");
+        QVERIFY(termsText);
+        const auto terms = termsText->property("text").toString();
         QVERIFY(terms.contains("© 2026 Stefan Wessels"));
         QVERIFY(terms.contains("SpentIt is released under the Unlicense."));
         QVERIFY(terms.contains("You may use, copy, modify, sell, and redistribute SpentIt for any purpose."));
         QVERIFY(terms.contains("Third-party software is covered by its own licenses"));
-        QVERIFY(text->property("readOnly").toBool());
+        QVERIFY(termsText->property("readOnly").toBool());
         if (!capture.isEmpty()) {
             QTest::qWait(100);
             QVERIFY(about->grabWindow().save(capture + "-terms.png"));
@@ -237,17 +237,25 @@ private slots:
             QVERIFY(!entry.value("label").toString().isEmpty());
             QVERIFY(entry.value("text").toString().size() > 100);
         }
-        int qtIndex = -1;
-        for (int i = 0; i < rows.size(); ++i)
-            if (rows[i].toMap().value("label").toString().startsWith("Qt — ")) qtIndex = i;
-        QVERIFY(qtIndex >= 0);
-        QVERIFY(object(about, "aboutComponents")->setProperty("currentIndex", qtIndex));
-        QTRY_VERIFY(text->property("text").toString().contains("GNU LESSER GENERAL PUBLIC LICENSE"));
-        QVERIFY(text->property("text").toString().contains("GNU GENERAL PUBLIC LICENSE"));
+        const auto componentIndex = [&](const QString& name) {
+            for (int i = 0; i < rows.size(); ++i)
+                if (rows[i].toMap().value("label").toString().startsWith(name + " — ")) return i;
+            return -1;
+        };
+        const auto qtIndex = componentIndex("Qt");
+        const auto pngIndex = componentIndex("libpng");
+        const auto shortIndex = pngIndex >= 0 ? pngIndex : componentIndex("PCRE2");
+        QVERIFY(qtIndex >= 0 && shortIndex >= 0);
+        auto* picker = object(about, "aboutComponents");
+        QVERIFY(picker);
+        QVERIFY(picker->setProperty("currentIndex", qtIndex));
+        auto* qtText = visual(about->contentItem(), "aboutNoticeText");
+        QVERIFY(qtText);
+        QTRY_VERIFY(qtText->property("text").toString().contains("GNU LESSER GENERAL PUBLIC LICENSE"));
+        QVERIFY(qtText->property("text").toString().contains("GNU GENERAL PUBLIC LICENSE"));
         if (!capture.isEmpty()) {
             QTest::qWait(150);
             QVERIFY(about->grabWindow().save(capture + "-notices.png"));
-            auto* picker = object(about, "aboutComponents");
             auto* popup = picker->property("popup").value<QObject*>();
             QVERIFY(popup);
             QVERIFY(QMetaObject::invokeMethod(popup, "open"));
@@ -255,6 +263,49 @@ private slots:
             QVERIFY(about->grabWindow().save(capture + "-components.png"));
             QVERIFY(QMetaObject::invokeMethod(popup, "close"));
         }
+        const auto flickFor = [](QQuickItem* item) {
+            while (item && !item->property("contentY").isValid()) item = item->parentItem();
+            return item;
+        };
+        auto* flick = flickFor(qtText);
+        QVERIFY(flick);
+        QTRY_VERIFY(flick->property("contentHeight").toDouble() > 2 * flick->height());
+        QVERIFY(tabTo(about, "aboutComponents"));
+        const auto bottom = flick->property("contentHeight").toDouble() - flick->height();
+        QVERIFY(flick->setProperty("contentY", bottom));
+        QVERIFY(flick->property("atYEnd").toBool());
+        QVERIFY(!about->grabWindow().isNull());
+        QTest::keyClick(about, Qt::Key_Space);
+        auto* popup = picker->property("popup").value<QObject*>();
+        QVERIFY(popup);
+        QTRY_VERIFY(popup->property("visible").toBool());
+        QTest::keyClick(about, Qt::Key_Home);
+        for (int index = 0; index < shortIndex; ++index) QTest::keyClick(about, Qt::Key_Down);
+        QVERIFY(flick->property("atYEnd").toBool());
+        QTest::keyClick(about, Qt::Key_Return);
+        QTRY_COMPARE(picker->property("currentIndex").toInt(), shortIndex);
+        auto* textItem = visual(about->contentItem(), "aboutNoticeText");
+        QVERIFY(textItem);
+        QCOMPARE(textItem->property("text").toString(), rows[shortIndex].toMap().value("text").toString());
+        flick = flickFor(textItem);
+        QVERIFY(flick);
+        QTRY_VERIFY(flick->property("atYBeginning").toBool());
+        const auto cursor = textItem->property("cursorRectangle").toRectF();
+        QVERIFY(flick->contains(textItem->mapToItem(flick, cursor.center())));
+        QCOMPARE(focusName(about), QString("aboutComponents"));
+        const auto titlePainted = [&] {
+            const auto frame = about->grabWindow();
+            const auto start = (textItem->mapToScene(cursor.topLeft()) * frame.devicePixelRatio()).toPoint();
+            const auto title = frame.copy(QRect(start, QSize(200, qCeil(cursor.height() * frame.devicePixelRatio()))));
+            if (title.isNull()) return false;
+            const auto background = title.pixel(0, 0);
+            for (int y = 0; y < title.height(); ++y)
+                for (int x = 0; x < title.width(); ++x)
+                    if (title.pixel(x, y) != background) return true;
+            return false;
+        };
+        QTRY_VERIFY(titlePainted());
+        QVERIFY(tabTo(about, "aboutNoticeText"));
         // Escape returns from reading, then closes About, without touching the file.
         about->requestActivate();
         QTRY_VERIFY(about->isActive());

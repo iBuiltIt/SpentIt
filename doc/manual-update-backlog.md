@@ -31,7 +31,8 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 - **MAN-102 · 2026-11-19** Update the About reference in
   [Backup and recovery](../manual/backup-recovery.md#if-you-still-need-help)
-  to mention that **License and terms** identifies the Unlicense.
+  to mention that **License and terms** identifies the Unlicense and choosing
+  a component under **Third-party software** opens its notice at the top.
   [Contract](../features/007-licensing-and-distribution.md#about)
 
 - **MAN-101 · 2026-11-19** Update [Reports](../manual/reports.md) to explain

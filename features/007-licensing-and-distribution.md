@@ -21,6 +21,7 @@ About shows the application identity and version, **© 2026 Stefan Wessels**,
 and offline third-party notices. **License and terms** names the Unlicense,
 summarizes its permissions, and refers to [LICENSE](../LICENSE) for the full
 terms. Notices must work without a network.
+Selecting another component opens its notice at the top.
 
 ## Packaging
 
