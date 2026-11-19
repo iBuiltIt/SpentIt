@@ -129,6 +129,36 @@ ApplicationWindow {
             }
         }
     }
+    component DateFormatSelector: ColumnLayout {
+        id:selector
+        required property string comboName
+        required property string customName
+        readonly property var presets: ["YYYY-MM-DD","YYYYMMDD","DD-MM-YYYY","DD/MM/YYYY","MM-DD-YYYY","MM/DD/YYYY","Custom…"]
+        readonly property int customIndex: presets.length-1
+        readonly property string format: choices.currentIndex===customIndex?custom.text:choices.currentText
+        readonly property string example: workflow.dateFormatExample(format)
+        signal edited()
+        function setFormat(value) {
+            const index=presets.indexOf(value)
+            choices.currentIndex=index>=0?index:customIndex
+            custom.text=value
+        }
+        Label {text:"Date format"}
+        UsableComboBox {
+            id:choices;objectName:selector.comboName;Layout.preferredWidth:230
+            model:selector.presets;Accessible.name:"Date format"
+            onActivated:{if(currentIndex!==selector.customIndex)custom.text=currentText;selector.edited()}
+        }
+        NavigableTextField {
+            id:custom;objectName:selector.customName;visible:choices.currentIndex===selector.customIndex
+            text:"YYYY-MM-DD";placeholderText:"YYYY-MM-DD";maximumLength:10;Accessible.name:"Custom date format"
+            onTextEdited:selector.edited()
+        }
+        Label {
+            text:selector.example?"Example "+selector.example:"Use YYYY, MM and DD once each, with -, /, . or no separator."
+            wrapMode:Text.Wrap;Layout.fillWidth:true
+        }
+    }
     width: 1440; height: 850; minimumWidth:720; minimumHeight:560; visible: false
     title: s.active ? "SpentIt — "+s.displayPath : "SpentIt"
 
@@ -2335,6 +2365,11 @@ ApplicationWindow {
             }
             if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
             if(success) {
+                if(action==="date_format"){
+                    if(search.text===appliedFilter)search.text=s.filter||""
+                    appliedFilter=s.filter||""
+                    loadEditor()
+                }
                 if(action==="correct_opening")correctAmount.text=s.opening
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
                     addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
@@ -2456,15 +2491,13 @@ ApplicationWindow {
         workflow.command(s.unlockRequired?"unlock":"open",{path:location.text,password:unlockPassword.text})
     }
     property bool setupDateOverridden: false
-    property var datePresets: ["YYYY-MM-DD","YYYYMMDD","DD-MM-YYYY","DD/MM/YYYY","MM-DD-YYYY","MM/DD/YYYY","Custom…"]
     function suggestSetupDate() {
         if(setupDateOverridden)return
-        let format=workflow.suggestedDateFormat(currency.currentText)
-        setupDate.currentIndex=datePresets.indexOf(format);customDate.text=format
+        setupDate.setFormat(workflow.suggestedDateFormat(currency.currentText))
     }
     function createDataset(overwrite) {
         location.text=workflow.datasetFilename(location.text)
-        workflow.command("create",{path:location.text,name:accountName.text,currency:currency.currentText,protected:protection.checked,password:password.text,confirmation:confirmation.text,overwrite:overwrite,dateFormat:setupDate.currentIndex===6?customDate.text:setupDate.currentText,defaultCategories:defaultCategories.checked})
+        workflow.command("create",{path:location.text,name:accountName.text,currency:currency.currentText,protected:protection.checked,password:password.text,confirmation:confirmation.text,overwrite:overwrite,dateFormat:setupDate.format,defaultCategories:defaultCategories.checked})
     }
     HelpDialog {
         helpTarget: "help:create-open-file#choose-a-name-and-place"
@@ -4036,10 +4069,10 @@ ApplicationWindow {
                         Label {text:"Account name"}
                         NavigableTextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
                         RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency";onActivated:suggestSetupDate()}}
-                        Label {text:"Date format"}
-                        UsableComboBox {id:setupDate;objectName:"setupDateFormat";Layout.preferredWidth:230;model:datePresets;Accessible.name:"Date format";onActivated:{setupDateOverridden=true;if(currentIndex<6)customDate.text=currentText}}
-                        NavigableTextField {id:customDate;objectName:"customDateFormat";visible:setupDate.currentIndex===6;text:"YYYY-MM-DD";placeholderText:"YYYY-MM-DD";maximumLength:10;Accessible.name:"Custom date format";onTextEdited:setupDateOverridden=true}
-                        Label {text:"Example: "+workflow.dateFormatExample(setupDate.currentIndex===6?customDate.text:setupDate.currentText);wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        DateFormatSelector {
+                            id:setupDate;comboName:"setupDateFormat";customName:"customDateFormat";Layout.fillWidth:true
+                            onEdited:setupDateOverridden=true
+                        }
                         CheckBox {id:defaultCategories;objectName:"defaultCategories";text:"Use default categories";checked:true}
                         CheckBox {id:protection;objectName:"passwordProtection";text:"Password protection";checked:true}
                         NavigableTextField {id:password;objectName:"newDatasetPassword";echoMode:TextInput.Password;visible:protection.checked;placeholderText:"Password";Layout.fillWidth:true;Accessible.name:"New password"}
@@ -4893,7 +4926,21 @@ ApplicationWindow {
                         Label {text:"Current file settings";font.bold:true}
                         Label {textFormat:Text.PlainText;text:s.path||"";Layout.fillWidth:true;wrapMode:Text.WrapAnywhere}
                         Item {Layout.fillWidth:true;Layout.preferredHeight:4}
-                        Label {text:"Date format: "+(s.dateFormat||"YYYY-MM-DD")}
+                        DateFormatSelector {
+                            id:fileDate;comboName:"fileDateFormat";customName:"fileCustomDateFormat";Layout.fillWidth:true
+                            readonly property string savedFormat: s.dateFormat||"YYYY-MM-DD"
+                            onSavedFormatChanged:setFormat(savedFormat)
+                            onVisibleChanged:if(visible)setFormat(savedFormat)
+                            Component.onCompleted:setFormat(savedFormat)
+                        }
+                        Button {
+                            objectName:"saveDateFormat";text:"Save date format"
+                            enabled:!!fileDate.example && fileDate.format!==fileDate.savedFormat
+                            onClicked:{
+                                const format=fileDate.format
+                                guard(function(){workflow.command("date_format",{format:format})})
+                            }
+                        }
                         RowLayout {
                             CheckBox {objectName:"amountFormatting";text:"Use amount formatting";checked:s.amountFormatting===undefined?true:s.amountFormatting
                                 onToggled:guard(function(){workflow.command("amount_format",{enabled:checked,style:s.amountStyle||"comma-dot"})})}

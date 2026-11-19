@@ -254,7 +254,7 @@ auto lifecycle_snapshot(ImportStore& store) {
     std::vector<std::tuple<std::int64_t,Money,std::optional<Money>>> balances;
     for(const auto& balance:store.account_balances())
         balances.emplace_back(balance.identity,balance.committed,balance.projected);
-    return std::tuple{accounts,balances,store.amount_format(),store.action_token().head};
+    return std::tuple{accounts,balances,store.amount_format(),store.date_format(),store.action_token().head};
 }
 template<class Prepare,class Run,class Done>
 void boundary(const char* name,Prepare prepare,Run run,Done done){
@@ -306,6 +306,28 @@ void formatting_boundaries(){
     boundary("amount-format",[](const fs::path& path){auto store=create(path);publish(store);},
         [](ImportStore& store){store.set_amount_format({false,"space-comma"});},
         [](ImportStore& store){check(store.committed_balance()==Money(9000,cad));check(store.evidence("checking")==bytes);return store.amount_format()==AmountFormat{false,"space-comma"};});
+    boundary("date-format-existing-file",[](const fs::path& path){
+            {auto store=create(path);publish(store);}
+            sqlite3* db=nullptr;
+            check(sqlite3_open(path.c_str(),&db)==SQLITE_OK);
+            check(sqlite3_key(db,password,static_cast<int>(std::string_view(password).size()))==SQLITE_OK);
+            check(sqlite3_exec(db,
+                "DROP TRIGGER dataset_setup_immutable;"
+                "CREATE TRIGGER dataset_preferences_immutable BEFORE UPDATE ON dataset_preferences "
+                "BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END;",
+                nullptr,nullptr,nullptr)==SQLITE_OK);
+            check(sqlite3_close(db)==SQLITE_OK);
+        },
+        [](ImportStore& store){
+            const auto head=store.action_token().head;
+            store.set_date_format("DD.MM.YYYY");
+            check(store.action_token().head==head);
+        },
+        [](ImportStore& store){
+            check(store.committed_balance()==Money(9000,cad) && store.evidence("checking")==bytes);
+            check(store.account().opening_date==date && store.ledger(false).front().draft.date==date);
+            return store.date_format()=="DD.MM.YYYY";
+        });
 }
 void boundaries(){
     fault_vfs::install();

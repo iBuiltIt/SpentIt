@@ -81,4 +81,9 @@ Debug, Release and ASan/UBSan covered the bounded search/bulk paths, including c
 
 Ordinary date text is displayed/searched using the dataset's stored format. Full `period:` dates use that format; named months and four-digit years retain their existing meaning. For the default ISO format, existing unambiguous year-first compact/slash forms remain accepted. Ranges use `..`. Import parsing and raw `QIF:` evidence searches remain independent of display formatting.
 
+Saving a new file date format updates the explicit dates in active and
+remembered per-account `period:` clauses to keep the same calendar bounds.
+Other search terms retain their text and match against the new display format
+in ordinary ledger search.
+
 `category:Auto` selects rows with a bound category equal to Auto or beginning with Auto followed by the colon separator. `category-exact:Auto` selects only direct Auto assignments. `category:"Auto: Gas"` selects that independent category. Matching is Unicode caseless, names are literal, one category filter is allowed, and raw source mode cannot combine with category filters. Unmapped text does not become a catalog binding through a name match. These are row filters: the displayed withdrawal/deposit totals still sum complete matching transactions, including all splits. Future allocation reports remain separate.

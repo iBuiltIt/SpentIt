@@ -292,6 +292,7 @@ QString phaseFor(const QString& action){
     if(action=="resume")return "Importing transactions";
     if(action=="commit")return "Accepting transactions";
     if(action=="change_password")return "Changing password";
+    if(action=="date_format")return "Saving date format";
     if(action=="exchange_import")return "Importing definitions";
     if(action.startsWith("report_pdf_"))return "Preparing PDF…";
     if(action=="exchange_qif_export")return "Exporting QIF…";
@@ -611,6 +612,12 @@ struct ImportModel::Worker {
     QVariantMap reportPeriodKey(const reports::Period& period) const {
         return {{"preset",text(period.preset)},{"start",text(period.start)},{"end",text(period.end)}};
     }
+    QVariantList reportRanges(const reports::Snapshot& report) const {
+        QVariantList ranges;
+        for(const auto& p:report.periods)
+            ranges.push_back(QVariantMap{{"label",text(p.label)},{"start",dateText(p.start)},{"end",dateText(p.end)}});
+        return ranges;
+    }
     void showReport(const reports::Definition& d,app::OperationContext& context,const QVariantMap& drill={}){
         auto& repo=gateway->repository();
         auto accounts=repo.accounts();const auto archived=repo.archived_accounts();accounts.insert(accounts.end(),archived.begin(),archived.end());
@@ -643,8 +650,8 @@ struct ImportModel::Worker {
                 if(row!=currency->rows.end())drillCell=&row->cells.at(static_cast<std::size_t>(drillPeriod));
             }
         }
-        QVariantList ranges,results;
-        for(const auto& p:calculated.periods)ranges.push_back(QVariantMap{{"label",text(p.label)},{"start",dateText(p.start)},{"end",dateText(p.end)}});
+        auto ranges=reportRanges(calculated);
+        QVariantList results;
         for(const auto& currency:calculated.currencies){
             QVariantList rows,totals;std::int64_t minimum=0,maximum=0;
             for(const auto& row:currency.rows){
@@ -1621,7 +1628,7 @@ struct ImportModel::Worker {
             (a.contains("income") || (preparedCategory && preparedCategory->request.action==app::CategoryAction::set_income));
         const bool definitionOnly=action=="rules_save" && !a.value("apply").toBool();
         if(definitionOnly){metadata.clear();rulesLoaded=false;}
-        if(!incomeOnly && !definitionOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill") {if(action!="select_account")deferReview=false;invalidate();}
+        if(!incomeOnly && !definitionOnly && !action.startsWith("exchange_") && !action.startsWith("report_") && action!="select" && action!="query" && action!="inspect" && action!="evidence" && action!="history" && action!="entry_history" && action!="preview_change" && action!="cancel_change" && action!="cancel_merge" && action!="cancel_reapply" && action!="category_select" && action!="preview_category" && action!="cancel_category_preview" && action!="rules_load" && action!="rules_discard" && action!="rules_preview" && action!="rules_prefill" && action!="date_format") {if(action!="select_account")deferReview=false;invalidate();}
         if(action=="close" || action=="open" || action=="unlock" || action=="create"){exchangeDocument={};exchangePreview.clear();qifExportAccounts.clear();exchangeMessage.clear();reportLedgerActive=false;reportMembers.clear();reportRowInfo.clear();reportsLoaded=false;reportCatalog={};reportDefinitions.clear();reportPdf.reset();reportPdfState.clear();reportSnapshot.reset();reportResult.clear();reportDetails.clear();importUndoPreview.clear();importDestination=false;importFeedback.clear();dateImport.reset();importDateQuestion.clear();preparedImport.reset();preparedMappings.reset();importMappingArgs.clear();importPlan.clear();accountViews.clear();transferReceipt.clear();transferCandidates.clear();candidateLink.clear();transferMergePreview.clear();preparedMerge.reset();mergeOperation.clear();selection.clear();selectionAnchor.reset();selectionFocus.reset();}
         if(action=="create" || action=="open" || action=="unlock") {
             if(active) throw std::logic_error("Close the current dataset first");
@@ -1813,6 +1820,54 @@ struct ImportModel::Worker {
             }
             bankMatchOptionalAccounts=std::move(next);
             repo.local_preferences_changed();observedSaved();return;
+        }
+        if(action=="date_format") {
+            const auto requested=str(a.value("format"));
+            validate_date_format(requested);
+            if(requested==dateFormat){diagnosticUnchanged=true;return;}
+            if(reportLedgerActive)throw std::logic_error("Return to Settings to change the date format.");
+            const auto year=QDate::currentDate().year();
+            const auto reformat=[&](const QString& query){
+                return text(app::reformat_search_period(str(query),year,dateFormat,requested));
+            };
+            auto nextFilter=reformat(filter);
+            std::map<std::int64_t,QString> nextAccountFilters;
+            for(const auto& [id,view]:accountViews)nextAccountFilters.emplace(id,reformat(view.filter));
+            try {repo.set_date_format(requested);}
+            catch(const app::OperationOutcomeUnknown&){throw;}
+            catch(...) {
+                const auto failure=std::current_exception();
+                std::string saved;
+                try {saved=repo.date_format();}
+                catch(...){throw app::OperationOutcomeUnknown("Reopen the file to check whether the date format was saved.");}
+                if(saved!=requested)std::rethrow_exception(failure);
+            }
+            observedSaved();
+            try {
+                dateFormat=requested;
+                filter=std::move(nextFilter);
+                for(auto& [id,query]:nextAccountFilters)accountViews.at(id).filter=std::move(query);
+                metadata.clear();
+                cachedView.reset();
+                qifExportAccounts.clear();
+                reportPdf.reset();
+                reportPdfState.clear();
+                if(reportSnapshot)reportResult["periods"]=reportRanges(*reportSnapshot);
+                if(newManual && selected.value("newManual").toBool()){
+                    auto editorDraft=selected.value("draft").toMap();
+                    editorDraft["date"]=dateText(newManual->date);
+                    selected["draft"]=editorDraft;
+                } else if(selected.contains("ordinal"))inspect(selectedBatch,selectedOrdinal,context);
+                if(historyLoaded)listHistory();
+                rulePreview.clear();reapplyPreview.clear();bulkPreview.clear();changePreview.clear();
+                transferCandidates.clear();transferMergePreview.clear();reviewLinkPreview.clear();
+            } catch(...) {
+                diagnosticPresentationFailed=true;
+                gateway->close();active=false;
+                selected.clear();selectedBatch.clear();
+                throw std::runtime_error("The date format was saved, but the screen could not update. Reopen the file and check Settings.");
+            }
+            return;
         }
         if(action=="amount_format") {
             const AmountFormat requested{a.value("enabled").toBool(),str(a.value("style"))};
@@ -3365,7 +3420,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
         catch(const app::OperationOutcomeUnknown& e){uncertain=true;worker->gateway->close();worker->active=false;worker->selected.clear();worker->receipt.clear();worker->selectedBatch.clear();worker->invalidate();result.error=QString::fromUtf8(e.what());}
         catch(const app::OperationCancelled& e){outcome=diag::Result::cancelled;if(action!="query" && !action.startsWith("report_pdf_"))worker->invalidate();result.error=QString::fromUtf8(e.what());}
         catch(const app::UnlockRequired& e){worker->invalidate();result.error=QString::fromUtf8(e.what());unlock=true;}
-        catch(const std::exception& e){if(action!="query" && !action.startsWith("report_pdf_"))worker->invalidate();result.error=QString::fromUtf8(e.what());}
+        catch(const std::exception& e){if(action!="query" && action!="date_format" && !action.startsWith("report_pdf_"))worker->invalidate();result.error=QString::fromUtf8(e.what());}
         if(!result.success && worker->active && (action=="import" || action=="confirm_import_date" || action=="confirm_import_destination" || action=="map_import")) {
             try {if(worker->gateway->repository().cleanup_incomplete_imports())result.error+=" Incomplete import preparation was removed; you can import the file again.";}
             catch(...) {worker->gateway->close();worker->active=false;worker->selected.clear();worker->selectedBatch.clear();result.error="Interrupted import cleanup failed. Reopen to retry cleanup before making further changes.";}
@@ -3390,6 +3445,7 @@ void ImportModel::command(const QString& action,const QVariantMap& args) {
                  :(action=="undo_import" && worker->diagnosticSaved)?"The import was undone, but the screen could not update. Reopen the file and check the transactions before continuing."
                 :(action=="create_account" && result.success)?"Account was created, but its view could not be refreshed. Reopen and inspect the account list before retrying."
                 :(action=="bank_match_account_settings" && worker->diagnosticSaved)?"The bank match setting was saved, but the screen could not update. Reopen the file and check Settings."
+                :(action=="date_format" && worker->diagnosticSaved)?"The date format was saved, but the screen could not update. Reopen the file and check Settings."
                 :((action=="map_import" || action=="resolve_import_categories" || action=="group_abort" || action=="resume") && result.success)?"Import operation was saved, but its view could not be refreshed. Reopen and inspect the retained import before retrying."
                 :((action=="review_answer" || action=="review_batch" || action=="review_undo") && result.success)?"Review decision was saved, but its view could not be refreshed. Reopen and inspect Review before retrying."
                 :(action=="unmerge" && result.success)?"Unmerge was saved, but the screen could not update. Reopen the file and check the ledger before making more changes."
@@ -3425,7 +3481,7 @@ bool ImportModel::categoryNameMatches(const QString& name,const QString& selecte
 
 QString ImportModel::suggestedDateFormat(const QString& currency) const {return text(suggested_date_format(currency.toStdString()));}
 QString ImportModel::todayDisplay() const {return text(display_date(QDate::currentDate().toString(Qt::ISODate).toStdString(),state_.value("dateFormat","YYYY-MM-DD").toString().toStdString()));}
-QString ImportModel::dateFormatExample(const QString& format) const {try{return text(display_date("2026-10-28",format.toStdString()));}catch(const std::exception&){return "Invalid format: use YYYY, MM and DD once each";}}
+QString ImportModel::dateFormatExample(const QString& format) const {try{return text(display_date("2026-10-28",format.toStdString()));}catch(const std::invalid_argument&){return {};}}
 
 void ImportModel::observeUi(const QVariantMap& values) {
     auto& observer=diag::Collector::instance();if(!observer.enabled())return;

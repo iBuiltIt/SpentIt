@@ -4,6 +4,9 @@
 #include <span>
 
 namespace spentit::app {
+std::string reformat_search_period(std::string_view query, int current_year,
+                                   std::string_view old_format, std::string_view new_format);
+
 // A query is compiled once, on the application worker. The caller supplies the
 // local calendar year so relative periods are deterministic in tests.
 class LedgerSearch {

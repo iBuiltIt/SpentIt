@@ -308,7 +308,7 @@ Item {
                             id:periodRow;required property var modelData;required property int index
                             readonly property var choices:root.presetIds.filter(id=>index>0 || id!=="previous_year")
                             property var period:{root.generation;return root.current && root.current.periods[index]?root.current.periods[index]:{preset:"ytd",start:"",end:""}}
-                            property var resolved:{root.generation;return root.workflow.reportPeriod(period,root.current?root.current.periods[0]:{})}
+                            property var resolved:{root.generation;root.state.dateFormat;return root.workflow.reportPeriod(period,root.current?root.current.periods[0]:{})}
                             Layout.fillWidth:true
                             function setDate(field,value){
                                 const parsed=value.length?root.workflow.calendarPage(value):{error:"Enter a date."}

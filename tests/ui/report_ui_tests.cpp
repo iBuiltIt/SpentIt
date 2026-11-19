@@ -696,6 +696,18 @@ private slots:
         run(model,"correct_opening",{{"date","2026-01-01"},{"amount","100"}});QVERIFY(model.state().value("reportResult").toMap().value("stale").toBool());
         run(model,"close");run(model,"open",{{"path",dir.filePath("document")}});QCOMPARE(model.state().value("reports").toList().size(),1);
         run(model,"report_show",{{"id",id}});QCOMPARE(model.state().value("reportResult").toMap().value("currencies").toList().front().toMap().value("totals").toList().front().toString(),"80.00");
+        const auto currenciesBeforeFormat=model.state().value("reportResult").toMap().value("currencies");
+        run(model,"date_format",{{"format","DD.MM.YYYY"}});
+        const auto reformatted=model.state().value("reportResult").toMap();
+        QVERIFY(!reformatted.value("stale").toBool());
+        QCOMPARE(reformatted.value("periods").toList().front().toMap().value("start").toString(),"01.01.2026");
+        QCOMPARE(reformatted.value("currencies"),currenciesBeforeFormat);
+        run(model,"report_drill",{{"currency",0},{"period",0},{"row",-1}});
+        const auto reportRows=model.state().value("reportDetails").toMap().value("rows").toList();
+        QCOMPARE(reportRows.size(),2);
+        QVERIFY(reportRows.front().toMap().value("date").toString().endsWith(".01.2026"));
+        run(model,"report_leave");
+        run(model,"date_format",{{"format","YYYY-MM-DD"}});
         // Multiple separate charts, including negative pie handling.
         auto definitions=model.state().value("reports").toList();auto definition=definitions[0].toMap();definition["graph"]="pie";
         auto periods=definition.value("periods").toList();periods.push_back(QVariantMap{{"preset","custom"},{"start","2026-01-02"},{"end","2026-01-02"}});definition["periods"]=periods;definitions[0]=definition;

@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 
 SpentIt is the local rules-enabled application. The current rules database is
 version 2, and the application version is 1.0.1. Opening a version-1 file
@@ -11,6 +11,24 @@ Build and launch are in the [README](../README.md) and [building](building.md).
 macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
+
+## Date format in Current file settings — 2026-11-19
+
+The date format selector from file creation is also available under
+Settings → Current file settings. Saving a preset or custom format updates
+date display and entry immediately and persists the choice in the file.
+Explicit period searches keep their calendar bounds. Stored dates, original
+import evidence, and ordinary Undo are preserved. A save clears pending Redo.
+See [file settings](../features/001-documents-storage-security.md#creation-and-welcome)
+and [MAN-099](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, eleven targeted rules-enabled Release CTest
+targets and three focused offscreen UI cases passed. The cases cover presets,
+custom format validation, entry after saving, Undo, reopening, and report
+display. The existing-file storage test covers disk-full and write errors,
+retry, and a process exit before and after durable commit. It also passed
+with rules off and under AddressSanitizer and UndefinedBehaviorSanitizer
+with leak detection disabled. Native interactive testing was unverified.
 
 ## Merged mark after manual Merge — 2026-11-18
 

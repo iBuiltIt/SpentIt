@@ -118,7 +118,7 @@ Account enumeration, creation, durable creation-outcome lookup and session selec
 
 ## Creation preferences and independent categories — 2026-10-28
 
-The dependency-free engine validates date patterns/calendar dates and colon-category syntax. The application import-view target owns bounded Unicode caseless category comparison through the existing PCRE2 adapter. Storage links that application matcher to enforce the same uniqueness policy and owns immutable setup preferences plus atomic starter-category history. The serial UI worker converts between stored ISO dates and the dataset display format; QML neither parses financial import dates nor owns initialization transactions.
+The dependency-free engine validates date patterns/calendar dates and colon-category syntax. The application import-view target owns bounded Unicode caseless category comparison through the existing PCRE2 adapter. Storage links that application matcher to enforce the same uniqueness policy and owns the file's saved date format, immutable starter-category setting, and atomic starter-category history. The serial UI worker converts between stored ISO dates and the file's display format. See [file settings](../features/001-documents-storage-security.md#creation-and-welcome).
 
 
 ## Optional application diagnostics — 2026-10-29

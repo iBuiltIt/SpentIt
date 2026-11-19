@@ -62,6 +62,7 @@ public:
     void save_reports(const reports::Catalog&) override;
     std::vector<reports::Entry> report_entries(const std::vector<std::int64_t>&,const app::OperationContext&) const override;
     std::string date_format() const override;
+    void set_date_format(std::string_view) override;
     AmountFormat amount_format() const override;
     void set_amount_format(const AmountFormat&) override;
     imports::Occurrence create_manual(std::string_view,const imports::DraftRow&,

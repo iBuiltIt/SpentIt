@@ -1,6 +1,6 @@
 # Release schema version 2
 
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 
 The owner approved version 2 on 2026-11-18 for restoring merged transactions
 after acceptance. The application version is 1.0.1.
@@ -27,3 +27,9 @@ These are not the database schema number:
 
 Open checks for the expected tables and rejects unsupported or inconsistent
 versions before the upgrade can write. See [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).
+
+Changing the file's date format updates the existing encrypted preference row.
+On the first change to an older file, the same transaction replaces the
+original update trigger with one that still protects the singleton and the
+starter-category choice. The delete guard stays in place. The schema version
+and stored dates are preserved. Opening a file does not perform this change.

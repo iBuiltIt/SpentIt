@@ -407,6 +407,7 @@ public:
     virtual AmountFormat amount_format() const {return {}; }
     virtual void set_amount_format(const AmountFormat&) {throw std::logic_error("Amount formatting is unsupported by this repository");}
     virtual std::string date_format() const {return "YYYY-MM-DD";}
+    virtual void set_date_format(std::string_view) {throw std::logic_error("Date formatting is unsupported by this repository");}
     virtual bool categories_supported() const { return false; }
     virtual CategoryCatalog category_catalog() const { throw std::logic_error("Categories are not supported by this dataset"); }
     virtual CategoryPreview preview_category_change(const CategoryRequest&) const { throw std::logic_error("Categories are not supported by this dataset"); }

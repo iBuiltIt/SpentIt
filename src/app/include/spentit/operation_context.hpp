@@ -8,7 +8,8 @@ class OperationCancelled final : public std::runtime_error {
 public: explicit OperationCancelled(const char* message="Operation cancelled. Existing saved work is unchanged."):std::runtime_error(message){}
 };
 class OperationOutcomeUnknown final : public std::runtime_error {
-public: OperationOutcomeUnknown():std::runtime_error("Import outcome is uncertain. Reopen this file to inspect retained evidence before retrying."){}
+public:
+    explicit OperationOutcomeUnknown(const char* message="Import outcome is uncertain. Reopen this file to inspect retained evidence before retrying."):std::runtime_error(message){}
 };
 // Shared cancellation gate. Sealing and requesting race atomically: a request
 // accepted before sealing must be observed before any durable command begins.

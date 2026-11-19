@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**
-Last updated: 2026-11-15
+Last updated: 2026-11-19
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -31,12 +31,19 @@ UTF-8 text. This check does not change the file format.
 ## Creation and welcome
 
 Creation defaults to the account name SpentIt, CAD, password protection on, and
-**Use default categories** checked. The date-format selector offers the presets
-in Settings and a custom pattern of `YYYY`, `MM`, and `DD` once each. The
+**Use default categories** checked. The date-format selector offers six presets
+and a custom pattern of `YYYY`, `MM`, and `DD` once each. The
 suggestion follows the chosen currency (`MM/DD/YYYY` for USD, `DD/MM/YYYY` for
 GBP, AUD, and NZD, `YYYY-MM-DD` otherwise) and stays if the user overrides it.
 Imported dates use the source parser, not this display preference. Stored dates
 are canonical Gregorian dates with no timezone conversion.
+
+In Settings → Current file settings, the same selector and example let the
+user save a new format for the open file. The choice takes effect immediately
+for date display and entry, including ledger searches and reports. Existing
+calendar dates and original imported evidence are preserved. Saving the
+preference preserves ordinary Undo and clears pending Redo, like other file
+settings. See [release schema](../doc/release-schema.md).
 
 If the destination exists, Cancel leaves it alone and Overwrite replaces it at
 creation time. Overwrite is not a backup. Do not replace a file another process

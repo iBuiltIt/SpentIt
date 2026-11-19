@@ -37,6 +37,11 @@ namespace diag = spentit::diagnostics;
 namespace spentit::storage {
 namespace {
 #include "release_v2.inc"
+constexpr const char* keep_dataset_setup = R"SQL(
+CREATE TRIGGER IF NOT EXISTS dataset_setup_immutable
+BEFORE UPDATE OF singleton,default_categories ON dataset_preferences
+BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END;
+)SQL";
 [[noreturn]] void fail(int code, const char* message = "Encrypted storage operation failed") {
     throw ImportError(code, message); // Never expose SQL, keys, paths or record values.
 }
@@ -1320,7 +1325,8 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
 )SQL");
         ActionChain(db).initialize();
         exec(db,"CREATE TABLE amount_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1),enabled INTEGER NOT NULL CHECK(enabled IN(0,1)),style TEXT NOT NULL CHECK(style IN('comma-dot','dot-comma','space-comma'))) STRICT; CREATE TRIGGER amount_preferences_keep BEFORE DELETE ON amount_preferences BEGIN SELECT RAISE(ABORT,'Amount preferences are required'); END;");
-        exec(db,"CREATE TABLE dataset_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1),date_format TEXT NOT NULL,default_categories INTEGER NOT NULL CHECK(default_categories IN(0,1))) STRICT; CREATE TRIGGER dataset_preferences_immutable BEFORE UPDATE ON dataset_preferences BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END; CREATE TRIGGER dataset_preferences_keep BEFORE DELETE ON dataset_preferences BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END;");
+        exec(db,"CREATE TABLE dataset_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1),date_format TEXT NOT NULL,default_categories INTEGER NOT NULL CHECK(default_categories IN(0,1))) STRICT; CREATE TRIGGER dataset_preferences_keep BEFORE DELETE ON dataset_preferences BEGIN SELECT RAISE(ABORT,'Dataset setup is immutable'); END;");
+        exec(db,keep_dataset_setup);
 #ifdef SPENTIT_RULES_STORAGE
         exec(db,release_v2);
 #endif
@@ -1501,6 +1507,27 @@ std::string ImportStore::date_format() const {
     Statement row(impl_->db,"SELECT date_format,default_categories FROM dataset_preferences WHERE singleton=1");
     if(!row.row() || (row.integer(1)!=0 && row.integer(1)!=1))fail(SQLITE_CORRUPT,"Dataset preferences are missing or invalid");
     auto format=row.bytes(0);validate_date_format(format);return format;
+}
+void ImportStore::set_date_format(std::string_view format) try {
+    validate_date_format(format);
+    auto* db=impl_->db;
+    Atomic transaction(db);
+    if(date_format()==format)return;
+    // Existing files protect the entire row. Relax only that restriction as
+    // part of the same encrypted commit as the first actual change.
+    exec(db,keep_dataset_setup);
+    exec(db,"DROP TRIGGER IF EXISTS dataset_preferences_immutable");
+    Statement update(db,"UPDATE dataset_preferences SET date_format=? WHERE singleton=1");
+    update.text(1,format);
+    update.done();
+    ActionChain(db).compatible_change(action_token());
+    if(impl_->observer)impl_->observer(ImportPhase::before_commit);
+    transaction.commit();
+    if(impl_->observer)impl_->observer(ImportPhase::after_commit);
+} catch(...) {
+    if(!sqlite3_get_autocommit(impl_->db))
+        throw app::OperationOutcomeUnknown("Reopen the file to check whether the date format was saved.");
+    throw;
 }
 ImportStore ImportStore::open(const std::filesystem::path& path,std::string_view password,const app::OperationContext* context) { return connect(path,password,false,context); }
 ImportStore::RekeyResult ImportStore::rekey(std::string_view key) {

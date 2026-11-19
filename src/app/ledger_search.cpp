@@ -8,6 +8,7 @@
 
 namespace spentit::app {
 namespace {
+constexpr std::size_t max_query_bytes=4096;
 [[noreturn]] void invalid(const char* message) { throw std::invalid_argument(message); }
 std::string lower(std::string value) { for(auto& c:value)if(c>='A'&&c<='Z')c=static_cast<char>(c-'A'+'a');return value; }
 std::string literal(std::string_view value) {
@@ -47,12 +48,17 @@ std::pair<std::string,std::string> period(std::string_view value,int year,std::s
     else invalid("Use YYYYMMDD, YYYY-MM-DD, YYYY/MM/DD, or a named month for periods");
     return {result,result};
 }
-struct Token {std::string text;bool quoted=false;bool starts_quoted=false;};
+struct Token {
+    std::string text;
+    std::size_t offset;
+    bool quoted=false;
+    bool starts_quoted=false;
+};
 std::vector<Token> tokenize(std::string_view query) {
     std::vector<Token> out;std::size_t i=0;
     while(i<query.size()){
         if(query[i]==' ' || query[i]=='\t'){++i;continue;}
-        Token token;token.starts_quoted=query[i]=='"';bool quoted=false;
+        Token token{{},i};token.starts_quoted=query[i]=='"';bool quoted=false;
         while(i<query.size()){
             char c=query[i++];
             if(c=='"'){quoted=!quoted;token.quoted=true;continue;}
@@ -68,9 +74,30 @@ std::vector<Token> tokenize(std::string_view query) {
     return out;
 }
 }
+std::string reformat_search_period(std::string_view query,int year,std::string_view old_format,std::string_view new_format) {
+    std::string result(query);
+    for(const auto& token:tokenize(query)){
+        if(token.quoted || !lower(token.text).starts_with("period:"))continue;
+        const auto value=std::string_view(token.text).substr(7);
+        const auto reformat=[&](std::string_view endpoint){
+            // Years and named months retain their relative search meaning.
+            const char initial=endpoint.empty()?'\0':endpoint.front();
+            const bool named=(initial>='A' && initial<='Z') || (initial>='a' && initial<='z');
+            if(endpoint.size()==4 || named)return std::string(endpoint);
+            return spentit::display_date(period(endpoint,year,old_format).first,new_format);
+        };
+        const auto separator=value.find("..");
+        auto converted=reformat(value.substr(0,separator));
+        if(separator!=value.npos)converted+=".."+reformat(value.substr(separator+2));
+        result.replace(token.offset+7,value.size(),converted);
+        break;
+    }
+    if(result.size()>max_query_bytes)invalid("Shorten the ledger search before changing the date format.");
+    return result;
+}
 LedgerSearch::LedgerSearch(std::string_view query,int year,std::string_view format):date_format_(format) {
     validate_date_format(format);
-    if(query.size()>4096 || !qif::valid_utf8(query) || query.find('\0')!=query.npos)invalid("Invalid search text or query exceeds 4096 bytes");
+    if(query.size()>max_query_bytes || !qif::valid_utf8(query) || query.find('\0')!=query.npos)invalid("Invalid search text or query exceeds 4096 bytes");
     if(year<1 || year>9999)invalid("Invalid current search year");
     auto tokens=tokenize(query);
     for(std::size_t i=0;i<tokens.size();++i){
