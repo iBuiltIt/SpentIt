@@ -354,6 +354,11 @@ new operation identity and revision allocation above retained versions, not a re
 revision-zero overlay. Update affected publication/verification assumptions together.
 This is a focused acceptance transition, not a rewrite of every table's identity model.
 
+Removing transient transfer history can leave gaps in financial sequence
+numbers. An acceptance reversal's recorded preview sequence must be at or
+after the previous retained operation and before the reversal. Its
+publication, membership, and balance must still reconcile.
+
 Required example: Import → edit New row → Accept → edit accepted row → Undo edit →
 Undo Accept → Undo New-row edit → Undo Import. Every step must preserve the expected
 identity, originals, decisions and transfer state as well as exact amounts.

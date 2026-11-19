@@ -13,6 +13,23 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Redo acceptance after removing transient transfer history — 2026-11-18
+
+Acceptance reversal verification permits a sequence gap left by removed
+transfer operations. It checks that the recorded preview follows or matches
+the last retained sequence and precedes the reversal. The verifier also
+checks the publication, membership, and exact balances. See
+[reversible acceptance](action-undo-design.md#6-reversible-acceptance).
+
+The new synthetic test accepts transactions, adds a manual transfer, then
+undoes the assignment, addition, and latest acceptance. Acceptance Redo failed
+before the verifier fix and passed afterward. The test also checks a failure
+before commit, retry, exact membership and balances, and reopen. Nine
+rules-enabled Release CTest targets passed on macOS arm64 with Qt 6.12.0,
+including the Redo I/O and crash sweep and offscreen smoke. The new regression
+also passed under AddressSanitizer and UndefinedBehaviorSanitizer with leak
+detection disabled.
+
 ## Undo a manual addition after undoing its transfer assignment — 2026-11-18
 
 Change history uses the account that owns the original posting when undoing

@@ -343,7 +343,14 @@ void ImportStore::verify_committed(const app::OperationContext* context) const {
         if(operations.integer(1)==6) {
             const auto owner=account_for_batch(operations.bytes(2));apply_openings(owner.identity,order);auto& balance=balances.at(owner.identity);const auto currency=balance.currency();
             Statement root(impl_->db,"SELECT s.undo_id FROM acceptance_states s WHERE s.undo_id IS NOT NULL AND (s.id=?1 OR s.id IN(SELECT parent FROM acceptance_operations WHERE operation=?1))");root.text(1,operations.bytes(9));
-            if(!root.row() || !operation.starts_with(root.bytes(0)+"-accept-") || order<=prior_order || sequence<=prior_sequence || balance.units()!=operations.integer(6) || operations.integer(7)!=0 || operations.integer(3)!=0 || operations.integer(4)!=-1 || operations.integer(5)!=0 || operations.integer(10)!=prior_sequence)fail(SQLITE_CORRUPT,"Acceptance reversal is inconsistent");
+            // Collecting transient transfer operations can leave a gap after
+            // the last retained sequence. The recorded preview still precedes this reversal.
+            const auto preview_sequence=operations.integer(10);
+            if(!root.row() || !operation.starts_with(root.bytes(0)+"-accept-") ||
+               order<=prior_order || sequence<=prior_sequence || preview_sequence<prior_sequence || preview_sequence>=sequence ||
+               balance.units()!=operations.integer(6) || operations.integer(7)!=0 ||
+               operations.integer(3)!=0 || operations.integer(4)!=-1 || operations.integer(5)!=0)
+                fail(SQLITE_CORRUPT,"Acceptance reversal is inconsistent");
             Statement publication(impl_->db,"SELECT batch,sequence FROM ledger_operations WHERE id=? AND kind=0");publication.text(1,operations.bytes(9));if(!publication.row() || publication.bytes(0)!=operations.bytes(2) || publication.integer(1)>=sequence)fail(SQLITE_CORRUPT,"Acceptance reversal has no publication");
             std::vector<Money> removed;
             Statement members(impl_->db,"SELECT ordinal,publication_revision FROM acceptance_members WHERE operation=? AND decision=1");members.text(1,operations.bytes(9));

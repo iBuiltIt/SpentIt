@@ -215,6 +215,74 @@ void undo_manual_after_transfer_assignment(const std::filesystem::path& dir) {
     check(reopened.balance()==Money(-1000,cad) && reopened.row({"redo-entry",0}).draft.has_value(),"Reopen keeps the replayed addition");
     reopened.verify();
 }
+void redo_acceptance_after_transfer_undo(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto path=dir/"redo-acceptance-after-transfer";
+    const imports::Occurrence prior{"prior",0},pending{"pending",0};
+    {
+        auto store=ImportStore::create(path,"test-password","Checking",cad,"2025-01-01");
+        store.create_account(2,"Savings",cad,"2025-01-01");
+        store.ingest(prior.batch,"!Type:Bank\nD01/01/2026\nT-2.00\nPPrior purchase\n^\n",qif::DateOrder::dmy);
+        store.accept_all("accept-prior",true);
+        store.ingest(pending.batch,"!Type:Bank\nD02/01/2026\nT-3.00\nPPending purchase\n^\n",qif::DateOrder::dmy);
+        store.accept_all("accept",true);
+        const auto publication_sequence=store.transfer_sequence();
+
+        store.select_account(2);
+        const auto id=store.create_manual("entry",manual());
+        auto assignment=category_requests(store,{id}).front();
+        assignment.mode=1;
+        assignment.category_id.clear();
+        assignment.category_path.clear();
+        assignment.left->ledger_entry=true;
+        assignment.generated=transfers::Endpoint{1,{"~transfer-acceptance-gap",0},"generated"};
+        assignment.generated_currency=cad.definition_id();
+        OperationContext context;
+        store.assign_transfer_batch("assign",{assignment},context);
+
+        const auto undo=[&](const char* operation,const char* action){
+            const auto preview=store.preview_undo(action,store.action_token());
+            store.undo_action(operation,preview);
+            check(store.undo_action_outcome(operation,preview).has_value(),"Undo saves an exact receipt");
+        };
+        undo("undo-assign","assign");
+        undo("undo-entry","entry");
+        check(store.transfers().empty() && store.transfer_sequence()>publication_sequence,
+              "Undo removes the transient transfer history without rewinding its sequence");
+        undo("undo-accept","accept");
+        check(store.account().identity==2 && store.balance()==Money(0,cad),"Undo keeps the selected account and removes its manual posting");
+        store.select_account(1);
+        check(store.transaction_accepted(prior) && !store.transaction_accepted(pending),"Undo reverses only the last acceptance");
+        check(store.committed_balance()==Money(-200,cad) && store.balance()==Money(-500,cad),"Undo preserves the exact ledger balance");
+
+        const auto redo=store.redo_history();
+        check(redo.size()==3 && redo.front().id=="accept","Acceptance is the first replay");
+        const UndoPreview preview{store.action_token(),redo.front(),{},{}};
+        bool reached_commit=false;
+        store.observer([&](auto phase){
+            if(phase==storage::ImportPhase::before_commit){
+                reached_commit=true;
+                throw std::runtime_error("Interrupted acceptance Redo");
+            }
+        });
+        rejects([&]{store.redo_action("redo-accept",preview);});
+        store.observer({});
+        check(reached_commit && !store.redo_action_outcome("redo-accept",preview) && store.action_token()==preview.token,
+              "Interrupted Redo preserves the original history and receipt state");
+        check(!store.transaction_accepted(pending) && store.committed_balance()==Money(-200,cad),
+              "Interrupted Redo leaves the previous acceptance in effect");
+        store.redo_action("redo-accept",preview);
+        check(store.redo_action_outcome("redo-accept",preview).has_value(),"Acceptance Redo saves a durable receipt across the gap");
+        check(store.transaction_accepted(prior) && store.transaction_accepted(pending),"Redo restores the acceptance membership");
+        check(store.committed_balance()==Money(-500,cad) && store.balance()==Money(-500,cad),"Redo reconciles exact balances");
+        check(store.redo_history().size()==2 && store.redo_history().front().id=="entry","Redo preserves the later pending actions");
+        store.verify();
+    }
+    auto reopened=ImportStore::open(path,"test-password");
+    check(reopened.transaction_accepted(prior) && reopened.transaction_accepted(pending) &&
+          reopened.committed_balance()==Money(-500,cad),"Reopen preserves the replayed acceptance");
+    reopened.verify();
+}
 void new_transfer_date(const std::filesystem::path& dir) {
     const Currency cad("CAD");
     const imports::Occurrence id{"entry",0};
@@ -705,6 +773,9 @@ void recovery(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
+        if(argc==2 && std::string_view(argv[1])=="acceptance_redo_after_transfer_undo"){
+            redo_acceptance_after_transfer_undo(dir);std::filesystem::remove_all(dir);return 0;
+        }
         if(argc==2 && std::string_view(argv[1])=="undo_after_transfer"){
             undo_manual_after_transfer_assignment(dir);std::filesystem::remove_all(dir);return 0;
         }
