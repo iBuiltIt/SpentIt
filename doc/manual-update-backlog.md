@@ -8,7 +8,8 @@ older History instructions were reconciled with the later linear Undo/Redo
 contract. Verification is recorded in [status](status.md#manual).
 
 Two owner-authorized passes on 2026-11-18 completed MAN-057 through MAN-076
-and MAN-077 through MAN-087. See [Manual](status.md#manual) for verification.
+and MAN-077 through MAN-087. The 2026-11-19 pass completed MAN-088 through
+MAN-099. See [Manual](status.md#manual) for verification.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -28,84 +29,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 ## Open items
 
-- **MAN-099 — Change a file's date format, 2026-11-19.** Update Look after your
-  work to show the presets, Custom option, example and **Save date format**
-  under Current file settings. Explain that date display and entry update when
-  saved, including existing period searches. Refresh the Settings picture and
-  link to the preference from Create and open a file.
-  [File settings](../features/001-documents-storage-security.md#creation-and-welcome).
-
-- **MAN-088 — New transfer date corrections, 2026-11-18.** Update the
-  transaction editing and transfer sections to show the Date field, **Edit date
-  on original transaction**, bank-match protection, and one-step Undo. Cover
-  when a generated counterpart follows the date and when each posting keeps
-  its own date. Refresh any affected transfer editor pictures and captions.
-  [Ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer).
-
-- **MAN-089 — Undo and Redo adding a transaction across accounts, 2026-11-18.**
-  In Add and correct transactions, include **Add transaction** as an example of
-  an action you can undo and redo from Change history while viewing a different
-  account. Include the sequence of undoing a transfer assignment and then
-  undoing **Add transaction**. The existing pictures still apply.
-  [Change history](change-history-handoff.md).
-
-- **MAN-090 — Edit New manual transfers, 2026-11-18.** Update the transfer
-  editor coverage from MAN-088 to show the full original editor,
-  **Edit original transaction**, the link-break confirmation, and an amount sign
-  correction that refreshes Review. Include the effects on generated and
-  independent postings and one-step Undo. Refresh the affected transfer editor
-  and Review pictures together.
-  [Ledger editing](ledger-editing.md#editing-a-new-manual-transfer).
-
-- **MAN-091 — Undo grouped imports after acceptance, 2026-11-18.** In Import
-  transactions, mention that after undoing acceptance, Undo can remove the
-  grouped import and clear transfer links between its own batches in one step.
-  The existing pictures still apply. [Import Undo](import-undo.md).
-
-- **MAN-092 — Review after a transfer Link is broken, 2026-11-18.** In Review
-  duplicates and transfers, explain that a matching pair can reappear after an
-  edit breaks its Link. **Not this transfer** continues to hide that pair until
-  the decision is undone. The existing pictures still apply.
-  [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
-
-- **MAN-093 — Redo verification message, 2026-11-18.** In Change history,
-  explain that if SpentIt cannot verify the file’s rule history during Redo,
-  the Undo remains in effect. [Change history](change-history-handoff.md).
-
-- **MAN-094 — Create a transfer in the new-transaction editor, 2026-11-18.**
-  In Add and correct transactions and Review duplicates and transfers, show
-  that Category offers same-currency accounts before the first save, including
-  on split lines. Explain that saving creates both sides and that one Undo
-  removes them together. Refresh any picture or caption that shows the
-  initial Category list or the previous two-step workflow.
-  [Manual transactions](manual-transactions.md#accepted-interaction).
-
-- **MAN-095 — Unmerge after acceptance, 2026-11-18.** In Review duplicates
-  and transfers, show that Unmerge restores a hidden posting as New with its
-  original bank record, even after acceptance. The kept posting stays accepted.
-  Cover combined balance, later acceptance, and one-step Undo and Redo.
-  [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).
-
-- **MAN-096 — Merged mark after manual Merge, 2026-11-18.** In Review
-  duplicates, show the same indigo **Merged** mark after manual and automatic
-  merges, including when the kept transaction was already accepted. Explain
-  that Accept transactions clears the mark and that it survives reopening
-  until cleared. Show Accept transactions at the bottom right of Review when
-  a mark remains and there are no new transactions.
-  [Review](review-sheet.md#ledger-same-payment-and-result-marks--owner-go-2026-11-13).
-
-- **MAN-097 — Delete an unused category with unresolved transfers, 2026-11-18.**
-  In Organize spending with categories, explain that you can delete an unused
-  category while bracketed QIF transfer destinations are awaiting review.
-  The existing pictures still apply.
-  [Category editor](../features/010-categories-and-selection.md#editor-and-pickers).
-
-- **MAN-098 — Delete one linked transaction, 2026-11-18.**
-  In Add and correct transactions, show **Delete and keep other entry** and
-  **Delete both entries**, their effect on the other account, and one Undo
-  across both accounts. Update the guidance for an entirely linked bulk
-  selection and capture the single-delete dialog.
-  [Ledger editing](ledger-editing.md#delete-a-selection).
+None.
 
 ## Recapturing pictures
 

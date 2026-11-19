@@ -28,8 +28,8 @@ Most controls appear after you open a file.
 - **See the version:** on a Mac, choose **About SpentIt** in the application
   menu. On Windows and Linux, choose **Help → About SpentIt**.
   [If you still need help](backup-recovery.md#if-you-still-need-help).
-- **Change amount formatting or remember the window position:** open
-  **Settings**. It also shows the file’s date format, but cannot change it.
+- **Change the date or amount format, or remember the window position:**
+  open **Settings**.
   [Settings choices](backup-recovery.md#adjust-how-you-read-and-enter-amounts).
 - **Change, add, or remove a password:** open **Settings** and use the
   password fields. Copy the file first if you want that copy to keep

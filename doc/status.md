@@ -20,7 +20,7 @@ date display and entry immediately and persists the choice in the file.
 Explicit period searches keep their calendar bounds. Stored dates, original
 import evidence, and ordinary Undo are preserved. A save clears pending Redo.
 See [file settings](../features/001-documents-storage-security.md#creation-and-welcome)
-and [MAN-099](manual-update-backlog.md#open-items).
+and [MAN-099](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, eleven targeted rules-enabled Release CTest
 targets and three focused offscreen UI cases passed. The cases cover presets,
@@ -37,7 +37,7 @@ including on an already accepted kept transaction. The mark survives closing
 and reopening. Accept transactions clears it, and Undo of Accept restores it.
 Undo of the merge or Unmerge removes it. The database format stays at version 2.
 See [Review](review-sheet.md#ledger-same-payment-and-result-marks--owner-go-2026-11-13)
-and [MAN-096](manual-update-backlog.md#open-items).
+and [MAN-096](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release build passed four
 storage suites, including the disk-write and crash sweep, four focused offscreen
@@ -54,7 +54,7 @@ later edits. One Undo reverses the restoration. The version-1 upgrade
 verifies the file and its history in the encrypted transaction before
 committing version 2.
 See [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18)
-and [MAN-095](manual-update-backlog.md#open-items).
+and [MAN-095](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, the upgraded build opened synthetic clean and
 unclean files created by the previous version-1 build. The unclean file kept
@@ -75,7 +75,7 @@ including on split lines. The original and all generated postings save together
 as one **Add transaction** action. Undo and Redo operate across the affected
 accounts. Undo of acceptance validates sibling transfer splits together at the
 operation boundary. See [manual transactions](manual-transactions.md#accepted-interaction)
-and [MAN-094](manual-update-backlog.md#open-items).
+and [MAN-094](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, 15 focused rules-enabled Release targets passed,
 including navigation, manual transactions, the Redo failure and crash sweep,
@@ -107,7 +107,7 @@ detection disabled.
 Change history uses the account that owns the original posting when undoing
 **Add transaction** after its transfer assignment has been undone. The account
 being viewed stays selected. See [Change history](change-history-handoff.md)
-and [MAN-089](manual-update-backlog.md#open-items).
+and [MAN-089](#man-088-through-man-099).
 
 The synthetic regression reproduced the account error before the fix and
 passed afterward. It checks both account balances, the selected account, a
@@ -141,7 +141,7 @@ When rule-history verification blocks Redo before commit, Change history
 explains that Undo is still in effect. Opt-in diagnostics report Redo as its
 own operation and include a fixed code for the failed check. See
 [diagnostics](application-diagnostics.md#redo-rule-history-checks) and
-[MAN-093](manual-update-backlog.md#open-items).
+[MAN-093](#man-088-through-man-099).
 
 A synthetic overlapping QIF import reproduced `rule_history_application_scope`.
 Automatic rules skipped a recognized duplicate and categorized a new transaction
@@ -164,7 +164,7 @@ Link and they still meet the matching criteria. A current Link keeps the
 previously answered choices settled. **Not this transfer** continues to hide
 its pair until the decision is undone. See
 [Review](review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18)
-and [MAN-092](manual-update-backlog.md#open-items).
+and [MAN-092](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, the new manual-transfer regression failed before
 the fix and passed afterward. It covers breaking a Link, assigning both
@@ -196,7 +196,7 @@ describes what happens to the other posting. One Undo reverses the save
 across accounts. The rules-enabled Release build at `./build/SpentIt` was
 rebuilt with database schema version 1. See
 [ledger editing](ledger-editing.md#editing-a-new-manual-transfer) and
-[MAN-090](manual-update-backlog.md#open-items).
+[MAN-090](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, four focused offscreen navigation cases and six
 Release CTest targets passed. Synthetic checks cover reversing a transfer
@@ -212,7 +212,7 @@ Native interactive, Linux, Windows, and full repository checks were not run.
 Change history can undo and redo **Add transaction** while another account is
 selected. SpentIt reads the saved transaction from the account it belongs to
 when preparing Redo. The selected account stays the same. See
-[Change history](change-history-handoff.md) and [MAN-089](manual-update-backlog.md#open-items).
+[Change history](change-history-handoff.md) and [MAN-089](#man-088-through-man-099).
 
 On macOS arm64 with Qt 6.12.0, the new offscreen Change history regression
 reproduced the account error before the fix and passed afterward. Five
@@ -227,7 +227,7 @@ and linked. An eligible generated New counterpart follows that date. An
 independent or accepted counterpart keeps its own date. Attached or proposed
 bank matches protect the dates. The correction and its Undo each save as one
 operation. See [ledger editing](ledger-editing.md#correcting-the-date-of-a-new-transfer)
-and [MAN-088](manual-update-backlog.md#open-items). The release schema remains
+and [MAN-088](#man-088-through-man-099). The release schema remains
 version 1.
 
 On macOS arm64 with Qt 6.12.0, five focused offscreen navigation cases and five
@@ -1106,6 +1106,24 @@ included; see [Manual](#manual).
   repository run as passed without a new run.
 
 ## Manual
+
+### MAN-088 through MAN-099
+
+The owner-authorized 2026-11-19 pass updated seven bundled Help topics.
+The guide covers creating, correcting, and deleting transfers, Undo and
+Redo across accounts, grouped import Undo, Review after a link breaks,
+Unmerge after acceptance, merge marks, unused categories, and changing
+a file’s date format. Six synthetic pictures were added and Settings was
+refreshed. The bundle has 52 pictures and preserves all 17 topic IDs and
+153 existing section IDs. The [backlog](manual-update-backlog.md#open-items)
+is empty and its next entry is MAN-100.
+
+On macOS arm64 with Qt 6.12.0, all eleven native screenshot walkthroughs
+passed. The seven installed pictures were visually checked. Rebuilt
+rules-enabled Release Help passed all 16 native chapter and reference
+reading cases, including opening each pictured screen in Help, and both
+continuous walkthroughs. `help.prepare`, `help.capture_manual_images`,
+`help.catalog`, and the offscreen `./build/SpentIt --smoke` check passed.
 
 ### Focused editing pass on 2026-11-18
 

@@ -33,10 +33,23 @@ To look at a copy, start SpentIt and use **Browse…** on the welcome
 screen. Select the copy and enter its password if asked. Check the
 accounts, balances and recent transactions.
 
-## Adjust how you read and enter amounts {#adjust-how-you-read-and-enter-amounts}
+## Adjust how you read and enter dates and amounts {#adjust-how-you-read-and-enter-amounts}
 
-Settings shows the file’s **Date format**. That format was chosen when the
-file was created; there is no control here to change it.
+### Choose how dates look {#choose-how-dates-look}
+
+Open **Settings** and find **Date format** under **Current file settings**.
+Pick a format from the list, or choose **Custom…** and type one such as
+`DD.MM.YYYY`. Use `YYYY`, `MM` and `DD` once each, with a dash, slash,
+dot or no separator. Check the example, then choose **Save date format**.
+
+Dates use the new format as soon as you save, including dates you type
+in the ledger or in reports. Existing period searches still cover the
+same days. Saving clears any changes waiting to be redone.
+
+![Current file settings with DD.MM.YYYY in the Custom date format field, an example, and Save date format.](images/settings.png)
+*Check the example to see how your dates will look.*
+
+### Choose how amounts look
 
 With **Use amount formatting** checked, choose `1,234.56`, `1.234,56`, or
 `1 234,56`. The choice is saved for this file and applies to amounts and
@@ -79,9 +92,6 @@ removed** means the file no longer asks for one. If SpentIt could not
 confirm the change, close the file and open it with the new password
 before you do anything else. If it says the password was not changed,
 the file still uses the password it had.
-
-![Settings for the Household file, with automatic Merge and Link checked, Cash under Accounts that don’t need bank matches, and password fields.](images/settings.png)
-*Copy the file first if you want that copy to keep the password it has now.*
 
 ## Copy transactions or saved definitions {#copy-transactions-or-saved-definitions}
 

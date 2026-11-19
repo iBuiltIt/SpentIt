@@ -111,7 +111,9 @@ postings are already present, use [Review Link](review-duplicates-transfers.md#i
 
 Choosing an account here creates the other posting, so the two accounts
 need the same currency. You cannot send the entry to the account it is
-already in. Save a newly typed transaction before you choose an account.
+already in. You can choose the account while
+[entering a new transaction](add-correct-transactions.md#record-money-moved-between-your-accounts)
+and save both entries together.
 
 If the other posting is already there, and especially if that account
 uses a different currency, do not pick the account from this list. Link
@@ -166,7 +168,9 @@ Right-click an ordinary category for these actions:
 - **Delete unused category:** remove a category with no current
   transactions, rules or saved reports using it. Check archived accounts
   and disabled rules too. Past use alone is fine.
-  If it’s still in use, you can archive it instead.
+  You can delete an unused category while transfer destinations from a
+  QIF file are waiting in Review. If the category itself is still in use,
+  you can archive it.
 
 If a saved action needs the category for Undo or Redo, SpentIt asks
 before it clears both for the whole file. Choose **Cancel** to keep

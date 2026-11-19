@@ -228,8 +228,10 @@ Check the preview, then choose **Undo import**, or **Cancel** to keep it.
 After Undo, you can open an affected account right away. For example,
 open **Credit card** to check its balance even if the purchase you last
 selected there was removed.
-An import containing accepted transactions is not eligible. Later
-conflicting edits or links can also prevent Undo. An import held by another
+If you just accepted the import by mistake, undo **Accept transactions**
+first. When the import is next in Change history, undo it to remove the
+whole import in one step, including links between entries in that import.
+Later conflicting edits or links can prevent Undo. An import held by another
 import is left out of the list until that other import is undone.
 Import Undo clears Redo and cannot itself be redone; import the original
 file again if you want to bring those transactions back.

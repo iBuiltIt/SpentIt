@@ -37,7 +37,6 @@ clicking a suggestion or using **Up/Down** and **Enter** or **Tab**.
 If you Tab through without typing or moving through suggestions, you
 keep the category and move on to the memo. To change several rows,
 use the [searchable Change category picker](categories.md#change-selected-transactions).
-For a new entry, press Enter in the date, payee, amount or memo to save.
 On an existing transaction, choosing a category also saves the complete
 valid edit, so fill in the other fields first. A blank category means **Uncategorized**. Typing a
 name with no matches does not create a category.
@@ -45,6 +44,22 @@ name with no matches does not create a category.
 If a later import contains this purchase too, use
 [Review Merge](review-duplicates-transfers.md#is-it-the-same-purchase)
 to keep one transaction. SpentIt does not silently remove your manual entry.
+
+### Record money moved between your accounts
+
+To record a card payment you’ve made from **Chequing**, start a new
+transaction there. Enter **-36.18** and choose **Credit card** in
+**Category**. You can also choose an account on a split if only part of
+the money was transferred. The other account must be active and use
+the same currency.
+
+![Unsaved Credit card payment in Chequing, with Credit card offered in Category.](images/editing-new-transfer.png)
+*Choose Credit card for the payment leaving Chequing.*
+
+Press **Enter** in the date, payee, amount or memo to save. SpentIt puts
+**+36.18** in Credit card at the same time. One **Undo Add transaction**
+removes both entries. If both entries are already in your accounts,
+[link them in Review](review-duplicates-transfers.md#is-it-a-payment-between-accounts).
 
 ## Correct an entry {#correct-an-entry}
 
@@ -103,9 +118,10 @@ of cleaning supplies. Keep the transaction total at **-20.00**.
 *The two splits explain the purchase while the account total stays -20.00.*
 
 You can give each split its own memo. **Remove** beside a split removes
-that split from the edit, not the whole transaction. Transfer splits cannot
-be removed with this button. Save the balanced
-result when you’re finished.
+that split from the edit. For a New transfer you entered yourself, you
+can remove a transfer split from the original transaction. Check the
+[link warning](#take-care-with-transfers) before saving. Save the
+balanced result when you’re finished.
 
 If an imported split names a transfer account you can’t resolve, edit the
 split’s category in the account ledger or the report transaction list.
@@ -166,33 +182,71 @@ blank with that box checked to clear them. The button then says
 
 A memo you enter here stays when rules run later.
 
-For a transaction that should not be in the account, choose **Delete selected…**.
-The question shows how many transactions will be deleted, how many linked
-transactions will stay, and each affected account’s balance change.
+For a transaction that should not be in the account, right-click it and
+choose **Delete selected…**. With several rows selected, the question
+shows how many will be deleted, how many linked entries will stay, and
+how each balance will change. If every selected row is linked, select
+one entry at a time.
 
-Linked transactions are left in place, along with their links and the entries
-in the other account. If every selected transaction is linked, nothing is
-deleted. To separate a mistaken link, see
-[Unmerge](review-duplicates-transfers.md#undo-a-mistaken-answer) first.
+For one linked pair, check the other entry and compare the balances shown
+for each choice.
 
-Choose **Delete** to continue, or **Cancel** to keep the transactions.
-One Undo reverses the whole deletion. An unresolved import match can
-refuse it; settle that match, then try again.
+- **Delete and keep other entry** removes the selected entry and ends
+  the link. The entry in the other account keeps its original imported
+  transfer destination if it has one. Otherwise it becomes **Uncategorized**.
+- **Delete both entries** removes the pair from both accounts.
+
+![Delete linked transaction question showing the other entry, the balance changes, and both deletion choices.](images/editing-delete-linked.png)
+*Check what each choice does to both accounts before you delete.*
+
+One **Undo** reverses the deletion, including changes in the other
+account. If a bank match blocks deletion, settle it in Review first.
+If there are several linked splits, or the other entry has splits of
+its own, handle the transfer splits individually before deleting.
 
 For an entire mistaken import, use
-[Undo a mistaken import](import-transactions.md#undo-a-mistaken-import)
-instead of deleting its rows one by one.
+[Undo a mistaken import](import-transactions.md#undo-a-mistaken-import).
 
 ### Take care with transfers
 
-A linked new transaction may be read-only. An accepted, independently
-entered or imported posting can be corrected, but changing its amount
-or transfer category ends the link. Changing only its date keeps the link.
-**Delete selected…** leaves linked transactions in place.
+If you entered a transfer yourself and it’s still **New**, double-click
+the original transaction to edit its date, payee, memo, amount or splits.
+From the entry SpentIt created in the other account, choose
+**Edit original transaction** to get there.
 
-The other account’s independently entered or imported posting remains.
-An entry generated by SpentIt may be removed as part of the change.
-Check both accounts afterward; see [Review and linking](review-duplicates-transfers.md).
+![The entry SpentIt created in Credit card, with Edit original transaction below its fields.](images/editing-transfer-other-entry.png)
+*Open the original in Chequing to make the correction.*
+
+Press **Enter** to save. An entry SpentIt created follows changes to
+the date, payee, memo and amount while it’s New and has no bank match.
+For example, if **-36.18** should have been **+36.18**, correct the sign
+on the original and check the other account and Review after saving.
+Each side of a transfer you entered or imported separately keeps its
+own date, as does an already accepted entry.
+
+![Original transfer editor in Chequing after correcting the sign of the amount.](images/editing-transfer-original.png)
+*Check which account the money left. The two entries should have opposite signs.*
+
+For a New imported transfer, open the original to edit its date. If
+you’re looking at the entry SpentIt created, choose **Edit date on
+original transaction**. A New entry SpentIt created follows the date
+change. If the date is locked because SpentIt has found or linked a
+bank match, check the match in Review first.
+
+If you can edit an accepted transfer entry, changing only its date
+keeps the link in place.
+
+Changing a destination, removing a transfer split or correcting an
+amount can break the link. Read the question to see which entries
+stay and which are removed. If that’s what you want, choose
+**Break link and save**. **Cancel** takes you back to your edit.
+
+![Break transfer link question explaining what happens to the entry in the other account.](images/editing-break-transfer.png)
+*Check what happens to the other entry before you save.*
+
+One **Undo** restores the dates or other changes across both accounts.
+If a matching pair shows up again, see
+[Review and linking](review-duplicates-transfers.md#is-it-a-payment-between-accounts).
 
 ## Undo a saved change {#undo-a-saved-change}
 
@@ -230,6 +284,14 @@ Choose **Change history** in the sidebar to see saved actions across all
 accounts, newest first. Open a row to read the transactions it changed.
 Only the newest action offers **Undo** here. Pending **Redo** actions appear
 in a separate list, with the next one first.
+
+For example, you can undo or redo **Add transaction** while viewing
+another account. If you added an entry and then made it a transfer,
+undo the category assignment first. Then undo **Add transaction**
+to remove the entry itself.
+
+If SpentIt says it couldn’t verify the file’s rule history during
+Redo, the Undo is still in effect.
 
 ![Change history showing saved actions across the file, newest first.](images/change-history.png)
 *Use History to check what the next Undo will change, including work in other accounts.*

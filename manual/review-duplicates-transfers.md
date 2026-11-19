@@ -64,6 +64,15 @@ asking. A manually entered transaction takes priority when matching
 it to an import: the manual entry stays and gains its imported original.
 Without automatic Merge enabled, you still choose whether to merge the pair.
 
+When one entry is kept, a manual or automatic merge gives it an indigo
+**Merged** mark, even if it was already accepted. The mark stays when
+you reopen the file. When you’ve checked the result, choose **Accept
+transactions** at the bottom right of Review to clear the mark, even
+if there are no new transactions.
+
+![Review with Accept transactions at the bottom right and no questions left.](images/review-accept-marks.png)
+*Use Accept transactions to clear the mark after checking the merge.*
+
 ### Merge several matches
 
 **Select all merges** marks every ready pair that shares a date.
@@ -136,6 +145,10 @@ than seven calendar days apart. Ordinary spending categories can
 prevent a transfer suggestion. Don’t remove a valid category merely
 to make a suggestion appear.
 
+If an edit breaks a link, Review can offer the pair again if it still
+matches. If you saved **Not this transfer** for that pair, it stays
+out of Review unless you undo that decision.
+
 After linking, the category names the other account. Click its arrow
 to visit the related posting, then use **Back** to return.
 
@@ -146,7 +159,10 @@ to visit the related posting, then use **Back** to return.
 
 An imported transfer can name another account before that account’s
 bank posting arrives. SpentIt creates the corresponding entry there.
-Review may ask you to find its bank match.
+Review may ask you to find its bank match. When you
+[enter a transfer yourself](add-correct-transactions.md#record-money-moved-between-your-accounts),
+you can choose the other account before saving. Both entries appear
+when you save, and one **Undo** removes them together.
 
 When the real posting arrives, linking it replaces the extra generated
 entry where eligible. Read the question’s explanation before confirming;
@@ -179,7 +195,7 @@ that holds the entries SpentIt creates and select **Add account**. Use
 [Accept transactions](accept-transactions.md#when-review-still-has-questions)
 handles waiting transfers in listed accounts. Possible bank matches still
 appear in Review. This setting applies to the file at its current location
-on this computer. See the [Settings picture](backup-recovery.md#change-or-remove-the-password).
+on this computer. See the [Settings picture](backup-recovery.md#choose-how-dates-look).
 
 ## When the amounts differ {#when-the-amounts-differ}
 
@@ -274,18 +290,16 @@ While this runs you’ll see **Checking duplicate and transfer
 suggestions**, followed by counts as SpentIt merges or links them.
 
 Check the import summary for how many pairs were merged or linked, then
-look over the marked transactions. An indigo edge means Merged; a green edge
-means linked to another account. These marks can appear on accepted entries
-too, and stay if you close and reopen the file.
+look over the marked transactions. An indigo edge means **Merged**.
+A green edge means the entry is linked to another account. The marks
+can appear on accepted entries and stay when you reopen the file.
 
 ![Accepted Market purchase marked Merged after an automatic duplicate merge.](images/review-automatic.png)
 *The accepted purchase stays, with a mark to help you check the automatic result.*
 
-You still choose **Accept transactions** when you are ready. It clears those
-marks, even when there are no new transactions left. If automatic
-matching is cancelled or fails, the import stays and none of those
-pairs are saved. The summary
-asks you to review the remaining matches.
+**Accept transactions** clears the marks. If automatic matching is
+cancelled or fails, the import stays and the summary asks you to
+review the remaining matches.
 
 ## Undo a mistaken answer
 
@@ -299,10 +313,16 @@ right-click and choose **Unmerge**. This can remain available after acceptance
 and after closing the file. It is unavailable on an ordinary transaction or
 one that belongs to more than one join.
 
-For a duplicate merge, Unmerge restores the removed transaction and keeps any
-later edits to the entry you retained. For a linked payment, read the
-confirmation: it names the accounts where extra entries will return. If the
-link kept both transactions, Unmerge leaves both in place and separates them.
+For a duplicate merge, **Unmerge** brings the removed transaction back
+as **New**, with its original bank record if it was imported. Any edits
+you made to the kept entry are still there. If it was accepted, it
+stays accepted. The balance includes both amounts right away. Check the
+restored entry, then accept it when you’re ready. One **Undo** rejoins
+the entries, and **Redo** brings the removed entry back again.
+
+For a linked payment, read the confirmation to see where extra entries
+will return. If the link kept both transactions, **Unmerge** separates
+them and leaves both in their accounts.
 
 Accepted payments stay accepted. Restored extra transfer entries return as
 new transactions, with blue marks where the payment is shown twice again.

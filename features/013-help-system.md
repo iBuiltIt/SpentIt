@@ -1,10 +1,10 @@
 # 013 — Help and the user manual
 
 Status: **active**
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 
 Help is an offline viewer of the bundled manual: twelve chapters, five quick
-references, and 46 pictures. Sample topics in tests are fixtures, not the
+references, and 52 pictures. Sample topics in tests are fixtures, not the
 manual. Contextual Help opens fixed `help:topic#section` targets from
 workspaces, dialogs, leave windows, and error or status actions.
 

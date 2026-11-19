@@ -33,7 +33,8 @@ and use another name if you want to keep it.
 - **Home / account currency:** choose this account’s currency.
   Our example uses CAD (Canadian dollars).
 - **Date format:** choose how you want to read and enter dates.
-  The example beneath the control shows your choice.
+  The example beneath the control shows your choice. You can
+  [change it later in Settings](backup-recovery.md#choose-how-dates-look).
 - **Use default categories:** leave this checked for a starting set
   of categories. You can add or rename categories later.
 

@@ -674,11 +674,13 @@ private slots:
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
-            << QStringList{"review-keep.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png",
+            << QStringList{"review-keep.png", "review-accept-marks.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png",
                            "review-differing-amounts.png", "review-difference.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
-            << QStringList{"editing-new.png", "editing-calendar.png", "editing-splits.png", "editing-mismatch.png", "change-history.png"}
+            << QStringList{"editing-new.png", "editing-new-transfer.png", "editing-calendar.png", "editing-splits.png",
+                           "editing-mismatch.png", "editing-delete-linked.png", "editing-transfer-other-entry.png",
+                           "editing-transfer-original.png", "editing-break-transfer.png", "change-history.png"}
             << QString("divide-a-purchase-into-splits") << QString("Divide a purchase into splits");
         QTest::newRow("categories") << QString("organize-categories")
             << QStringList{"categories-workspace.png", "categories-completion.png", "categories-menu.png", "categories-split.png", "categories-delete.png"}
@@ -694,7 +696,7 @@ private slots:
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
             << QStringList{"settings.png"}
-            << QString("keep-a-copy") << QString("Keep a copy of the file");
+            << QString("choose-how-dates-look") << QString("Choose how dates look");
         QTest::newRow("where-to-find") << QString("where-to-find")
             << QStringList{}
             << QString("undo-and-problems") << QString("Undo and problems");
@@ -1848,8 +1850,6 @@ private slots:
             }
             auto* settingsView = qobject_cast<QQuickItem*>(object(session.root, "activeSettings"));
             QVERIFY(settingsView);
-            auto* flick = settingsView->property("contentItem").value<QQuickItem*>();
-            QVERIFY(flick);
             auto* passwordField = qobject_cast<QQuickItem*>(object(session.root, "currentPassword"));
             QVERIFY(passwordField);
             QVERIFY(passwordField->isVisible());
@@ -1858,13 +1858,18 @@ private slots:
             QVERIFY(changePassword);
             QVERIFY(changePassword->isVisible());
             QVERIFY(!changePassword->isEnabled());
-            const double extra = flick->property("contentHeight").toDouble() - flick->height();
-            if (extra > 0) flick->setProperty("contentY", extra);
+            auto* format = object(session.root, "fileDateFormat");
+            QVERIFY(format);
+            QVERIFY(format->setProperty("currentIndex", 6));
+            QVERIFY(edit(session.root, "fileCustomDateFormat", "DD.MM.YYYY"));
+            QVERIFY(object(session.root, "saveDateFormat")->property("enabled").toBool());
             QTest::qWait(200);
             const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
             if (!output.isEmpty())
                 QVERIFY(session.window->grabWindow().save(QDir(output).filePath("settings.png")));
-            flick->setProperty("contentY", 0);
+            QVERIFY(click(session.root, "saveDateFormat"));
+            wait(session.model);
+            QCOMPARE(session.model.state().value("dateFormat").toString(), QString("DD.MM.YYYY"));
         }
         mouse("amountFormatting");
         QVERIFY(!session.model.state().value("amountFormatting").toBool());
@@ -2502,6 +2507,64 @@ private slots:
         QVERIFY(edit(session.root, "durablePayee", "Corner shop corrected")); enter("durablePayee");
         run(session.model, "undo_edit");
         QCOMPARE(session.model.state().value("selected").toMap().value("draft").toMap().value("payee").toString(), QString("Corner shop"));
+
+        run(session.model, "create_account", {{"id", "2"}, {"name", "Chequing"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
+        mouse("addTransaction");
+        QTRY_VERIFY(object(session.root, "durablePayee")->property("activeFocus").toBool());
+        QVERIFY(edit(session.root, "durableDate", "2026-01-28"));
+        QVERIFY(edit(session.root, "durablePayee", "Credit card payment"));
+        QVERIFY(edit(session.root, "durableTotal", "-36.18"));
+        auto* transferCategory = qobject_cast<QQuickItem*>(object(session.root, "splitCategory_0"));
+        QVERIFY(transferCategory);
+        transferCategory->forceActiveFocus();
+        QVERIFY(edit(session.root, "splitCategory_0", "Credit card"));
+        QTRY_VERIFY(object(session.root, "inlineCategoryChoice_1"));
+        capture("editing-new-transfer");
+        QVERIFY(transferCategory->hasActiveFocus());
+        QVERIFY(QMetaObject::invokeMethod(transferCategory, "acceptChoice"));
+        QCOMPARE(transferCategory->property("savedText").toString(), QString("Credit card [Account]"));
+        enter("durableTotal");
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-36.18"));
+        const auto origin = session.model.state().value("selected").toMap();
+        const auto originBatch = origin.value("batch").toString();
+        const auto originOrdinal = origin.value("ordinal").toInt();
+        QVERIFY(!originBatch.isEmpty());
+        const auto transfers = session.model.state().value("transfers").toList();
+        QCOMPARE(transfers.size(), 1);
+        const auto other = transfers.front().toMap();
+        run(session.model, "select_account", {{"id", "1"}});
+        QCOMPARE(session.model.state().value("balance").toString(), QString("-20.00"));
+        run(session.model, "inspect", {{"batch", other.value("counterpartBatch")}, {"ordinal", other.value("counterpartOrdinal")}});
+        QTRY_VERIFY(object(session.root, "editTransferDateOrigin")->property("visible").toBool());
+        QCOMPARE(object(session.root, "editTransferDateOrigin")->property("text").toString(), QString("Edit original transaction"));
+        capture("editing-transfer-other-entry");
+        mouse("editTransferDateOrigin");
+        QTRY_COMPARE(session.model.state().value("accountId").toString(), QString("2"));
+        QVERIFY(edit(session.root, "durableTotal", "36.18"));
+        enter("durableTotal");
+        QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
+        capture("editing-transfer-original");
+
+        category(0, "Household");
+        QTRY_VERIFY(object(session.root, "manualTransferConfirmation")->property("visible").toBool());
+        capture("editing-break-transfer");
+        mouse("cancelManualTransfer");
+        auto* total = qobject_cast<QQuickItem*>(object(session.root, "durableTotal"));
+        QVERIFY(total);
+        total->forceActiveFocus();
+        QTest::keyClick(session.window, Qt::Key_Escape);
+        wait(session.model);
+        const int originRow = session.model.occurrenceIndex(originBatch, originOrdinal);
+        QVERIFY(originRow >= 0);
+        run(session.model, "select", {{"row", originRow}});
+        QVERIFY(QMetaObject::invokeMethod(object(session.root, "deleteSelectedContext"), "triggered"));
+        wait(session.model);
+        QTRY_VERIFY(object(session.root, "confirmKeepLinkedEntry")->property("visible").toBool());
+        capture("editing-delete-linked");
+        mouse("confirmDeleteBothEntries");
+        QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
+        run(session.model, "undo_edit");
+        QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
     }
     void reviewChapterWalkthrough_data() {
         QTest::addColumn<bool>("difference");
@@ -2692,6 +2755,9 @@ private slots:
             QTRY_VERIFY(object(session.root, "ledgerRow_" + QString::number(row)));
             QTRY_VERIFY(object(session.root, "ledgerRow_" + QString::number(row))->property("mergedMark").toBool());
             capture("review-automatic");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "commitImport")->property("visible").toBool());
+            capture("review-accept-marks");
         } else {
             import("!Type:Bank\nD2026-01-28\nT-37.18\nPCredit card payment\nL[Credit card]\n^\n", "1");
             run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
