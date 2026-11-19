@@ -643,6 +643,83 @@ private slots:
         QCOMPARE(categoryOf(checking),QString("Uncategorized"));QCOMPARE(categoryOf(savings),QString("Uncategorized"));
         run(model,"close");
     }
+    void chainedPreviousComparisons(){
+        QTemporaryDir dir;
+        const auto path=dir.filePath("document");
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine,&QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* root=engine.rootObjects().first();
+        run(model,"create",{{"path",path},{"protected",false},{"name","Synthetic checking"},{"currency","CAD"}});
+        const QVariantMap legacyMonth{{"preset","last_month"},{"start",""},{"end",""}};
+        const QVariantList legacyPeriods{
+            QVariantMap{{"preset","custom"},{"start","2026-05-01"},{"end","2026-05-31"}},
+            legacyMonth,legacyMonth
+        };
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},
+            {"reports",QVariantList{QVariantMap{{"id","comparison"},{"name","Spending"},{"graph","none"},
+                {"accounts",QVariantList{"1"}},{"categories",QVariantList{""}},{"periods",legacyPeriods}}}}});
+        run(model,"close");
+        run(model,"open",{{"path",path}});
+        QVERIFY(click(root,"reportsNavigation"));
+        QTRY_VERIFY(!model.busy());
+        auto* workspace=object(root,"reportsWorkspace");
+        QVERIFY(workspace);
+        QTRY_VERIFY(object(root,"reportEndDate2"));
+        QCOMPARE(object(root,"reportEndDate1")->property("text"),object(root,"reportEndDate2")->property("text"));
+        QVERIFY(QMetaObject::invokeMethod(workspace,"setField",Q_ARG(QVariant,QVariant("name")),Q_ARG(QVariant,QVariant("Renamed"))));
+        QVERIFY(click(root,"saveReport"));
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        QCOMPARE(model.state().value("reports").toList().front().toMap().value("periods").toList(),legacyPeriods);
+
+        QVERIFY(click(root,"addReportComparison"));
+        QTRY_COMPARE(object(root,"reportEndDate1")->property("text").toString(),QString("2026-04-30"));
+        QTRY_COMPARE(object(root,"reportEndDate2")->property("text").toString(),QString("2026-03-31"));
+        QVERIFY(QMetaObject::invokeMethod(workspace,"discard"));
+        QCOMPARE(object(root,"reportEndDate1")->property("text"),object(root,"reportEndDate2")->property("text"));
+
+        QVERIFY(click(root,"addReportComparison"));
+        QTRY_VERIFY(object(root,"reportPeriodPreset3"));
+        auto* preset=object(root,"reportPeriodPreset3");
+        QCOMPARE(preset->property("currentText").toString(),QString("Same period previous year"));
+        const auto monthlyIndex=value(preset->property("model")).toStringList().indexOf("Previous calendar month");
+        QVERIFY(monthlyIndex>=0);
+        const auto monthly=static_cast<int>(monthlyIndex);
+        QVERIFY(preset->setProperty("currentIndex",monthly));
+        QVERIFY(QMetaObject::invokeMethod(preset,"activated",Q_ARG(int,monthly)));
+        QTRY_COMPARE(object(root,"reportEndDate3")->property("text").toString(),QString("2026-02-28"));
+        QVERIFY(click(root,"showReport"));
+        QTRY_VERIFY(!model.busy() && workspace->property("mode").toString()=="result");
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto reportEnds=[&]{
+            QStringList ends;
+            for(const auto& period:model.state().value("reportResult").toMap().value("periods").toList())
+                ends.push_back(period.toMap().value("end").toString());
+            return ends;
+        };
+        const QStringList expected{"2026-05-31","2026-04-30","2026-03-31","2026-02-28"};
+        QCOMPARE(reportEnds(),expected);
+        run(model,"close");
+        run(model,"open",{{"path",path}});
+        run(model,"report_show",{{"id","comparison"}});
+        QCOMPARE(reportEnds(),expected);
+        run(model,"report_drill",{{"currency",0},{"period",2},{"row",-1}});
+        const auto drill=model.state().value("reportDetails").toMap().value("cell");
+        run(model,"report_leave");
+        auto definition=model.state().value("reports").toList().front().toMap();
+        auto changedPeriods=definition.value("periods").toList();
+        changedPeriods[0]=QVariantMap{{"preset","custom"},{"start","2026-06-01"},{"end","2026-06-30"}};
+        definition["periods"]=changedPeriods;
+        run(model,"report_save",{{"revision",model.state().value("reportRevision")},{"reports",QVariantList{definition}}});
+        model.command("report_show",{{"id","comparison"},{"history",true},{"drill",drill}});
+        QTRY_VERIFY(!model.busy());
+        QVERIFY(model.error().contains("This report period changed."));
+        QCOMPARE(warnings.size(),qsizetype(0));
+    }
     void reportsAndCalendar(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;
         QSignalSpy warnings(&engine,&QQmlEngine::warnings);

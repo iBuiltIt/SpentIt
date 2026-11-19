@@ -124,6 +124,11 @@ Rule matching/template semantics remain those of the current engine; a future
 incompatible interpretation requires an exchange-version decision, not silent reuse.
 Report graph and period strings use the saved report contract (`none`, `bar`, `pie`,
 `grouped_bar`; Custom dates are ISO). Moving presets remain moving.
+Edited or new chained comparisons use `prior_calendar_month`,
+`prior_calendar_year`, and `prior_year_same_period`. The older identifiers
+`last_month`, `last_year`, and `previous_year` retain their original meaning.
+Importing reports that use the new identifiers requires a build that supports
+[Previous comparisons](../features/006-reporting-drill-down.md#previous-comparisons).
 
 The importer validates the complete file structure before showing choices and the
 selected definitions before saving. Only dependencies

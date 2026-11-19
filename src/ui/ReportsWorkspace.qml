@@ -49,8 +49,9 @@ Item {
     signal helpRequested(string target)
     readonly property var current:selectedIndex>=0 && selectedIndex<drafts.length?drafts[selectedIndex]:null
     readonly property bool dirty:{generation;return JSON.stringify(drafts)!==JSON.stringify(savedDefinitions)}
-    readonly property var presetIds:["ytd","this_year","last_year","this_quarter","last_quarter","this_month","last_month","six_months","previous_year","custom"]
-    readonly property var presetNames:["Year to date","This year","Last year","This quarter","Last quarter","This month","Previous calendar month","Last 6 complete months","Same period last year","Custom"]
+    readonly property var presetIds:["ytd","this_year","prior_calendar_year","this_quarter","last_quarter","this_month","prior_calendar_month","six_months","prior_year_same_period","custom"]
+    readonly property var presetNames:["Year to date","This year","Previous year","This quarter","Last quarter","This month","Previous calendar month","Last 6 complete months","Same period previous year","Custom"]
+    readonly property var legacyPreviousPresets:({ "last_year":"prior_calendar_year", "last_month":"prior_calendar_month", "previous_year":"prior_year_same_period" })
     readonly property var accountChoices:(state.accounts||[]).concat(state.archivedAccounts||[])
     readonly property var categoryChoices:[{id:"",name:"Uncategorized"}].concat((state.categories||[]).filter(c=>!c.deleted && !c.group).sort((a,b)=>Number(!!a.income)-Number(!!b.income) || a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id)))
     readonly property var result:state.reportResult||{}
@@ -69,7 +70,16 @@ Item {
         value.id=workflow.newIdentity();if(duplicate)value.name+=" copy"
         drafts=drafts.concat([value]);selectedIndex=drafts.length-1;touch();reportSearch.text="";revealEditor()
     }
-    function updatePeriod(index,value){if(current){current.periods[index]=value;touch()}}
+    function currentPreset(id){return legacyPreviousPresets[id] || id}
+    function setPeriods(periods){
+        current.periods=periods.map(p=>({preset:currentPreset(p.preset),start:p.start,end:p.end}))
+        touch()
+    }
+    function updatePeriod(index,value){
+        const periods=current.periods.slice()
+        periods[index]=value
+        setPeriods(periods)
+    }
     function setField(name,value){if(current){current[name]=value;touch()}}
     function selectAll(field,values){if(current){current[field]=values;touch()}}
     function check(field,id,enabled) {
@@ -302,13 +312,19 @@ Item {
                             }
                         }
                     }
+                    Label {
+                        visible:{root.generation;return !!root.current && root.current.periods.slice(1).some(p=>root.legacyPreviousPresets[p.preset])}
+                        text:"Edit a period to make Previous comparisons follow the period above."
+                        wrapMode:Text.Wrap
+                        Layout.fillWidth:true
+                    }
                     Repeater {
-                        model:root.current?root.current.periods:[]
+                        model:{root.generation;return root.current?root.current.periods.length:0}
                         ColumnLayout {
-                            id:periodRow;required property var modelData;required property int index
-                            readonly property var choices:root.presetIds.filter(id=>index>0 || id!=="previous_year")
+                            id:periodRow;required property int index
+                            readonly property var choices:root.presetIds.filter(id=>index>0 || id!=="prior_year_same_period")
                             property var period:{root.generation;return root.current && root.current.periods[index]?root.current.periods[index]:{preset:"ytd",start:"",end:""}}
-                            property var resolved:{root.generation;root.state.dateFormat;return root.workflow.reportPeriod(period,root.current?root.current.periods[0]:{})}
+                            property var resolved:{root.generation;root.state.dateFormat;return root.current?root.workflow.reportPeriod(root.current.periods,index):{}}
                             Layout.fillWidth:true
                             function setDate(field,value){
                                 const parsed=value.length?root.workflow.calendarPage(value):{error:"Enter a date."}
@@ -320,8 +336,18 @@ Item {
                             }
                             GridLayout {Layout.fillWidth:true;columns:root.width<700?1:3
                                 Label {textFormat:Text.PlainText;text:periodRow.index===0?"Main period":"Comparison "+periodRow.index}
-                                ComboBox {Layout.fillWidth:true;implicitContentWidthPolicy:ComboBox.WidestText;model:periodRow.choices.map(id=>root.presetNames[root.presetIds.indexOf(id)]);currentIndex:periodRow.choices.indexOf(periodRow.period.preset);onActivated:{let value=root.copy(periodRow.period);value.start=periodRow.resolved.start||value.start;value.end=periodRow.resolved.end||value.end;value.preset=periodRow.choices[currentIndex];root.updatePeriod(periodRow.index,value)}}
-                                Button {text:"Remove comparison";visible:periodRow.index>0;onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.splice(periodRow.index,1);root.drafts=next;root.touch()}}
+                                ComboBox {
+                                    objectName:"reportPeriodPreset"+periodRow.index
+                                    Layout.fillWidth:true;implicitContentWidthPolicy:ComboBox.WidestText
+                                    model:periodRow.choices.map(id=>root.presetNames[root.presetIds.indexOf(id)])
+                                    currentIndex:periodRow.choices.indexOf(root.currentPreset(periodRow.period.preset))
+                                    onActivated:{
+                                        const preset=periodRow.choices[currentIndex]
+                                        if(preset===periodRow.period.preset)return
+                                        root.updatePeriod(periodRow.index,{preset:preset,start:periodRow.resolved.start||periodRow.period.start,end:periodRow.resolved.end||periodRow.period.end})
+                                    }
+                                }
+                                Button {text:"Remove comparison";visible:periodRow.index>0;onClicked:{let periods=root.current.periods.slice();periods.splice(periodRow.index,1);root.setPeriods(periods)}}
                             }
                             RowLayout {
                                 Label {textFormat:Text.PlainText;text:"From"}
@@ -338,7 +364,7 @@ Item {
                             Label {textFormat:Text.PlainText;visible:!!periodRow.resolved.error;text:periodRow.resolved.error||"";wrapMode:Text.Wrap;Layout.fillWidth:true}
                         }
                     }
-                    Button {text:"Add comparison";onClicked:{let next=root.copy(root.drafts);next[root.selectedIndex].periods.push({preset:"previous_year",start:"",end:""});root.drafts=next;root.touch()}}
+                    Button {objectName:"addReportComparison";text:"Add comparison";onClicked:root.setPeriods(root.current.periods.concat([{preset:"prior_year_same_period",start:"",end:""}]))}
                     RowLayout {
                         Label {textFormat:Text.PlainText;text:"Chart"}
                         ComboBox {objectName:"reportGraph";implicitContentWidthPolicy:ComboBox.WidestText;Layout.fillWidth:true;model:["None","Bar — separate periods","Bar — grouped periods","Pie"];currentIndex:root.current?["none","bar","grouped_bar","pie"].indexOf(root.current.graph):0;onActivated:root.setField("graph",["none","bar","grouped_bar","pie"][currentIndex])}

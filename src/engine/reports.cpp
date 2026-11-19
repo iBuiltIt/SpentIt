@@ -20,9 +20,11 @@ std::string iso(year_month_day d){
     char buffer[11];std::snprintf(buffer,sizeof(buffer),"%04d-%02u-%02u",int(d.year()),unsigned(d.month()),unsigned(d.day()));return buffer;
 }
 year_month_day last(year_month m){return year_month_day(m/last_spec{});}
-year_month_day previous_year(year_month_day d){auto result=d-years(1);return result.ok()?result:last(result.year()/result.month());}
+year_month_day earlier_year(year_month_day d,years offset){
+    const auto result=d-offset;
+    return result.ok()?result:last(result.year()/result.month());
 }
-Range resolve(const Period& p,std::string_view today,const Range* main){
+Range resolve(const Period& p,std::string_view today,const Range* anchor,years offset){
     using namespace std::chrono;
     const auto now=date(today);auto start=now,end=now;std::string label;
     const auto month=now.year()/now.month();
@@ -30,17 +32,52 @@ Range resolve(const Period& p,std::string_view today,const Range* main){
     else if(p.preset=="ytd"){start=now.year()/January/1;label="Year to date";}
     else if(p.preset=="this_year"){start=now.year()/January/1;end=now.year()/December/31;label="This year";}
     else if(p.preset=="last_year"){start=(now.year()-years(1))/January/1;end=(now.year()-years(1))/December/31;label="Last year";}
+    else if(p.preset=="prior_calendar_year"){
+        const auto year=(anchor?date(anchor->start):now).year()-years(1);
+        start=year/January/1;end=year/December/31;label="Previous year";
+    }
     else if(p.preset=="this_month"){start=month/1;end=last(month);label="This month";}
     else if(p.preset=="last_month"){start=(month-months(1))/1;end=last(month-months(1));label="Previous calendar month";}
+    else if(p.preset=="prior_calendar_month"){
+        const auto reference=anchor?date(anchor->start):now;
+        const auto previous=(reference.year()/reference.month())-months(1);
+        start=previous/1;end=last(previous);label="Previous calendar month";
+    }
     else if(p.preset=="six_months"){start=(month-months(6))/1;end=last(month-months(1));label="Last 6 complete months";}
     else if(p.preset=="this_quarter" || p.preset=="last_quarter"){
         auto first=now.year()/std::chrono::month(((unsigned(now.month())-1)/3)*3+1);
         if(p.preset=="last_quarter")first-=months(3);
         start=first/1;end=last(first+months(2));label=p.preset=="this_quarter"?"This quarter":"Last quarter";
-    } else if(p.preset=="previous_year" && main){start=previous_year(date(main->start));end=previous_year(date(main->end));label="Same period last year";}
+    } else if(anchor && (p.preset=="previous_year" || p.preset=="prior_year_same_period")){
+        start=earlier_year(date(anchor->start),offset);
+        end=earlier_year(date(anchor->end),offset);
+        label=p.preset=="previous_year"?"Same period last year":"Same period previous year";
+    }
     else throw std::invalid_argument("Choose a valid period preset.");
     if(sys_days(start)>sys_days(end))throw std::invalid_argument("The start date must be on or before the end date.");
     return {label,iso(start),iso(end)};
+}
+}
+std::optional<std::size_t> period_anchor(const Period& period,std::size_t index){
+    if(index==0)return std::nullopt;
+    if(period.preset=="previous_year")return 0;
+    if(period.preset=="prior_calendar_year" || period.preset=="prior_calendar_month" || period.preset=="prior_year_same_period")
+        return index-1;
+    return std::nullopt;
+}
+Range resolve_period(std::span<const Period> periods,std::string_view today,std::size_t index){
+    if(index>=periods.size() || index>=32)throw std::invalid_argument("Choose a main period and no more than 31 comparisons.");
+    const auto& period=periods[index];
+    auto anchor_index=period_anchor(period,index);
+    if(!anchor_index)return resolve(period,today,nullptr,years(0));
+    if(period.preset=="prior_year_same_period"){
+        // Shift from the first range in the chain so a leap-day cutoff can recur.
+        while(*anchor_index>0 && periods[*anchor_index].preset=="prior_year_same_period")
+            --*anchor_index;
+    }
+    const auto anchor=resolve_period(periods,today,*anchor_index);
+    const auto offset=period.preset=="previous_year"?1:static_cast<int>(index-*anchor_index);
+    return resolve(period,today,&anchor,years(offset));
 }
 void validate(const Definition& d){
     const auto validText=[](const std::string& s,std::size_t limit){return s.size()<=limit && qif::valid_utf8(s) && std::none_of(s.begin(),s.end(),[](unsigned char c){return c<32 || c==127;});};
@@ -52,13 +89,11 @@ void validate(const Definition& d){
     if(std::set<std::int64_t>(d.accounts.begin(),d.accounts.end()).size()!=d.accounts.size() || std::any_of(d.accounts.begin(),d.accounts.end(),[](auto id){return id<=0;}))throw std::invalid_argument("Invalid account selection.");
     if(std::set<std::string>(d.categories.begin(),d.categories.end()).size()!=d.categories.size())throw std::invalid_argument("Duplicate category selection.");
     for(const auto& id:d.categories)if(!validText(id,256))throw std::invalid_argument("Invalid category selection.");
-    const auto main=resolve(d.periods.front(),"2026-11-04");
-    for(const auto& p:d.periods)(void)resolve(p,"2026-11-04",&main);
+    for(std::size_t i=0;i<d.periods.size();++i)(void)resolve_period(d.periods,"2026-11-04",i);
 }
 Snapshot calculate(const Definition& d,std::string_view today,std::vector<Entry> entries,const std::vector<Category>& categories,const std::vector<Currency>& currencies,const std::function<void()>& checkpoint){
     validate(d);Snapshot out{d,{},std::move(entries),{}};
-    out.periods.push_back(resolve(d.periods.front(),today));
-    for(std::size_t i=1;i<d.periods.size();++i)out.periods.push_back(resolve(d.periods[i],today,&out.periods.front()));
+    for(std::size_t i=0;i<d.periods.size();++i)out.periods.push_back(resolve_period(d.periods,today,i));
     const std::set<std::int64_t> accounts(d.accounts.begin(),d.accounts.end());
     std::map<std::string,Category> selected;
     for(const auto& id:d.categories){const auto found=std::find_if(categories.begin(),categories.end(),[&](const auto& c){return c.id==id;});if(found==categories.end())throw std::invalid_argument("A selected category is no longer available. Edit the report selection.");selected.emplace(id,*found);}

@@ -42,6 +42,22 @@ A period whose category totals are negative keeps its table. Bar can show those
 amounts. Do not draw a pie from absolute values or drop the negative categories.
 Bar scales are shared across periods inside one currency.
 
+### Previous comparisons
+
+**Previous calendar month** and **Previous year** show the full month or year
+before the start of the period immediately above. As the main period, they
+use today's month or year. **Same period previous year** is available for
+comparisons and shifts both dates of the period above back one year. In a
+consecutive chain, the original month and day carry through to each year.
+February 29 becomes February 28 only in years without a leap day. A saved
+Year to date comparison chain uses the current cutoff each time it runs.
+
+Existing saved periods retain their prior date rules until a period edit is
+saved. The old month and full-year presets use today, and the old same-period
+preset uses the main period. Changing a preset or date, adding a comparison,
+or removing one updates the report's Previous presets together. Other report
+edits and duplicating a report retain its existing period rules.
+
 ## Charts and drill-down
 
 Charts come before one striped table of the remaining categories. Grouped-period bars

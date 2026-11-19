@@ -22,12 +22,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-101. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-102. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+- **MAN-101 · 2026-11-19** Update [Reports](../manual/reports.md) to explain
+  Previous calendar month, Previous year, and Same period previous year.
+  Show consecutive months and aligned year-to-date comparisons, and explain
+  when an existing report adopts the new date rules. Refresh screenshots
+  that show the old preset names.
+  [Contract](../features/006-reporting-drill-down.md#previous-comparisons)
 
 - **MAN-100 · 2026-11-19** Update [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
   to explain how to select both rows and use **Merge** after **Not this transfer**.

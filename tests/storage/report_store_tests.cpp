@@ -25,6 +25,8 @@ int main(){std::filesystem::path dir;try{
         auto retry=saved;retry.revision=0;store.save_reports(retry);check(store.report_catalog().revision==1);
         auto stale=retry;stale.definitions[0].name="Conflicting retry";rejects([&]{store.save_reports(stale);});
         auto next=saved;next.definitions.front().name="Changed";
+        next.definitions.front().periods[1].preset="prior_calendar_year";
+        next.definitions.front().periods.push_back({"prior_calendar_year"});
         store.observer([](ImportPhase phase){if(phase==ImportPhase::before_commit)throw std::runtime_error("Synthetic precommit fault");});rejects([&]{store.save_reports(next);});store.observer({});check(store.report_catalog().definitions==saved.definitions);
         store.observer([](ImportPhase phase){if(phase==ImportPhase::after_commit)throw std::runtime_error("Synthetic postcommit fault");});rejects([&]{store.save_reports(next);});store.observer({});check(store.report_catalog().definitions==next.definitions);saved=store.report_catalog();
         store.opening(0,"2026-01-01",Money(10000,cad));
@@ -32,6 +34,7 @@ int main(){std::filesystem::path dir;try{
         store.ingest("b","D2/1/2026\nT-3\nPNew\n^\n",qif::DateOrder::dmy);
         app::OperationContext context;auto entries=store.report_entries({1},context);check(entries.size()==2 && entries[0].committed && !entries[1].committed);check(store.account().identity==1);
         auto report=reports::calculate(saved.definitions.front(),"2026-11-04",entries,{{"","Uncategorized"}},{cad});check(report.currencies[0].totals[0].amount.units()==1300);
+        check(report.periods[2].start=="2024-01-01" && report.periods[2].end=="2024-12-31");
         rejects([&]{store.report_entries({99},context);});check(store.account().identity==1);
         store.create_account(2,"Savings",cad,"2026-01-01");store.select_account(2);store.opening(0,"2026-01-01",Money(0,cad));store.select_account(1);
         const auto category=store.preview_category_change({app::CategoryAction::create,"fees","Fees","",CategoryKind::leaf});store.apply_category_change("create-fees",category.request,category.catalog_revision);

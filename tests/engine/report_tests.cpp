@@ -7,14 +7,35 @@ using namespace spentit::reports;
 void check(bool ok,const std::source_location where=std::source_location::current()){if(!ok)throw std::runtime_error("Report assertion at "+std::to_string(where.line()));}
 template<class F>void rejects(F f){bool failed=false;try{f();}catch(const std::exception&){failed=true;}check(failed);}
 int main(){try{
-    auto range=resolve({"six_months",{},{}},"2026-01-12");check(range.start=="2025-07-01" && range.end=="2025-12-31");
-    range=resolve({"last_quarter",{},{}},"2026-02-01");check(range.start=="2025-10-01" && range.end=="2025-12-31");
-    range=resolve({"custom","2024-02-29","2024-02-29"},"2026-01-01");auto prior=resolve({"previous_year",{},{}},"2026-01-01",&range);check(prior.start=="2023-02-28" && prior.end=="2023-02-28");
-    rejects([]{resolve({"custom","2026-02-29","2026-03-01"},"2026-01-01");});
-    rejects([]{resolve({"custom","2026-03-01","2026-02-01"},"2026-01-01");});
-    rejects([]{resolve({"last_year",{},{}},"0001-01-01");});
-    check(resolve({"this_year",{},{}},"9999-12-31").end=="9999-12-31");
-    check(resolve({"ytd",{},{}},"2026-11-04").end=="2026-11-04");
+    const auto resolve=[](std::initializer_list<Period> periods,std::string_view today){
+        return resolve_period(periods,today,periods.size()-1);
+    };
+    auto range=resolve({{"six_months"}},"2026-01-12");check(range.start=="2025-07-01" && range.end=="2025-12-31");
+    range=resolve({{"last_quarter"}},"2026-02-01");check(range.start=="2025-10-01" && range.end=="2025-12-31");
+    auto prior=resolve({{"custom","2024-02-29","2024-02-29"},{"previous_year"},{"previous_year"}},"2026-01-01");
+    check(prior.start=="2023-02-28" && prior.end=="2023-02-28");
+    rejects([&]{resolve({{"custom","2026-02-29","2026-03-01"}},"2026-01-01");});
+    rejects([&]{resolve({{"custom","2026-03-01","2026-02-01"}},"2026-01-01");});
+    rejects([&]{resolve({{"last_year"}},"0001-01-01");});
+    rejects([&]{resolve({{"prior_year_same_period"}},"2026-01-01");});
+    rejects([&]{resolve({{"custom","0001-01-01","0001-01-31"},{"prior_calendar_month"}},"2026-01-01");});
+    check(resolve({{"this_year"}},"9999-12-31").end=="9999-12-31");
+    check(resolve({{"ytd"}},"2026-11-04").end=="2026-11-04");
+    check(resolve({{"prior_calendar_month"}},"2026-01-12").end=="2025-12-31");
+    check(resolve({{"prior_calendar_year"}},"2026-01-12").end=="2025-12-31");
+    check(resolve({{"this_month"},{"last_month"},{"last_month"}},"2026-05-19").end=="2026-04-30");
+    check(resolve({{"this_year"},{"last_year"},{"last_year"}},"2026-05-19").end=="2025-12-31");
+    range=resolve({{"this_month"},{"prior_calendar_month"},{"prior_calendar_month"}},"2026-05-19");
+    check(range.start=="2026-03-01" && range.end=="2026-03-31");
+    range=resolve({{"this_year"},{"prior_calendar_year"},{"prior_calendar_year"},{"prior_calendar_year"},{"prior_calendar_year"}},"2026-05-19");
+    check(range.start=="2022-01-01" && range.end=="2022-12-31");
+    range=resolve({{"this_month"},{"prior_calendar_year"},{"prior_calendar_month"}},"2026-05-19");
+    check(range.start=="2024-12-01" && range.end=="2024-12-31");
+    const std::vector<Period> ytd{{"ytd"},{"prior_year_same_period"},{"prior_year_same_period"},{"prior_year_same_period"},{"prior_year_same_period"}};
+    check(resolve_period(ytd,"2024-02-29",1).end=="2023-02-28");
+    check(resolve_period(ytd,"2024-02-29",4).end=="2020-02-29");
+    check(resolve_period(ytd,"2024-03-19",4).end=="2020-03-19");
+    check(resolve_period(ytd,"2025-01-01",4).end=="2021-01-01");
     const Currency cad("CAD"),usd("USD");
     Definition d{"report","Spending","bar",{1,2},{"food","income",""},{{"custom","2026-01-01","2026-01-31"},{"custom","2026-01-01","2026-01-01"}}};
     std::vector<Category> categories{{"food","Food"},{"income","Income"},{"","Uncategorized"}};
@@ -55,5 +76,11 @@ int main(){try{
     check(hidden.currencies[0].totals[0].amount.units()==0 && hidden.currencies[0].totals[0].entries.size()==6);
     check(hidden.currencies[0].totals[1].amount.units()==2500 && hidden.currencies[0].totals[1].entries.size()==1);
     check(hidden.currencies[1].totals[0].amount.units()==0 && hidden.currencies[1].totals[1].amount.units()==0);
+    d.periods=ytd;d.categories={"food"};entries.clear();
+    add(1,"food",-100,cad,"2022-03-19");
+    add(1,"food",-200,cad,"2022-03-20");
+    auto compared=calculate(d,"2024-03-19",entries,{{"food","Food"}},{cad});
+    check(compared.periods[2].start=="2022-01-01" && compared.periods[2].end=="2022-03-19");
+    check(compared.currencies[0].totals[2].amount.units()==100 && compared.currencies[0].totals[2].entries==std::vector<std::size_t>{0});
     std::cout<<"Exact report reconciliation, currencies, signs and boundaries passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

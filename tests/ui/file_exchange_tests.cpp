@@ -45,11 +45,17 @@ private slots:
         QCoreApplication::setOrganizationName("SpentItExchangeTests");QCoreApplication::setApplicationName("Exchange");QSettings::setDefaultFormat(QSettings::IniFormat);QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());}
     void roundTrip(){
         QTemporaryDir dir;const Currency cad("CAD");auto source=ImportStore::create(dir.filePath("source").toStdString(),"test","Checking",cad,"2026-01-01");definitions(source);
+        auto catalog=source.report_catalog();
+        auto& periods=catalog.definitions.front().periods;
+        periods.push_back({"last_year"});
+        periods.push_back({"prior_calendar_year"});
+        source.save_reports(catalog);
         const auto bytes=ex::encode(source,source.rules_supported(),true,true);const auto doc=ex::decode(bytes);
         auto dest=ImportStore::create(dir.filePath("dest").toStdString(),"test","Checking",cad,"2026-01-01");dest.create_manual("manual",manual("2026-02-01","New",100));
         const auto head=dest.action_token().head;const auto token=dest.action_token();auto input=choose(source.rules_supported());const auto request=ex::plan(dest,doc,input,token);app::OperationContext context;
         dest.import_definitions("exchange",request,context);QVERIFY(dest.definition_import_completed("exchange",request));
         QCOMPARE(dest.category_catalog().categories.size(),std::size_t(2));QCOMPARE(dest.report_catalog().definitions.size(),std::size_t(1));QCOMPARE(dest.action_token().head,head);QCOMPARE(dest.balance().units(),std::int64_t(100));
+        QVERIFY(dest.report_catalog().definitions.front().periods==periods);
         if(dest.rules_supported()){QCOMPARE(dest.rule_image().ordered.size(),std::size_t(1));QVERIFY(dest.rule_image().ordered.front().identity!="rule");}
         dest.import_definitions("exchange",request,context);QCOMPARE(dest.report_catalog().definitions.size(),std::size_t(1));
         auto conflict=request;conflict.reports->definitions[0].name="different";QVERIFY_THROWS_EXCEPTION(std::exception,dest.import_definitions("exchange",conflict,context));

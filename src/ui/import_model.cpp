@@ -610,8 +610,13 @@ struct ImportModel::Worker {
         reportCatalog=gateway->repository().report_catalog();reportDefinitions.clear();
         for(const auto& d:reportCatalog.definitions)reportDefinitions.push_back(reportMap(d));reportsLoaded=true;
     }
-    QVariantMap reportPeriodKey(const reports::Period& period) const {
-        return {{"preset",text(period.preset)},{"start",text(period.start)},{"end",text(period.end)}};
+    QVariantList reportPeriodKey(const reports::Definition& definition,std::size_t index) const {
+        QVariantList key;
+        for(auto row=std::optional{index};row;row=reports::period_anchor(definition.periods[*row],*row)){
+            const auto& period=definition.periods[*row];
+            key.push_back(QVariantMap{{"preset",text(period.preset)},{"start",text(period.start)},{"end",text(period.end)}});
+        }
+        return key;
     }
     QVariantList reportRanges(const reports::Snapshot& report) const {
         QVariantList ranges;
@@ -634,7 +639,7 @@ struct ImportModel::Worker {
         if(!drill.isEmpty()){
             drillPeriod=drill.value("period",-1).toInt();
             if(drillPeriod<0 || static_cast<std::size_t>(drillPeriod)>=d.periods.size()
-               || reportPeriodKey(d.periods[static_cast<std::size_t>(drillPeriod)])!=drill.value("periodKey").toMap())
+               || reportPeriodKey(d,static_cast<std::size_t>(drillPeriod))!=drill.value("periodKey").toList())
                 throw std::invalid_argument("This report period changed. Open the report and choose an amount again.");
             const auto currencyId=str(drill.value("currency"));
             const auto currency=std::find_if(calculated.currencies.begin(),calculated.currencies.end(),[&](const auto& c){return c.currency.definition_id()==currencyId;});
@@ -698,7 +703,7 @@ struct ImportModel::Worker {
         }
         const auto& range=reportSnapshot->periods[static_cast<std::size_t>(period)];
         const QVariantMap key{{"currency",text(reportCurrency)},{"category",text(reportCategory)},{"total",reportTotal},
-            {"period",period},{"periodKey",reportPeriodKey(reportSnapshot->definition.periods[static_cast<std::size_t>(period)])}};
+            {"period",period},{"periodKey",reportPeriodKey(reportSnapshot->definition,static_cast<std::size_t>(period))}};
         reportDetails={{"title",category?text(category->name):QString("Total")},{"period",text(range.label)+" · "+dateText(range.start)+" – "+dateText(range.end)},
             {"currency",text(currency.currency.code())},{"total",money(cell?cell->amount:Money(0,currency.currency),amountFormat)},{"rows",details},{"cell",key}};
     }
@@ -3602,12 +3607,15 @@ QString ImportModel::calendarMove(const QString& iso,int days,int months,int yea
     d=d.addYears(years).addMonths(months).addDays(days);
     return d.isValid() && d.year()>=1 && d.year()<=9999?d.toString(Qt::ISODate):iso;
 }
-QVariantMap ImportModel::reportPeriod(const QVariantMap& value,const QVariantMap& mainValue) const {
+QVariantMap ImportModel::reportPeriod(const QVariantList& values,int index) const {
     try{
-        const auto period=[](const QVariantMap& v){return reports::Period{str(v.value("preset","custom")),str(v.value("start")),str(v.value("end"))};};
+        std::vector<reports::Period> periods;
+        for(const auto& value:values){
+            const auto p=value.toMap();
+            periods.push_back({str(p.value("preset")),str(p.value("start")),str(p.value("end"))});
+        }
         const auto today=QDate::currentDate().toString(Qt::ISODate).toStdString();
-        std::optional<reports::Range> main;if(!mainValue.isEmpty())main=reports::resolve(period(mainValue),today);
-        const auto r=reports::resolve(period(value),today,main?&*main:nullptr);
+        const auto r=reports::resolve_period(periods,today,static_cast<std::size_t>(index));
         return {{"start",text(r.start)},{"end",text(r.end)},{"startDisplay",dateDisplay(text(r.start))},{"endDisplay",dateDisplay(text(r.end))},{"label",text(r.label)}};
     }catch(const std::exception& e){return {{"error",text(e.what())}};}
 }

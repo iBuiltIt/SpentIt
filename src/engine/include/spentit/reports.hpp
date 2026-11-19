@@ -1,11 +1,13 @@
 #pragma once
 #include <spentit/money.hpp>
 #include <functional>
+#include <optional>
+#include <span>
 #include <vector>
 
 namespace spentit::reports {
 struct Period {
-    std::string preset="ytd", start, end;
+    std::string preset="ytd", start{}, end{};
     bool operator==(const Period&) const = default;
 };
 struct Range {std::string label,start,end;};
@@ -18,7 +20,8 @@ struct Definition {
     bool operator==(const Definition&) const = default;
 };
 struct Catalog {std::int64_t revision=0;std::vector<Definition> definitions;};
-Range resolve(const Period&,std::string_view today,const Range* main=nullptr);
+std::optional<std::size_t> period_anchor(const Period&,std::size_t index);
+Range resolve_period(std::span<const Period>,std::string_view today,std::size_t index);
 void validate(const Definition&);
 struct Category {std::string id,name;};
 struct Entry {

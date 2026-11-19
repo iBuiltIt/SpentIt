@@ -12,6 +12,22 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Previous report comparisons — 2026-11-19
+
+Previous calendar month, Previous year, and Same period previous year
+follow the period above. A Year to date chain carries the same month and day
+through each earlier year, using February 28 when needed. Existing saved
+reports adopt the new rules when a period edit is saved. See
+[Previous comparisons](../features/006-reporting-drill-down.md#previous-comparisons)
+and [MAN-101](manual-update-backlog.md#open-items).
+
+Five rules-enabled Release targets passed on macOS arm64 with Qt 6.12.0.
+They covered date boundaries and exact totals, report storage and commit
+failures, exchange round-trip, the report UI, and offscreen startup. The
+focused UI case checked legacy periods after a rename, discarding a period
+edit, matching preview and result dates, reopening, and refusing a
+drill-down after its anchor changed. Native interactive testing was unverified.
+
 ## Merge after Not this transfer — 2026-11-19
 
 Selecting the bank posting and its extra entry in one ledger now lets **Merge**
