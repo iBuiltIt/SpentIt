@@ -21,7 +21,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-094. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-095. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -64,6 +64,14 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - **MAN-093 — Redo verification message, 2026-11-18.** In Change history,
   explain that if SpentIt cannot verify the file’s rule history during Redo,
   the Undo remains in effect. [Change history](change-history-handoff.md).
+
+- **MAN-094 — Create a transfer in the new-transaction editor, 2026-11-18.**
+  In Add and correct transactions and Review duplicates and transfers, show
+  that Category offers same-currency accounts before the first save, including
+  on split lines. Explain that saving creates both sides and that one Undo
+  removes them together. Refresh any picture or caption that shows the
+  initial Category list or the previous two-step workflow.
+  [Manual transactions](manual-transactions.md#accepted-interaction).
 
 ## Recapturing pictures
 

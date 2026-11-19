@@ -15,6 +15,11 @@ Manual and imported postings share transfer assignment, explicit Link, editing,
 and Undo. A generated counterpart and an independently imported posting stay
 distinct.
 
+The new-transaction editor offers same-currency account destinations on its
+Category fields before the first save. The original and all generated
+counterparts save together in one Undo step. See
+[manual transactions](../doc/manual-transactions.md#accepted-interaction).
+
 ## Lifecycle
 
 - Generating a counterpart uses the origin date provisionally and an exact

@@ -64,7 +64,8 @@ public:
     std::string date_format() const override;
     AmountFormat amount_format() const override;
     void set_amount_format(const AmountFormat&) override;
-    imports::Occurrence create_manual(std::string_view,const imports::DraftRow&) override;
+    imports::Occurrence create_manual(std::string_view,const imports::DraftRow&,
+        const std::map<std::size_t,std::int64_t>& = {}) override;
     bool manual_outcome(std::string_view) const override;
     void undo_manual(std::string_view,std::int64_t) override;
     std::optional<imports::Occurrence> imported_original(const imports::Occurrence&) const override;
@@ -218,6 +219,7 @@ public:
     app::AcceptanceReceipt accept_all(std::string_view,bool=false,const std::set<std::int64_t>& = {}) override;
     std::optional<app::AcceptanceReceipt> acceptance_outcome(std::string_view) const override;
 private:
+    std::vector<app::TransferView> manual_creation_links(std::string_view) const;
     std::set<std::string> action_categories(const app::ActionSummary&,bool) const;
     bool deletion_affects_action(const app::ActionSummary&,std::int64_t,std::string_view,bool) const;
     bool deletion_clears_history(std::int64_t,std::string_view) const;

@@ -1567,21 +1567,25 @@ ApplicationWindow {
         splitModel.setProperty(pickerIndex,"categoryId",id)
         splitModel.setProperty(pickerIndex,"bindingRevision",id?(s.catalogRevision||""):"")
         splitModel.setProperty(pickerIndex,"categoryDisplay",id?path:path?"Unmapped: "+path:"Uncategorized")
-        if(manualTransferEditor)splitModel.setProperty(pickerIndex,"transferAccount","0")
+        if(manualTransferEditor || selected.newManual)splitModel.setProperty(pickerIndex,"transferAccount","0")
         splitModel.setProperty(pickerIndex,"categoryTouched",true);dirty=true;categoryPicker.close();if(!selected.newManual)saveEditor()
     }
     function chooseAccountDestination(accountId) {
         if(pickerIndex<0 || pickerIndex>=splitModel.count) return
         let split=splitModel.get(pickerIndex)
-        if(manualTransferEditor) {
+        if(manualTransferEditor || selected.newManual) {
             const account=(s.accountCategories||[]).find(function(item){return item.accountId===accountId})
+            if(selected.newManual && (!account || account.archived || accountId===s.accountId || account.currencyDefinition!==s.currencyDefinition)) {
+                pickerFeedback="Choose an active account that uses the same currency."
+                return
+            }
             splitModel.setProperty(pickerIndex,"category","")
             splitModel.setProperty(pickerIndex,"categoryId","")
             splitModel.setProperty(pickerIndex,"bindingRevision","")
             splitModel.setProperty(pickerIndex,"categoryDisplay",account?account.path+" [Account]":"")
             splitModel.setProperty(pickerIndex,"categoryTouched",true)
             splitModel.setProperty(pickerIndex,"transferAccount",accountId)
-            dirty=true;categoryPicker.close();saveEditor()
+            dirty=true;categoryPicker.close();if(!selected.newManual)saveEditor()
             return
         }
         let link=originLink(split.allocationId)
@@ -5333,7 +5337,9 @@ ApplicationWindow {
                             property bool unresolvedTransfer:category.startsWith("[") && !originLink(index>=0 && index<splitModel.count?splitModel.get(index).allocationId:"")
                             allowUncategorized:true
                             model:sortedCategories((s.categories||[]).concat(s.accountCategories||[]).filter(function(c){
-                                return (!selected.newManual || !c.account) && !c.deleted && !c.archived && (c.account ? c.accountId!==s.accountId : c.assignable)
+                                return !c.deleted && !c.archived && (c.account
+                                    ? c.accountId!==s.accountId && (!selected.newManual || c.currencyDefinition===s.currencyDefinition)
+                                    : c.assignable)
                             }))
                             onChoiceAccepted:function(choice) {
                                 // Move first so durable acceptance restores the intended next field.

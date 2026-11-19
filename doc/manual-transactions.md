@@ -24,8 +24,14 @@ survive closing the process.
 On saving, the transaction joins the new/unaccepted ledger and balance, survives
 restart, and participates in dataset-wide Accept transactions. Date changes sort
 on save and the editor follows the saved identity. Split sums must balance.
-Account destinations become available after the first save, through the existing
-atomic transfer assignment.
+
+The Category field offers other active accounts with the same currency
+definition while the transaction is still unsaved. Choose an account on any
+split to stage a transfer. Enter from the transaction fields saves the original
+and every generated counterpart together. Each transfer split must have a
+nonzero amount. Its counterpart has the exact opposite amount and uses the
+original's date and payee. A split memo takes precedence over the transaction
+memo. A failed save leaves the editor open and saves none of the postings.
 
 Show original imported transaction is disabled for an unmatched manual entry,
 with **Manually entered** beside it. A later confirmed import match makes the
@@ -35,10 +41,9 @@ Manual creation is excluded from Review **Undo import…**;
 account-wide Discard applies to unaccepted manual work as well as imported work.
 Once linked, a New manual transaction supports
 [editing its original posting and splits](ledger-editing.md#editing-a-new-manual-transfer).
-The standard Undo shortcut (Cmd+Z on macOS, Ctrl+Z on Windows/Linux) in a clean
-editor removes the just-created row until another dataset mutation. Per the
-owner’s follow-up, there is no temporary Undo add transaction button. Subsequent edits use the
-existing session edit Undo sequence. Creation Undo does not survive reopening.
+**Add transaction** is one step in the file-wide Undo and Redo stack. Undo
+removes the original and its generated counterparts together. Redo restores
+all sides together. Successful close expires ordinary Undo and Redo.
 
 ## Rules and deleting saved transactions — fixes authorized 2026-11-03
 

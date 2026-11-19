@@ -1365,7 +1365,20 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
         const auto current=all_transfers();
         auto working=current;std::map<std::int64_t,Money> link_balances;
         Statement link_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");link_question.text(1,answer);
-        const bool is_unmerge=link_question.row() && link_question.bytes(0)=="unmerge-link";
+        if(!link_question.row())fail(SQLITE_CORRUPT);
+        const auto question=link_question.bytes(0);
+        const bool is_unmerge=question=="unmerge-link";
+        const bool is_acceptance=question=="acceptance";
+        if(is_acceptance) {
+            // Sibling splits change state together at commit. Take each
+            // account's initial balance before writing any of their versions.
+            std::set<std::int64_t> accounts;
+            for(const auto& value:restored) {
+                accounts.insert(value.link.origin.endpoint.account);
+                accounts.insert(value.link.destination.endpoint.account);
+            }
+            for(const auto account:accounts)link_balances.emplace(account,committed_for(account));
+        }
         Statement editor_link(impl_->db,"SELECT e.request FROM review_members m JOIN transfer_events e ON e.operation=m.child WHERE m.answer=? AND m.committed=0");
         editor_link.text(1,answer);
         const bool is_manual_edit=editor_link.row() && transfer_codec::request(editor_link.bytes(0)).origin.has_value();
@@ -1405,7 +1418,7 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             const auto before=balance->second;
             const auto prior_local=local_total(working,impl_->selected_account,before.currency(),false);
             for(auto& value:working)if(value.link.identity==view.link.identity)value=view;
-            validate_transfer_set(working);
+            if(!is_acceptance)validate_transfer_set(working);
             const auto delta=local_total(working,impl_->selected_account,before.currency(),false)-prior_local;
             balance->second=before+delta;
             const auto previous_sequence=financial_sequence(impl_->db);if(previous_sequence==INT64_MAX)fail(SQLITE_FULL,"History capacity exhausted");const auto sequence=previous_sequence+1;
@@ -1419,6 +1432,7 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
             append_financial(impl_->db,child,app::ChangeKind::transfer,{"",0},-1,0,before,delta,before+delta,"",sequence-1,catalog_sequence(impl_->db));
             }
         }
+        if(is_acceptance)validate_transfer_set(working);
     }
     Statement edit(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND (question IN('ledger-edit','ledger-edit-batch','ledger-delete','rules-account') OR question LIKE 'ledger-delete-kept:%')");edit.text(1,answer);const bool editor_undo=edit.row();
     Statement rules_group(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question='rules-account'");rules_group.text(1,answer);const bool rules_undo=rules_group.row();

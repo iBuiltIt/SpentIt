@@ -658,6 +658,52 @@ private slots:
         QTest::keyClick(window,Qt::Key_Return);QVERIFY(menu->property("visible").toBool());
         QTest::keyClick(window,Qt::Key_Escape);QTRY_VERIFY(!menu->property("visible").toBool());
     }
+    void destinationAvailableInNewTransaction() {
+        QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);
+        window->show();QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Checking"},{"currency","CAD"}});
+        run(model,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"create_account",{{"id","3"},{"name","US Savings"},{"currency","USD"},{"date","2026-01-01"}});
+        run(model,"select_account",{{"id","1"}});
+        QVERIFY(click(window,"addTransaction"));QTRY_VERIFY(!model.busy());
+        auto* category=qobject_cast<QQuickItem*>(object(window,"splitCategory_0"));QVERIFY(category);
+        category->forceActiveFocus();
+        QTRY_VERIFY(category->hasActiveFocus());
+        QVERIFY(edit(window,"splitCategory_0","Savings"));
+        auto* matches=object(window,"categoryMatches_0");QVERIFY(matches);
+        QTRY_COMPARE(matches->property("count").toInt(),1);
+        QTest::keyClick(window,Qt::Key_Tab);
+        auto* memo=qobject_cast<QQuickItem*>(object(window,"durableMemo"));QVERIFY(memo);
+        QTRY_VERIFY(memo->hasActiveFocus());
+        QCOMPARE(category->property("text").toString(),QString("Savings [Account]"));
+        QVERIFY(model.state().value("selected").toMap().value("newManual").toBool());
+        QVERIFY(!model.state().value("canUndoAction").toBool());
+
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(!model.busy());
+        QVERIFY(model.error().contains("nonzero"));
+        QCOMPARE(category->property("text").toString(),QString("Savings [Account]"));
+        QVERIFY(model.state().value("selected").toMap().value("newManual").toBool());
+        QVERIFY(edit(window,"durablePayee","Direct transfer"));
+        QVERIFY(edit(window,"durableTotal","-10.00"));
+        memo->forceActiveFocus();
+        QTRY_VERIFY(memo->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(!model.busy());
+        QVERIFY2(model.error().isEmpty(),qPrintable(model.error()));
+        const auto selected=model.state().value("selected").toMap();
+        QVERIFY(!selected.value("newManual").toBool());
+        const auto origin=model.rowRecord(model.occurrenceIndex(selected.value("batch").toString(),0));
+        QCOMPARE(origin.value("category").toString(),QString("Savings [Account]"));
+        QCOMPARE(origin.value("status").toString(),QString("Draft"));
+        run(model,"select_account",{{"id","2"}});
+        QTRY_VERIFY(model.rowRecord(1).value("category").toString().contains("Checking") ||
+                    model.rowRecord(0).value("category").toString().contains("Checking"));
+    }
     void acceptedManualTransferAssignment() {
         QTemporaryDir dir;ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

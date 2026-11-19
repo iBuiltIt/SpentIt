@@ -102,7 +102,11 @@ bool ImportStore::history_touches(const app::ActionSummary& action,std::int64_t 
     case app::ActionKind::opening: return hit("SELECT 1 FROM account_operations WHERE id=? AND account=? AND kind=4",action.payload);
     case app::ActionKind::currency: return hit("SELECT 1 FROM account_operations WHERE id=? AND account=? AND kind=5",action.payload);
     case app::ActionKind::import: return hit("SELECT 1 FROM batches WHERE source_id=? AND account_id=?",action.payload);
-    case app::ActionKind::manual_creation: return hit("SELECT 1 FROM batches WHERE id=? AND account_id=?",action.payload);
+    case app::ActionKind::manual_creation:
+        if(hit("SELECT 1 FROM batches WHERE id=? AND account_id=?",action.payload))return true;
+        return std::ranges::any_of(manual_creation_links(action.payload),[&](const auto& view){
+            return view.link.destination.endpoint.account==account;
+        });
     case app::ActionKind::acceptance: return hit("SELECT 1 FROM operations o JOIN batches b ON b.id=o.batch WHERE (o.id=?1 OR o.id IN(SELECT operation FROM acceptance_operations WHERE parent=?1)) AND b.account_id=?2",action.payload);
     default: {
         if(hit((std::string("SELECT 1 FROM review_members m JOIN batches b ON b.id=m.batch WHERE ")+member_where+" AND b.account_id=?2 UNION SELECT 1 FROM review_repairs r JOIN batches b ON b.id=r.batch WHERE r.answer=?1 AND b.account_id=?2").c_str(),action.id))return true;
@@ -118,7 +122,11 @@ bool ImportStore::history_touches(const app::ActionSummary& action,std::int64_t 
 bool ImportStore::history_includes(const app::ActionSummary& action,const imports::Occurrence& id) const {
     switch(action.kind) {
     case app::ActionKind::opening: return false;
-    case app::ActionKind::manual_creation: return action.payload==id.batch && id.ordinal==0;
+    case app::ActionKind::manual_creation:
+        if(action.payload==id.batch && id.ordinal==0)return true;
+        return std::ranges::any_of(manual_creation_links(action.payload),[&](const auto& view){
+            return view.link.destination.endpoint.entry==id;
+        });
     case app::ActionKind::import: {
         Statement query(impl_->db,"SELECT 1 FROM batches b JOIN records r ON r.batch=b.id AND r.ordinal=?3 WHERE b.source_id=?1 AND b.id=?2");
         query.text(1,action.payload);query.text(2,id.batch);query.integer(3,integer(id.ordinal));return query.row();
@@ -152,7 +160,10 @@ std::set<imports::Occurrence> ImportStore::history_occurrences(const app::Action
     };
     switch(action.kind) {
     case app::ActionKind::opening: return {};
-    case app::ActionKind::manual_creation: add(action.payload,0);return ids;
+    case app::ActionKind::manual_creation:
+        add(action.payload,0);
+        for(const auto& view:manual_creation_links(action.payload))ids.insert(view.link.destination.endpoint.entry);
+        return ids;
     case app::ActionKind::import: {
         Statement query(impl_->db,"SELECT b.id,r.ordinal FROM batches b JOIN records r ON r.batch=b.id WHERE b.source_id=?");query.text(1,action.payload);while(query.row())add(query.bytes(0),query.integer(1));return ids;
     }
@@ -289,11 +300,50 @@ app::HistoryActionView ImportStore::history_view(const app::ActionSummary& actio
         return view;
     }
     if(action.kind==app::ActionKind::manual_creation) {
-        const imports::Occurrence id{action.payload,0};view.accounts=names_of({account_for_batch(id.batch).identity});view.lists_transactions=true;view.count=1;
+        const imports::Occurrence id{action.payload,0};
+        const auto owner=account_for_batch(id.batch).identity;
+        std::vector<std::int64_t> accounts{owner};
+        std::vector<Money> amounts;
+        view.lists_transactions=true;
         Statement first(impl_->db,"SELECT min(revision) FROM versions WHERE batch=? AND ordinal=0");first.text(1,id.batch);
         const auto created=first.row() && !first.null(0)?read_version(id,first.integer(0)):HistorySnap{};
-        if(balance_wanted && created.present && !created.definition.empty()){view.balance.kind=app::HistoryBalanceKind::delta;view.balance.change={created.total,created.definition};}
-        app::HistoryMemberView member;member.batch=id.batch;member.ordinal=0;fill_current(member,id,created);view.members.push_back(std::move(member));return view;
+        if(balance_wanted && owner==account && created.present && !created.definition.empty())
+            amounts.emplace_back(created.total,Currency::from_definition(created.definition));
+        app::HistoryMemberView member;member.batch=id.batch;member.ordinal=0;fill_current(member,id,created);view.members.push_back(std::move(member));
+        const auto initial=manual_creation_links(action.payload);
+        if(!initial.empty()) {
+            const auto current=all_transfers();
+            for(const auto& original:initial) {
+                const auto& destination=original.link.destination;
+                accounts.push_back(destination.endpoint.account);
+                if(balance_wanted && destination.endpoint.account==account)amounts.push_back(destination.amount);
+                const auto found=std::ranges::find_if(current,[&](const auto& value){
+                    return value.link.identity==original.link.identity && value.link.destination.endpoint==destination.endpoint &&
+                        value.link.destination.state!=transfers::State::removed;
+                });
+                const auto& value=found==current.end()?original:*found;
+                const auto& side=value.link.destination;
+                app::HistoryMemberView counterpart;
+                counterpart.batch=side.endpoint.entry.batch;counterpart.ordinal=side.endpoint.entry.ordinal;
+                counterpart.date=side.date;counterpart.payee=value.payee;counterpart.memo=value.memo;
+                counterpart.amount={side.amount.units(),side.amount.currency().definition_id()};
+                counterpart.state=found==current.end()?"Removed":side.state==transfers::State::committed?"Accepted":"New";
+                counterpart.in_ledger=found!=current.end() && !side.proposed_evidence;
+                view.members.push_back(std::move(counterpart));
+            }
+        }
+        view.accounts=names_of(sorted_unique(std::move(accounts)));
+        view.count=integer(view.members.size());
+        if(!amounts.empty()) {
+            try {
+                const auto delta=imports::sum(amounts.front().currency(),amounts);
+                view.balance.kind=app::HistoryBalanceKind::delta;
+                view.balance.change={delta.units(),delta.currency().definition_id()};
+            } catch(const FinancialError&) {
+                // A change can exceed the money range even when both balances fit.
+            }
+        }
+        return view;
     }
     view.accounts=names_of(member_accounts());
     if(question=="review-exclusion"){view.lists_transactions=false;view.count=action.count;return view;}

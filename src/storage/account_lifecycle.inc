@@ -77,6 +77,12 @@ JOIN action_headers h ON h.payload=r.answer OR a.question='batch-child:'||h.payl
 WHERE h.state=1
 )SQL");
     while(relationships.row())for(int column:{0,1})if(!relationships.null(column) && link_mentions(transfer_codec::view(relationships.bytes(column)).link,acct.identity))fail(SQLITE_CONSTRAINT,"Undo the account's transfer changes, or close and reopen the file before archiving it.");
+    Statement additions(impl_->db,"SELECT payload FROM action_headers WHERE state=1 AND kind=3");
+    while(additions.row()) {
+        if(std::ranges::any_of(manual_creation_links(additions.bytes(0)),[&](const auto& view){
+            return view.link.destination.endpoint.account==acct.identity;
+        }))fail(SQLITE_CONSTRAINT,"Undo the account's transfer changes, or close and reopen the file before archiving it.");
+    }
 
     Statement pending(impl_->db,"SELECT 1 FROM batches WHERE account_id=? AND state IN(0,3,4) LIMIT 1");pending.integer(1,acct.identity);
     if(pending.row()) fail(SQLITE_CONSTRAINT,"Finish or discard the pending import before archiving");

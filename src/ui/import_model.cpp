@@ -411,6 +411,20 @@ imports::DraftRow editedDraft(const QVariantMap& a,const std::optional<Money>& o
     return result;
 }
 
+std::map<std::size_t,std::int64_t> transferDestinations(const QVariantMap& edit) {
+    std::map<std::size_t,std::int64_t> destinations;
+    const auto splits=edit.value("splits").toList();
+    for(qsizetype i=0;i<splits.size();++i) {
+        const auto account=splits[i].toMap().value("transferAccount").toString();
+        if(account.isEmpty())continue;
+        bool parsed=false;
+        const auto destination=account.toLongLong(&parsed);
+        if(!parsed || destination<0)throw std::invalid_argument("Choose a transfer account.");
+        destinations.emplace(static_cast<std::size_t>(i),destination);
+    }
+    return destinations;
+}
+
 // Presentation labels only. The stored category stays unchanged.
 template<class Repository>
 std::map<std::tuple<std::int64_t,imports::Occurrence,std::string>,std::string> transferCategoryLabels(const Repository& repo) {
@@ -845,6 +859,7 @@ struct ImportModel::Worker {
             QStringList names;for(const auto& alias:aliases)if(alias.account==account.identity && alias.name!=account.name)names.push_back(text(alias.name));
             QVariantMap value{{"id","@account:"+QString::number(account.identity)},{"account",true},{"accountId",QString::number(account.identity)},
                 {"name",text(account.name)},{"path",text(account.name)},{"aliases",names.join("; ")},{"createdOrder",QString::number(account.identity)},
+                {"currencyDefinition",text(account.currency.definition_id())},
                 {"archived",account.archived},{"deleted",false},{"assignable",false},{"group",false}};
             accountCategories.push_back(value);
             for(const auto& alias:aliases)if(alias.account==account.identity)accountNames.push_back(QVariantMap{{"name",text(alias.name)},{"display",text(account.name)},{"accountId",QString::number(account.identity)}});
@@ -2590,8 +2605,10 @@ struct ImportModel::Worker {
         else if(action=="save_manual") {
             if(!newManual)throw std::logic_error("No new transaction to save");
             const auto edit=editedDraft(a,{},repo,&*newManual,nullptr,amountFormat);
+            auto destinations=transferDestinations(a);
+            std::erase_if(destinations,[](const auto& pair){return pair.second==0;});
             const imports::Occurrence id{newManualId,0};
-            try {repo.create_manual(newManualId,edit);}
+            try {repo.create_manual(newManualId,edit,destinations);}
             catch(...) {const auto failure=std::current_exception();bool saved=false;try{saved=repo.manual_outcome(newManualId);}catch(...){throw app::OperationOutcomeUnknown();}if(!saved)std::rethrow_exception(failure);}
             observedSaved();
             newManual.reset();newManualId.clear();revealManual=id;selection={id};selectionFocus=id;selectionAnchor=id;
@@ -2617,16 +2634,7 @@ struct ImportModel::Worker {
             if(!row.draft && !row.source.repairable) throw std::invalid_argument("This record cannot be repaired");
             const auto edit=editedDraft(a,row.source.original_amount,repo,row.draft?&*row.draft:nullptr,&row.source,amountFormat);
             if(row.draft && selected.value("manualTransferEditable").toBool()){
-                app::ManualTransferEdit request;
-                const auto splits=a.value("splits").toList();
-                for(qsizetype i=0;i<splits.size();++i){
-                    const auto account=splits[i].toMap().value("transferAccount").toString();
-                    if(account.isEmpty())continue;
-                    bool parsed=false;
-                    const auto destination=account.toLongLong(&parsed);
-                    if(!parsed || destination<0)throw std::invalid_argument("Choose a transfer account.");
-                    request.destinations.emplace(static_cast<std::size_t>(i),destination);
-                }
+                app::ManualTransferEdit request{transferDestinations(a),{}};
                 acceptEdit(edit,context,std::move(request));
             }
             else if(row.draft)acceptEdit(edit,context);

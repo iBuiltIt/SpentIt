@@ -607,10 +607,22 @@ void ImportStore::verify_transfers(const app::OperationContext* context) const {
             }
         }
     };
+    std::string acceptance_reversal;
+    std::int64_t last_reversal_sequence=0;
+    const auto verify_reversal=[&]{
+        if(acceptance_reversal.empty())return;
+        std::vector<app::TransferView> links;
+        for(const auto& [id,value]:previous){(void)id;links.push_back(value);}
+        validate_transfer_set(links);
+        acceptance_reversal.clear();
+    };
     Statement events(impl_->db,"SELECT e.operation,e.account,e.request,e.did_commit,o.sequence,o.kind,e.local_change,o.preview_sequence,o.change,h.sequence FROM transfer_events e JOIN ledger_operations o ON o.id=e.operation JOIN history_order h ON h.operation=o.id WHERE o.sequence>? ORDER BY o.sequence");events.integer(1,cut);
     while(events.row()){
         if(context)context->checkpoint();
-        const auto request=transfer_codec::request(events.bytes(2));const auto account=account_by_id(events.integer(1));const auto sequence=events.integer(4);apply_scales(sequence);const auto currency=currency_as_of(impl_->db,account.identity,events.integer(9));
+        const auto request=transfer_codec::request(events.bytes(2));const auto account=account_by_id(events.integer(1));const auto sequence=events.integer(4);
+        if(!acceptance_reversal.empty() && (request.action!=app::TransferAction::review_undo ||
+            request.link!=acceptance_reversal || last_reversal_sequence!=sequence-1))verify_reversal();
+        apply_scales(sequence);const auto currency=currency_as_of(impl_->db,account.identity,events.integer(9));
         if(events.integer(5)==4 && events.integer(6)!=events.integer(8))fail(SQLITE_CORRUPT,"Transfer receipt differs from its financial effect");
         const bool imported=request.action==app::TransferAction::import_commit || request.action==app::TransferAction::import_discard;
         const int kind=static_cast<int>(events.integer(5));
@@ -681,6 +693,13 @@ AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='undo-impo
             count+=changed;continue;
         }
         if(request.action==app::TransferAction::review_undo){
+            bool is_acceptance=!acceptance_reversal.empty();
+            if(!is_acceptance) {
+                Statement reversal(impl_->db,"SELECT 1 FROM acceptance_states WHERE id=? AND undo_id IS NOT NULL");
+                reversal.text(1,request.link);
+                is_acceptance=reversal.row();
+            }
+            if(is_acceptance){acceptance_reversal=request.link;last_reversal_sequence=sequence;}
             Statement history(impl_->db,"SELECT identity,prior_payload,result_payload FROM review_link_history WHERE answer=? AND (?2='' OR identity=?2) UNION ALL SELECT r.identity,p.payload,p.payload FROM review_link_restorations r JOIN review_undos u ON u.id=r.undo_id JOIN transfer_versions p ON p.identity=r.identity AND p.sequence=r.prior WHERE u.answer=?1 AND (?2='' OR r.identity=?2) AND r.restored=?3 AND NOT EXISTS(SELECT 1 FROM review_link_history h WHERE h.answer=u.answer AND h.identity=r.identity)");history.text(1,request.link);history.text(2,request.allocation);history.integer(3,sequence);
             std::vector<app::TransferView> before;for(const auto& [id,v]:previous){(void)id;before.push_back(v);}
             std::size_t restored=0;
@@ -696,7 +715,10 @@ AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='undo-impo
                 previous.insert_or_assign(history.bytes(0),value);++restored;++count;
             }
             if(!restored)fail(SQLITE_CORRUPT);
-            std::vector<app::TransferView> after;for(const auto& [id,v]:previous){(void)id;after.push_back(v);}validate_transfer_set(after);
+            // The individual financial events in an acceptance reversal share
+            // one commit. Sibling split states agree at its end.
+            std::vector<app::TransferView> after;for(const auto& [id,v]:previous){(void)id;after.push_back(v);}
+            if(!is_acceptance)validate_transfer_set(after);
             if((local_total(after,account.identity,currency,false)-local_total(before,account.identity,currency,false)).units()!=events.integer(6))fail(SQLITE_CORRUPT);
             continue;
         }
@@ -852,6 +874,7 @@ AND EXISTS(SELECT 1 FROM events e WHERE e.batch=sibling.id AND e.kind='undo-impo
         if((local_total(after,account.identity,currency,false)-balance_before).units()!=events.integer(6))fail(SQLITE_CORRUPT,"Transfer amount does not reconcile");
         ++count;
     }
+    verify_reversal();
     apply_scales(INT64_MAX);
     Statement retained(impl_->db,"SELECT DISTINCT batch FROM retained_transfer_rows");while(retained.row())if(!verified_retained.contains(retained.bytes(0)))fail(SQLITE_CORRUPT);
     Statement rows(impl_->db,"SELECT count(*) FROM transfer_versions");if(!rows.row() || rows.integer(0)!=integer(count))fail(SQLITE_CORRUPT);

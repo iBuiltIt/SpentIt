@@ -79,7 +79,29 @@ ImportStore::RedoFrame ImportStore::capture_redo(const app::ActionSummary& actio
         const auto owner=account_for_batch(id).identity;
         impl_->selected_account=owner;
         const auto draft=*load_row({id,0},false).draft;
-        frame.replay=[id,owner,draft](ImportStore& store,std::string_view operation){store.impl_->selected_account=owner;store.impl_->redo_names["batch:"+id]=std::string(operation);store.create_manual(operation,draft);};return frame;
+        std::map<std::size_t,std::int64_t> destinations;
+        const auto& splits=draft.transaction.allocations();
+        for(const auto& view:manual_creation_links(id)) {
+            const auto& origin=view.link.origin.endpoint;
+            const auto split=std::find_if(splits.begin(),splits.end(),[&](const auto& a){return a.identity==origin.allocation;});
+            if(split==splits.end())fail(SQLITE_CORRUPT,"The original transfer split is missing.");
+            const auto position=static_cast<std::size_t>(split-splits.begin());
+            if(!destinations.emplace(position,view.link.destination.endpoint.account).second)
+                fail(SQLITE_CORRUPT,"The original transfer split has multiple destinations.");
+            frame.accounts.insert(view.link.destination.endpoint.account);
+        }
+        frame.replay=[id,owner,draft,destinations](ImportStore& store,std::string_view operation){
+            store.impl_->selected_account=owner;
+            store.impl_->redo_names["batch:"+id]=std::string(operation);
+            for(const auto& [position,destination]:destinations) {
+                (void)destination;
+                const auto old=manual_transfer_prefix(id)+std::to_string(position);
+                const auto fresh=manual_transfer_prefix(operation)+std::to_string(position);
+                store.impl_->redo_names["link:"+old]=fresh;
+                store.impl_->redo_names["batch:~transfer-"+old+"-destination"]="~transfer-"+fresh+"-destination";
+            }
+            store.create_manual(operation,draft,destinations);
+        };return frame;
     }
     if(action.kind==app::ActionKind::opening || action.kind==app::ActionKind::currency) {
         Statement saved(impl_->db,"SELECT account,definition,opening,opening_date FROM account_operations WHERE id=?");saved.text(1,action.payload);if(!saved.row())fail(SQLITE_CORRUPT);

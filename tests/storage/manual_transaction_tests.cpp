@@ -755,6 +755,136 @@ void deletion_recovery(const std::filesystem::path& dir) {
     context.progress=[&](auto phase){if(phase=="Deleting selected transactions" && ++writes==2)context.request();};
     rejects([&]{s.edit_transactions("cancel",request,context);});check(writes==2 && s.current_ledger().size()==2 && !s.review_outcome("cancel"),"Cancelled deletion atomic");s.verify();}
 }
+void create_manual_transfer(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const auto base=dir/"initial-transfer-base";
+    {
+        auto store=ImportStore::create(base,"test-password","Checking",cad,"2025-01-01");
+        store.create_account(2,"Savings",cad,"2025-01-01");
+        store.create_account(3,"Reserve",cad,"2025-01-01");
+        store.create_account(4,"Other currency",Currency("USD"),"2025-01-01");
+    }
+    auto draft=manual();
+    draft.transaction=Transaction::manual(Money(-1000,cad),{
+        {"","First split",Money(-1200,cad)},{"","",Money(300,cad)},{"","",Money(-100,cad)}
+    });
+    const std::map<std::size_t,std::int64_t> destinations{{0,2},{1,3}};
+    const auto balances=[&](ImportStore& store,bool saved){
+        for(const auto [account,units]:std::vector<std::pair<std::int64_t,std::int64_t>>{{1,-1000},{2,1200},{3,-300}}) {
+            store.select_account(account);
+            check(store.balance()==Money(saved?units:0,cad),"Creation keeps both sides and each signed split atomic");
+            check(store.current_ledger().size()==(saved?1u:0u),"Unexpected number of postings");
+        }
+        store.select_account(1);
+    };
+    const auto path=dir/"initial-transfer";
+    std::filesystem::copy_file(base,path);
+    {
+        auto store=ImportStore::open(path,"test-password");
+        const auto before=store.action_token();
+        rejects([&]{store.create_manual("entry",draft,{{0,2},{1,4}});});
+        balances(store,false);
+        check(store.action_token()==before && !store.manual_outcome("entry"),"Failed destination leaves no partial creation");
+        rejects([&]{store.create_manual("entry",draft,{{0,1}});});
+        rejects([&]{store.create_manual("entry",manual("-92233720368547758.08"),{{0,2}});});
+        balances(store,false);
+        const auto id=store.create_manual("entry",draft,destinations);
+        store.create_manual("entry",draft,destinations);
+        rejects([&]{store.create_manual("entry",draft,{{0,3},{1,2}});});
+        balances(store,true);
+        const auto links=store.transfers();
+        check(links.size()==2 && links[0].memo=="First split" && links[1].memo==draft.memo,"Counterparts use split memo or transaction memo");
+        store.select_account(3);
+        rejects([&]{store.archive_account("archive-destination");});
+        const auto history=store.account_change_history(3,0,10,links[1].link.destination.endpoint.entry);
+        check(history.actions.size()==1 && history.actions.front().id==id.batch &&
+              history.actions.front().members.size()==3 && history.actions.front().balance.change.units==-300,
+              "Destination transaction history displays the combined creation and its balance effect");
+        const auto preview=store.preview_undo(id.batch,store.action_token());
+        check(preview.accounts==std::vector<std::int64_t>{1,2,3} && preview.action.count==3,"One creation action covers all postings");
+        store.undo_action("undo-entry",preview);
+        check(store.account().identity==3,"Undo from the destination keeps the selected account");
+        balances(store,false);
+        const auto redo=store.redo_history();
+        check(redo.size()==1 && redo.front().id==id.batch,"One Redo restores creation");
+        store.redo_action("redo-entry",{store.action_token(),redo.front(),{},{}});
+        balances(store,true);
+        store.verify();
+        test_session::close_reopen(store,path,"test-password");
+        balances(store,true);
+        store.verify();
+    }
+    {
+        const auto trial=dir/"initial-transfer-overflow";
+        std::filesystem::copy_file(base,trial);
+        auto store=ImportStore::open(trial,"test-password");
+        store.select_account(2);
+        store.create_manual("funds",manual("92233720368547758.07"));
+        store.select_account(1);
+        const auto before=store.action_token();
+        rejects([&]{store.create_manual("entry",draft,destinations);});
+        check(store.current_ledger().empty() && store.transfers().empty() &&
+              store.action_token()==before && !store.manual_outcome("entry"),"Destination overflow rolls back both transfers");
+        store.select_account(2);
+        check(store.balance()==Money(INT64_MAX,cad),"Destination overflow preserves its prior balance");
+        store.verify();
+    }
+    {
+        const auto trial=dir/"initial-transfer-acceptance";
+        std::filesystem::copy_file(base,trial);
+        auto store=ImportStore::open(trial,"test-password");
+        store.create_manual("entry",draft,destinations);
+        check(store.accept_all("accept",true).transactions==3,"Acceptance includes both generated counterparts");
+        store.undo_action("undo-accept",store.preview_undo("accept",store.action_token()));
+        store.undo_action("undo-entry",store.preview_undo("entry",store.action_token()));
+        balances(store,false);
+        store.redo_action("redo-entry",{store.action_token(),store.redo_history().front(),{},{}});
+        store.redo_action("redo-accept",{store.action_token(),store.redo_history().front(),{},{}});
+        balances(store,true);
+        check(std::ranges::count_if(store.transfers(),[](const auto& link){
+            return link.link.origin.endpoint.entry.batch=="redo-entry" &&
+                link.link.origin.state==transfers::State::committed &&
+                link.link.destination.state==transfers::State::committed;
+        })==2,"Acceptance Redo restores the recreated destinations");
+        test_session::close_reopen(store,trial,"test-password");
+        balances(store,true);store.verify();
+    }
+    for(const int nth:{1,2,4,8,16,32,64,128,256,512}) {
+        const auto trial=dir/("initial-transfer-fault-"+std::to_string(nth));
+        std::filesystem::copy_file(base,trial);
+        bool fired=false;
+        {
+            auto store=ImportStore::open(trial,"test-password");
+            fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);
+            try {store.create_manual("entry",draft,destinations);} catch(...) {}
+            fired=fault_vfs::fired;fault_vfs::disarm();
+        }
+        auto store=ImportStore::open(trial,"test-password");
+        balances(store,store.manual_outcome("entry"));
+        store.create_manual("entry",draft,destinations);
+        balances(store,true);store.verify();
+        if(!fired)break;
+    }
+    for(auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}) {
+        const bool saved=phase==storage::ImportPhase::after_commit;
+        const auto trial=dir/(saved?"initial-transfer-after":"initial-transfer-before");
+        std::filesystem::copy_file(base,trial);
+        const auto child=fork();check(child>=0,"fork");
+        if(child==0) {
+            try {
+                auto store=ImportStore::open(trial,"test-password");
+                store.observer([&](auto point){if(point==phase)_exit(71);});
+                store.create_manual("entry",draft,destinations);_exit(72);
+            } catch(...) {_exit(73);}
+        }
+        int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Creation crash boundary");
+        auto store=ImportStore::open(trial,"test-password");
+        check(store.manual_outcome("entry")==saved,"Creation receipt follows the commit boundary");
+        balances(store,saved);
+        store.create_manual("entry",draft,destinations);
+        balances(store,true);store.verify();
+    }
+}
 void recovery(const std::filesystem::path& dir) {
     const auto base=dir/"base";
     {auto s=ImportStore::create(base,"test-password","Recovery",Currency("CAD"),"2025-01-01");}
@@ -773,6 +903,9 @@ void recovery(const std::filesystem::path& dir) {
 int main(int argc,char** argv){
     const auto dir=std::filesystem::canonical(std::filesystem::temp_directory_path())/("spentit-manual-"+std::to_string(getpid()));std::filesystem::create_directory(dir);const auto path=dir/"test.spentit";
     try {
+        if(argc==2 && std::string_view(argv[1])=="initial_transfer"){
+            fault_vfs::install();create_manual_transfer(dir);std::filesystem::remove_all(dir);return 0;
+        }
         if(argc==2 && std::string_view(argv[1])=="acceptance_redo_after_transfer_undo"){
             redo_acceptance_after_transfer_undo(dir);std::filesystem::remove_all(dir);return 0;
         }
@@ -782,7 +915,7 @@ int main(int argc,char** argv){
         if(argc==2 && std::string_view(argv[1])=="broken_review_link"){
             review_reopens_broken_manual_pair(dir);std::filesystem::remove_all(dir);return 0;
         }
-        fault_vfs::install();origin_transfers(dir);new_transfer_date(dir);edit_manual_transfer(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
+        fault_vfs::install();create_manual_transfer(dir);origin_transfers(dir);new_transfer_date(dir);edit_manual_transfer(dir);origin_import_undo(dir);origin_splits(dir);origin_recovery(dir);category_tests(dir);category_recovery(dir);manual_rules(dir);deletion_tests(dir);deletion_recovery(dir);
         {auto s=ImportStore::create(path,"test-password","Checking",Currency("CAD"),"2025-01-01");
         const auto id=s.create_manual("manual-one",manual());check(id.batch=="manual-one","Identity");
         check(s.balance().units()==-1000,"Balance");check(!s.row(id).draft->transaction.original_imported_amount(),"No invented original");check(!s.imported_original(id),"No imported original");check(s.undoable_imports().empty(),"Manual is not an import");

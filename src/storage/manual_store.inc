@@ -1,4 +1,27 @@
-imports::Occurrence ImportStore::create_manual(std::string_view id,const imports::DraftRow& input) {
+namespace {
+std::string manual_transfer_prefix(std::string_view id) {
+    return std::string(id)+"-initial-transfer-";
+}
+}
+
+std::vector<app::TransferView> ImportStore::manual_creation_links(std::string_view id) const {
+    Statement rows(impl_->db,R"SQL(
+        SELECT v.payload FROM transfer_events e JOIN ledger_operations l ON l.id=e.operation
+        JOIN transfer_versions v ON v.sequence=l.sequence AND v.identity=e.operation
+        WHERE e.operation GLOB ? ORDER BY e.operation
+    )SQL");
+    rows.text(1,manual_transfer_prefix(id)+"[0-9]*");
+    std::vector<app::TransferView> links;
+    while(rows.row()) {
+        auto view=transfer_codec::view(rows.bytes(0));
+        if(view.link.origin.endpoint.entry==imports::Occurrence{std::string(id),0})
+            links.push_back(std::move(view));
+    }
+    return links;
+}
+
+imports::Occurrence ImportStore::create_manual(std::string_view id,const imports::DraftRow& input,
+    const std::map<std::size_t,std::int64_t>& destinations) {
     identifier(id);const auto acct=account();require_writable_account(impl_->db,acct.identity);
     if(input.transaction.original_imported_amount())fail(SQLITE_CONSTRAINT,"A manual transaction cannot have an imported amount");
     input.transaction.effective_total().require_compatible(acct.opening);
@@ -13,7 +36,17 @@ imports::Occurrence ImportStore::create_manual(std::string_view id,const imports
     row.transaction=Transaction::manual(row.transaction.effective_total(),std::move(allocations));
     if(!row.remainder_allocation.empty() && !identities.contains(row.remainder_allocation))fail(SQLITE_CONSTRAINT,"Choose a balancing split");
     const auto bytes=manual_codec::encode(row);const auto parsed=manual_codec::parse(bytes,acct.currency);
-    const auto digest=session_snapshot::digest("manual:"+std::to_string(acct.identity)+":"+bytes);
+    auto request="manual:"+std::to_string(acct.identity)+":"+bytes;
+    if(!destinations.empty()) {
+        transfer_codec::Writer encoded;
+        encoded.text(request);
+        for(const auto& [position,destination]:destinations) {
+            encoded.number(integer(position));
+            encoded.number(destination);
+        }
+        request="manual-transfer:"+encoded.bytes;
+    }
+    const auto digest=session_snapshot::digest(request);
     if(const auto outcome=ActionChain(impl_->db).durable_outcome(id,digest)) {
         if(*outcome==ActionChain::Outcome::applied)return {std::string(id),0};
         throw app::OperationAlreadyCompleted(std::string(id));
@@ -21,11 +54,11 @@ imports::Occurrence ImportStore::create_manual(std::string_view id,const imports
     Atomic transaction(impl_->db);
     Statement retry(impl_->db,"SELECT b.account_id,b.parser,s.bytes FROM batches b JOIN sources s ON s.id=b.source_id WHERE b.id=?");retry.text(1,id);
     if(retry.row()){
-        if(retry.integer(0)!=acct.identity || retry.bytes(1)!="manual-v1" || retry.bytes(2)!=bytes)fail(SQLITE_CONSTRAINT,"Transaction identity was reused with different content");
+        if(retry.integer(0)!=acct.identity || retry.bytes(1)!="manual-v1" || retry.bytes(2)!=bytes || !destinations.empty())fail(SQLITE_CONSTRAINT,"Transaction identity was reused with different content");
         transaction.commit();return {std::string(id),0};
     }
     for(const auto& a:row.transaction.allocations()) {
-        if(impl_->redo_operation.empty() && (resolve_account_name(a.category) || qif::transfer_destination(a.category)))fail(SQLITE_CONSTRAINT,"Save the transaction before assigning a transfer account");
+        if(impl_->redo_operation.empty() && (resolve_account_name(a.category) || qif::transfer_destination(a.category)))fail(SQLITE_CONSTRAINT,"Choose the transfer account from the category list.");
         if(a.category_binding){validate_binding(impl_->db,a);const auto current=resolve_category(a.category_binding->identity);
             // Redo restores a previously validated historical binding. A
             // definition saved before Undo need not still offer that category.
@@ -42,7 +75,43 @@ imports::Occurrence ImportStore::create_manual(std::string_view id,const imports
     version(impl_->db,{std::string(id),0},0,row,{imports::Disposition::include,{}});
     Statement event(impl_->db,"INSERT INTO events(batch,revision,kind) VALUES(?,0,'ingest')");event.text(1,id);event.done();
     Statement creation(impl_->db,"INSERT INTO manual_creations VALUES(?,(SELECT revision+1 FROM mutation_generation WHERE singleton=1))");creation.text(1,id);creation.done();
-    app::ActionSummary action;action.id=id;action.payload=id;action.kind=app::ActionKind::manual_creation;action.label="Add transaction";action.count=1;
+    if(!destinations.empty()) {
+        // Record ordinary transfer events inside the creation transaction.
+        // Source rollback then removes them together with the manual posting.
+        struct Scope {
+            bool& composing;
+            explicit Scope(bool& value):composing(value){composing=true;}
+            ~Scope(){composing=false;}
+        } scope(impl_->composing_review);
+        const auto& splits=row.transaction.allocations();
+        std::set<std::int64_t> affected{acct.identity};
+        for(const auto& [position,destination]:destinations) {
+            if(position>=splits.size() || destination<=0 || destination==acct.identity)
+                fail(SQLITE_CONSTRAINT,"Choose a different account for this transfer.");
+            const auto& split=splits[position];
+            if(!split.category.empty() || split.category_binding)
+                fail(SQLITE_CONSTRAINT,"Choose either a category or a transfer account for this split.");
+            if(split.amount.units()==0)
+                fail(SQLITE_CONSTRAINT,"Enter a nonzero split amount for the transfer.");
+            const auto link=manual_transfer_prefix(id)+std::to_string(position);
+            app::TransferRequest transfer{};
+            transfer.action=app::TransferAction::retarget;
+            transfer.expected_sequence=transfer_sequence();
+            transfer.link=link;
+            transfer.kept=link;
+            transfer.mode=1;
+            transfer.left=transfers::AllocationFact{{acct.identity,{std::string(id),0},split.identity},
+                split.amount,row.date,transfers::State::draft,false,false,true,true};
+            transfer.generated=transfers::Endpoint{destination,{"~transfer-"+link+"-destination",0},"generated"};
+            transfer.generated_currency=acct.currency.definition_id();
+            transfer.payee=row.payee;
+            transfer.memo=split.memo.empty()?row.memo:split.memo;
+            apply_transfer(link,transfer);
+            affected.insert(destination);
+        }
+        for(const auto account:affected)(void)balance_for(account);
+    }
+    app::ActionSummary action;action.id=id;action.payload=id;action.kind=app::ActionKind::manual_creation;action.label="Add transaction";action.count=integer(1+destinations.size());
     impl_->pending_action=std::move(action);impl_->pending_action_digest=digest;
     if(!impl_->redo_operation.empty())retain_redo_image(impl_->db,{std::string(id),0},0,false,row);
     finish([&]{transaction.commit();});return {std::string(id),0};

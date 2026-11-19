@@ -226,7 +226,8 @@ public:
     virtual TransferPreview preview_transfer(const TransferRequest&) const { throw std::logic_error("Transfers unavailable"); }
     virtual std::optional<TransferReceipt> transfer_outcome(std::string_view) const { throw std::logic_error("Transfers unavailable"); }
     virtual std::vector<TransferJournalEntry> transfer_journal() const { return {}; }
-    virtual imports::Occurrence create_manual(std::string_view,const imports::DraftRow&) {throw std::logic_error("Manual entry unavailable");}
+    virtual imports::Occurrence create_manual(std::string_view,const imports::DraftRow&,
+        const std::map<std::size_t,std::int64_t>& = {}) {throw std::logic_error("Manual entry unavailable");}
     virtual bool manual_outcome(std::string_view) const {return false;}
     virtual void undo_manual(std::string_view,std::int64_t) {throw std::logic_error("Manual entry Undo unavailable");}
     virtual std::optional<imports::Occurrence> imported_original(const imports::Occurrence& id) const {return id;}

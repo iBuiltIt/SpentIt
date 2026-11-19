@@ -13,6 +13,23 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Create a transfer from a new transaction — 2026-11-18
+
+Category offers active accounts in the same currency before the first save,
+including on split lines. The original and all generated postings save together
+as one **Add transaction** action. Undo and Redo operate across the affected
+accounts. Undo of acceptance validates sibling transfer splits together at the
+operation boundary. See [manual transactions](manual-transactions.md#accepted-interaction)
+and [MAN-094](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, 15 focused rules-enabled Release targets passed,
+including navigation, manual transactions, the Redo failure and crash sweep,
+and offscreen startup. Synthetic coverage includes invalid destinations, exact
+signed splits, overflow, retry, failures on both sides of the commit boundary,
+acceptance Undo and Redo, and reopening. The new storage regression passed
+under AddressSanitizer and UndefinedBehaviorSanitizer with leak detection
+disabled. Native interactive testing was unverified.
+
 ## Redo acceptance after removing transient transfer history — 2026-11-18
 
 Acceptance reversal verification permits a sequence gap left by removed
