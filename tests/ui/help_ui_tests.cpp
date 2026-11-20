@@ -728,7 +728,7 @@ private slots:
             << QStringList{"transactions-ledger.png", "transactions-search.png", "transactions-review.png"}
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
-            << QStringList{"review-keep.png", "review-accept-marks.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png",
+            << QStringList{"review-keep.png", "review-accept-marks.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png", "review-merge-rejected.png",
                            "review-differing-amounts.png", "review-difference.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
@@ -746,7 +746,7 @@ private slots:
             << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
             << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
         QTest::newRow("reports") << QString("answer-with-reports")
-            << QStringList{"reports-editor.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png", "reports-pdf.png"}
+            << QStringList{"reports-editor.png", "reports-periods.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png", "reports-pdf.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
             << QStringList{"settings.png"}
@@ -1707,7 +1707,6 @@ private slots:
         mouse("importUndoChoice_0"); wait(session.model);
         QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
         QCOMPARE(session.model.state().value("importUndoPreview").toMap().value("transactions").toInt(), 3);
-        capture("import-undo");
         mouse("confirmImportUndo"); wait(session.model);
         QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
         run(session.model, "select_account", {{"id", "1"}});
@@ -1715,6 +1714,41 @@ private slots:
         mouse("accountNavigation_2"); wait(session.model);
         QTRY_COMPARE(session.model.state().value("name").toString(), QString("Credit card"));
         QCOMPARE(session.model.state().value("balance").toString(), QString("0.00"));
+
+        run(session.model, "automatic_review_settings", {{"kind", "link"}, {"enabled", true}});
+        QFile withdrawal(session.path("chequing.qif"));
+        QVERIFY(withdrawal.open(QIODevice::WriteOnly));
+        withdrawal.write("!Type:Bank\nD2026-01-28\nT-36.18\nPCredit card payment\nL[Credit card]\n^\n");
+        withdrawal.close();
+        QFile deposit(session.path("credit-card.qif"));
+        QVERIFY(deposit.open(QIODevice::WriteOnly));
+        deposit.write("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\n^\n");
+        deposit.close();
+        run(session.model, "select_account", {{"id", "1"}});
+        run(session.model, "import", {{"path", withdrawal.fileName()}, {"account", "1"}});
+        run(session.model, "select_account", {{"id", "2"}});
+        QCOMPARE(session.model.rowRecord(0).value("payee").toString(), QString("Credit card payment"));
+        run(session.model, "import", {{"path", deposit.fileName()}, {"account", "2"}});
+        QCOMPARE(session.model.rowRecord(0).value("payee").toString(), QString("Payment received"));
+        QCOMPARE(session.model.state().value("linkedRows").toMap().size(), 2);
+        run(session.model, "close");
+        run(session.model, "open", {{"path", session.path("Household.spentit")}});
+        run(session.model, "select_account", {{"id", "2"}});
+        mouse("reviewNavigation");
+        mouse("chooseImportUndo");
+        QTRY_VERIFY(object(session.root, "importUndoChoice_0"));
+        mouse("importUndoChoice_0"); wait(session.model);
+        QTRY_VERIFY(object(session.root, "importUndoConfirm")->property("visible").toBool());
+        const auto preview = session.model.state().value("importUndoPreview").toMap();
+        QCOMPARE(preview.value("transactions").toInt(), 1);
+        QCOMPARE(preview.value("accounts").toList().size(), 2);
+        capture("import-undo");
+        mouse("confirmImportUndo"); wait(session.model);
+        QCOMPARE(session.model.rowRecord(0).value("payee").toString(), QString("Credit card payment"));
+        QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
+        run(session.model, "select_account", {{"id", "1"}});
+        QCOMPARE(session.model.rowRecord(0).value("payee").toString(), QString("Credit card payment"));
+        QCOMPARE(session.model.state().value("balance").toString(), QString("2,463.82"));
         QGuiApplication::styleHints()->unsetColorScheme();
     }
     void transactionsChapterWalkthrough() {
@@ -2173,6 +2207,32 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(pdf, "close"));
         wait(session.model);
         mouse("navigationBack");
+        QVERIFY(edit(session.root, "reportStartDate0", "2026-03-01"));
+        QVERIFY(edit(session.root, "reportEndDate0", "2026-03-31"));
+        QVERIFY(click(session.root, "addReportComparison"));
+        for (int index : {1, 2}) {
+            const auto name = "reportPeriodPreset" + QString::number(index);
+            QTRY_VERIFY(object(session.root, name));
+            auto* preset = object(session.root, name);
+            const auto model = preset->property("model");
+            const auto labels = model.metaType() == QMetaType::fromType<QJSValue>()
+                ? model.value<QJSValue>().toVariant().toStringList() : model.toStringList();
+            const auto month = labels.indexOf("Previous calendar month");
+            QVERIFY(month >= 0);
+            const auto choice = static_cast<int>(month);
+            QVERIFY(preset->setProperty("currentIndex", choice));
+            QVERIFY(QMetaObject::invokeMethod(preset, "activated", Q_ARG(int, choice)));
+        }
+        QTRY_COMPARE(object(session.root, "reportEndDate1")->property("text").toString(), QString("2026-02-28"));
+        QTRY_COMPARE(object(session.root, "reportStartDate2")->property("text").toString(), QString("2026-01-01"));
+        auto* editorScroll = object(session.root, "reportsEditorScroll");
+        QVERIFY(editorScroll);
+        auto* flickable = editorScroll->property("contentItem").value<QQuickItem*>();
+        QVERIFY(flickable);
+        const auto bottom = flickable->property("contentHeight").toDouble() - flickable->height();
+        QVERIFY(flickable->setProperty("contentY", qMax(0.0, bottom)));
+        capture("reports-periods");
+        QVERIFY(click(session.root, "discardReport"));
         QVERIFY(edit(session.root, "reportName", "Unfinished report name"));
         mouse("accountNavigation");
         auto* leave = namedWindow("reportsLeaveDialog"); QVERIFY(leave);
@@ -2748,6 +2808,44 @@ private slots:
             mouse("ledgerTransferArrow_3");
             QTRY_COMPARE(session.model.state().value("name").toString(), QString("Chequing"));
             QCOMPARE(session.model.state().value("balance").toString(), QString("963.82"));
+
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("rejected-payment.spentit")},
+                {"protected", false}, {"name", "Chequing"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"},
+                {"currency", "CAD"}, {"date", "2026-01-01"}});
+            import("!Type:Bank\nD2026-01-28\nT-36.18\nPCredit card payment\nL[Credit card]\n^\n", "1");
+            import("!Type:CCard\nD2026-01-29\nT36.18\nPPayment received\nL[Chequing]\n^\n", "2");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewNo") && object(session.root, "reviewNo")->property("visible").toBool());
+            QCOMPARE(object(session.root, "reviewNo")->property("text").toString(), QString("Not this transfer"));
+            mouse("reviewNo");
+            const auto waitingQuestions = session.model.state().value("reviewCount").toInt();
+            run(session.model, "select_account", {{"id", "2"}});
+            mouse("accountNavigation");
+            session.root->setProperty("editorClosed", true);
+            int bank = -1, extra = -1;
+            for (int row = 0; row < session.model.rowCount(); ++row) {
+                const auto record = session.model.rowRecord(row);
+                if (record.value("payee") == "Payment received") bank = row;
+                if (record.value("payee") == "Credit card payment") extra = row;
+            }
+            QVERIFY(bank >= 0 && extra >= 0);
+            run(session.model, "select", {{"row", bank}});
+            run(session.model, "select", {{"row", extra}, {"toggle", true}});
+            auto* mergeSelection = object(session.root, "duplicateMergeSelection");
+            QVERIFY(mergeSelection && mergeSelection->property("enabled").toBool());
+            QVERIFY(QMetaObject::invokeMethod(mergeSelection, "triggered"));
+            QTRY_VERIFY(object(session.root, "ledgerTransferMerge")->property("visible").toBool());
+            const auto mergePreview = session.model.state().value("reviewLinkPreview").toMap();
+            QVERIFY(mergePreview.value("rejectedMerge").toBool());
+            QCOMPARE(mergePreview.value("postings").toList().size(), 2);
+            capture("review-merge-rejected");
+            mouse("confirmLedgerTransferMerge");
+            QCOMPARE(session.model.state().value("balance").toString(), QString("36.18"));
+            run(session.model, "undo_action", session.model.state().value("actionUndo").toMap());
+            QCOMPARE(session.model.state().value("balance").toString(), QString("72.36"));
+            QCOMPARE(session.model.state().value("reviewCount").toInt(), waitingQuestions);
 
             run(session.model, "close");
             run(session.model, "create", {{"path", session.path("pending-picture.spentit")},

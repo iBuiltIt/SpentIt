@@ -67,15 +67,28 @@ Auto is not an extra subtotal of all the Auto: categories.
 Both dates are included. Typing either date changes that period to **Custom**,
 which keeps those exact dates when you show the report again.
 
-Presets move with the date when you show or refresh the report:
+**Year to date** runs from January 1 through today. **This year**,
+**This quarter** and **This month** cover the whole current calendar
+period. **Last quarter** covers the previous full quarter.
+**Last 6 complete months** leaves out the current partial month.
 
-- **Year to date** means January 1 through today.
-- **This year**, **This quarter** and **This month** cover the whole current
-  calendar period. **Last year**, **Last quarter** and **Previous calendar
-  month** cover the previous complete period.
-- **Last 6 complete months** leaves out the current partial month.
-- **Same period last year**, available for a comparison, follows the main
-  range one year earlier. February 29 becomes February 28 when necessary.
+- **Previous calendar month** and **Previous year** use the full month
+  or year before the start of the period directly above. In the main
+  period, they count back from today’s month or year.
+- **Same period previous year** moves both dates of the period directly
+  above back one year. A series of these comparisons keeps
+  the starting and ending month and day from the first period in the
+  series. February 29 becomes February 28 in years without a leap day.
+
+For three consecutive months, set the main period to March 2026 and
+choose **Previous calendar month** for both comparisons. You’ll see
+March, February and January. To compare the same part of three years,
+choose **Year to date** and add **Same period previous year** twice.
+On March 15, each period runs from January 1 through March 15 of its year.
+The cutoff follows today when you show or refresh the report.
+
+![Report dates showing March 2026 as the main period, with Previous calendar month comparisons for February and January.](images/reports-periods.png)
+*Each comparison counts back from the period above it.*
 
 Check the resolved dates in the results, especially when using a preset.
 Comparisons appear in the order you added them. Use **Remove** beside a

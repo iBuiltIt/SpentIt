@@ -84,7 +84,7 @@ check the drive and access to the location. Do not delete lock files.
 
 **“This dataset format is not supported by this version of SpentIt; the file has not been changed”**
 
-Keep the original. This version of SpentIt has no upgrade or conversion command.
+Keep the original and use the version of SpentIt that last opened it.
 [Unsupported files](backup-recovery.md#the-file-will-not-open).
 
 ## Importing transactions

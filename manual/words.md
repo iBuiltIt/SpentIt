@@ -60,10 +60,14 @@ it does not remove them or change the account balance.
 
 ## Merge and Link
 
-**Merge** keeps one transaction when entries in the same account describe
-the same event. Two purchases with the same date and amount can still be
+**Merge** keeps one row when two entries describe
+the same transaction. Two purchases with the same date and amount can still be
 separate purchases. A date one day off can be the same purchase or a
 different one. Compare the transactions in Review before you merge.
+
+In the ledger, **Merge** can also link the two bank entries for a payment
+and remove the extra entries SpentIt created.
+[Change a saved Not this transfer decision](review-duplicates-transfers.md#change-a-saved-not-this-transfer-decision).
 
 **Link** connects the two postings of a transfer between accounts.
 Both accounts keep their posting; they are not merged into one entry.

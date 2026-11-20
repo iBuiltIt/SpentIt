@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-19
+Last updated: 2026-11-20
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -9,7 +9,8 @@ contract. Verification is recorded in [status](status.md#manual).
 
 Two owner-authorized passes on 2026-11-18 completed MAN-057 through MAN-076
 and MAN-077 through MAN-087. The 2026-11-19 pass completed MAN-088 through
-MAN-099. See [Manual](status.md#manual) for verification.
+MAN-099. The 2026-11-20 pass completed MAN-100 through MAN-103.
+See [Manual](status.md#manual) for verification.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -29,32 +30,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 
 ## Open items
 
-- **MAN-103 · 2026-11-19** Update [Bring in transactions](../manual/import-transactions.md) and
-  [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
-  to describe undoing an import that automatically matched a transfer. Show
-  which bank posting disappears and which earlier generated posting returns.
-  Cover **Review → Undo import…** after a clean reopen and the refusal shown
-  when a later transfer change still applies. Review the import Undo preview
-  illustration against this example. [Contract](import-undo.md)
-
-- **MAN-102 · 2026-11-19** Update the About reference in
-  [Backup and recovery](../manual/backup-recovery.md#if-you-still-need-help)
-  to mention that **License and terms** identifies the Unlicense and choosing
-  a component under **Third-party software** opens its notice at the top.
-  [Contract](../features/007-licensing-and-distribution.md#about)
-
-- **MAN-101 · 2026-11-19** Update [Reports](../manual/reports.md) to explain
-  Previous calendar month, Previous year, and Same period previous year.
-  Show consecutive months and aligned year-to-date comparisons, and explain
-  when an existing report adopts the new date rules. Refresh screenshots
-  that show the old preset names.
-  [Contract](../features/006-reporting-drill-down.md#previous-comparisons)
-
-- **MAN-100 · 2026-11-19** Update [Review duplicates and transfers](../manual/review-duplicates-transfers.md)
-  to explain how to select both rows and use **Merge** after **Not this transfer**.
-  Add the confirmation showing the two bank postings and explain what one Undo
-  restores. Capture the confirmation with synthetic data.
-  [Contract](review-sheet.md#merge-after-not-this-transfer)
+None. The next entry is MAN-104.
 
 ## Recapturing pictures
 

@@ -11,7 +11,7 @@ Two entries can mean two very different things. Two imports of your
 Market purchase may describe one purchase. A payment from Chequing
 to Credit card belongs in both accounts.
 
-**Merge** keeps one transaction for the same event in one account.
+For a duplicate purchase, **Merge** keeps one transaction in the account.
 **Link** connects the two sides of a transfer between accounts.
 
 Open **Review** in the sidebar. Read the question above each group
@@ -271,6 +271,22 @@ Choose **Preview** before **Save**. It affects later suggestions.
 The matches you have hidden are listed in **Settings → Hidden transfer
 matches…**.
 
+### Change a saved Not this transfer decision
+
+Open the account ledger that shows both the bank transaction and the extra
+entry SpentIt made for the payment. Select one row, then **Command-click**
+on a Mac or **Ctrl-click** on Windows and Linux to select the other.
+Right-click the selection and choose **Merge**.
+
+![Merge this payment? lists the Credit card payment from Chequing and Payment received in Credit card.](images/review-merge-rejected.png)
+*Check both bank transactions before choosing Merge.*
+
+If these are the two sides of the same payment, choose **Merge**.
+SpentIt links the two bank transactions shown and removes the extra
+entries it created for this payment. One **Undo** brings those entries back
+and restores your **Not this transfer** decision. An extra entry you
+already accepted without a bank match can’t be merged this way.
+
 ## Let SpentIt handle straightforward matches
 
 SpentIt checks for straightforward matches after an import finishes
@@ -311,8 +327,11 @@ review the remaining matches.
 
 If Merge or Link was your latest saved action, choose **Edit → Undo**.
 A batch of decisions is one step. Matches made during an import are undone
-[with that import](import-transactions.md#undo-a-mistaken-import). For an
-earlier answer, see [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
+[with that import](import-transactions.md#undo-a-mistaken-import). For
+example, undoing the Credit card import removes its bank deposit and brings
+back the earlier Credit card entry SpentIt made for the Chequing withdrawal.
+If a later transfer change blocks Undo, undo that change first if you can.
+For an earlier answer, see [Undo a saved change](add-correct-transactions.md#undo-a-saved-change).
 
 For a joined transaction, you can also select its row in the account ledger,
 right-click and choose **Unmerge**. This can remain available after acceptance

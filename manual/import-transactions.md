@@ -215,24 +215,33 @@ the newer actions or closing and reopening the file. Open **Review**,
 choose **Undo import…**, then choose the account and import. The list is
 newest first and shows file type, dates, and record counts.
 
-![Undo this import confirmation showing three new transactions to remove and Credit card and Cash as affected accounts.](images/import-undo.png)
-*Check the removal counts and affected accounts before choosing Undo import.*
-
 Undo applies to the **whole selected file import**, including its other
 accounts, transfer matches, and any rules that ran while it was
 importing. Earlier imports remain. Transactions also kept by another
 import may remain. Accounts, categories and opening balances created
 for the import stay, including a new account’s chosen opening.
 
-Check the preview, then choose **Undo import**, or **Cancel** to keep it.
-After Undo, you can open an affected account right away. For example,
-open **Credit card** to check its balance even if the purchase you last
-selected there was removed.
+Suppose you imported the Chequing withdrawal for your card payment first.
+SpentIt created a matching entry in Credit card. When you imported the
+Credit card statement, SpentIt linked the bank deposit to the Chequing
+withdrawal and removed the extra entry. After a successful close and reopen,
+choose **Review → Undo import…** and pick the Credit card import. Undo
+removes the bank deposit, brings back the earlier entry SpentIt created in
+Credit card, and keeps the Chequing withdrawal.
+
+![Undo this import confirmation showing one new transaction to remove and Chequing and Credit card as affected accounts.](images/import-undo.png)
+*The Credit card import added one transaction. Undoing its transfer match also affects Chequing.*
+
+Check the preview, then choose **Undo import**, or **Cancel** to keep the
+import. Open the affected accounts to check the result.
+
 If you just accepted the import by mistake, undo **Accept transactions**
 first. When the import is next in Change history, undo it to remove the
 whole import in one step, including links between entries in that import.
-Later conflicting edits or links can prevent Undo. An import held by another
-import is left out of the list until that other import is undone.
+If you see **Undo the later transfer change before undoing this import**,
+open **Change history** in the sidebar. Undo the later change first if it’s
+still available. An import held by another import is left out of the list
+until that other import is undone.
 Import Undo clears Redo and cannot itself be redone; import the original
 file again if you want to bring those transactions back.
 

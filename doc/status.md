@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-19
+Last updated: 2026-11-20
 
 SpentIt is the local rules-enabled application. The current rules database is
 version 2, and the application version is 1.0.2. Opening a version-1 file
@@ -20,7 +20,7 @@ acceptance. A multi-account import can also contain links between its own
 batches. Preview and save check the whole source in either batch order.
 The picker checks eligibility before showing the confirmation. Undo diagnostics
 distinguish a confirmed refusal, a saved change and an unreadable outcome.
-[Import Undo](import-undo.md) · [Diagnostics](application-diagnostics.md#action-outcome-inventory) · [MAN-103](manual-update-backlog.md#open-items)
+[Import Undo](import-undo.md) · [Diagnostics](application-diagnostics.md#action-outcome-inventory) · [Manual](../manual/import-transactions.md#undo-a-mistaken-import)
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release regression
 `storage.import_transfer_undo` passed across 20 synthetic scenarios. It compares
@@ -40,7 +40,7 @@ follow the period above. A Year to date chain carries the same month and day
 through each earlier year, using February 28 when needed. Existing saved
 reports adopt the new rules when a period edit is saved. See
 [Previous comparisons](../features/006-reporting-drill-down.md#previous-comparisons)
-and [MAN-101](manual-update-backlog.md#open-items).
+and [the manual](../manual/reports.md#choose-dates-and-comparisons).
 
 Five rules-enabled Release targets passed on macOS arm64 with Qt 6.12.0.
 They covered date boundaries and exact totals, report storage and commit
@@ -56,7 +56,7 @@ override the saved rejection for that pair. The confirmation shows both bank
 postings. The merge keeps and links them and removes their eligible extra
 entries. It saves one Undo action, and Undo restores the prior rejection.
 See [Review](review-sheet.md#merge-after-not-this-transfer) and
-[MAN-100](manual-update-backlog.md#open-items).
+[the manual](../manual/review-duplicates-transfers.md#change-a-saved-not-this-transfer-decision).
 
 On macOS arm64 with Qt 6.12.0, ten targeted rules-enabled Release CTest
 targets and five offscreen UI cases passed, including the repeated same-day
@@ -1161,6 +1161,24 @@ included; see [Manual](#manual).
 
 ## Manual
 
+### MAN-100 through MAN-103 — 2026-11-20
+
+The bundled guide now covers Merge after **Not this transfer**, Undo of an
+import that automatically matched a transfer, the report comparison presets,
+and the license and notices in About. Recovery also explains when opening an
+older file upgrades it. The pass adds two synthetic pictures and replaces the
+import Undo picture. It preserves all 17 topic IDs and 157 existing section IDs.
+The [backlog](manual-update-backlog.md#open-items) is empty.
+
+On macOS arm64 with Qt 6.12.0, all eleven native walkthroughs staged the 54
+linked pictures. Reports ran again to capture all three date ranges in one
+view. The three installed pictures were visually checked. The rules-enabled
+Release app rebuilt at `./build/SpentIt`. The 16 native Help reading cases,
+both continuous walkthroughs, both About appearances, and the Import,
+Review, and Reports walkthroughs passed with the final bundle.
+`help.prepare`, `help.capture_manual_images`, `help.catalog`, the offscreen
+startup smoke check, changed document links, and `git diff --check` passed.
+
 ### MAN-088 through MAN-099
 
 The owner-authorized 2026-11-19 pass updated seven bundled Help topics.
@@ -1169,8 +1187,8 @@ Redo across accounts, grouped import Undo, Review after a link breaks,
 Unmerge after acceptance, merge marks, unused categories, and changing
 a file’s date format. Six synthetic pictures were added and Settings was
 refreshed. The bundle has 52 pictures and preserves all 17 topic IDs and
-153 existing section IDs. The [backlog](manual-update-backlog.md#open-items)
-is empty and its next entry is MAN-100.
+153 existing section IDs. The next backlog entry at the end of that pass
+was MAN-100.
 
 On macOS arm64 with Qt 6.12.0, all eleven native screenshot walkthroughs
 passed. The seven installed pictures were visually checked. Rebuilt

@@ -134,8 +134,10 @@ First check the [opening checks](create-open-file.md#if-it-won-t-open): the
 selected file, password, drive and whether another SpentIt window has it open.
 Do not delete lock files to get around an “already open” message.
 
-Older experimental files may be refused as an unsupported format. This version
-of SpentIt has no upgrade or conversion command.
+SpentIt upgrades supported older files when you open them. Keep a copy
+made after a successful close if you want to open the file with your
+previous version. If SpentIt says the format is unsupported, keep the
+original and use the version that last opened it.
 
 If the message says the file failed verification or is damaged, do not keep
 trying to change it. Open a separate copy made after a successful close, as
@@ -179,8 +181,10 @@ Note the exact message, the action you took, and your operating system.
 On a Mac, choose **About SpentIt** in the application menu. On Windows and
 Linux, choose **Help → About SpentIt**. **Copy version information** copies
 the version and build so you can include them in your report.
-If you open the license or notices, press **Escape** to go back to the
-version information. From there, **Escape** closes the window.
+**License and terms…** explains that SpentIt is released under the Unlicense.
+Under **Third-party software…**, choose a component to read its notice. Press
+**Escape** to go back to the version information, then **Escape** again to
+close About.
 
 A small made-up example can help explain the problem. Remove names, account details and amounts from screenshots you
 share; do not send passwords, your financial file or bank exports.
