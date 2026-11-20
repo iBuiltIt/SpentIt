@@ -1,5 +1,6 @@
 #include <spentit/import_view.hpp>
 #include <algorithm>
+#include <map>
 #include <numeric>
 namespace spentit::app {
 std::string decimal(const Money& value) {
@@ -22,13 +23,42 @@ std::string_view category(const LedgerRow& r) {
 LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::string_view literal,int column,bool descending) {
     if(column<0 || column>5 || literal.size()>256 || !qif::valid_utf8(literal)) throw std::invalid_argument("Invalid ledger query");
     rows.push_back({{"",0},0,{account.opening_date,"Opening Balance","",Transaction::manual(account.opening,{{"Opening Balance","",account.opening}})},true});
-    std::sort(rows.begin(),rows.end(),[](const auto& a,const auto& b){return a.draft.date==b.draft.date?a.sequence<b.sequence:a.draft.date<b.draft.date;});
+    std::sort(rows.begin(),rows.end(),[](const auto& a,const auto& b){
+        return std::tie(a.draft.date,a.sequence,a.identity)<std::tie(b.draft.date,b.sequence,b.identity);
+    });
     const Money zero(0,account.currency);
     LedgerView out{std::move(rows),{},{},zero,zero,zero}; std::vector<Money> withdrawals,deposits;
-    const auto needle=folded(std::string(literal));
+    std::vector<std::size_t> file_order(out.rows.size());
+    std::iota(file_order.begin(),file_order.end(),std::size_t{0});
+    auto posting_order=file_order;
+    std::map<std::pair<std::string_view,std::string_view>,std::vector<std::size_t>> source_slots;
     for(std::size_t i=0;i<out.rows.size();++i) {
+        const auto& row=out.rows[i];
+        if(row.source_order!=LedgerSourceOrder::none)
+            source_slots[{row.draft.date,row.identity.batch}].push_back(i);
+    }
+    // Reorder each statement within its own slots for the day. Other sources
+    // and entries still occupy their original slots in the ledger.
+    for(const auto& [key,slots]:source_slots) {
+        if(slots.size()<2)continue;
+        auto by_ordinal=slots;
+        std::sort(by_ordinal.begin(),by_ordinal.end(),[&](auto a,auto b){
+            return out.rows[a].identity.ordinal<out.rows[b].identity.ordinal;
+        });
+        const bool newest_first=out.rows[slots.front()].source_order==LedgerSourceOrder::newest_first;
+        for(std::size_t i=0;i<slots.size();++i) {
+            file_order[slots[i]]=by_ordinal[i];
+            posting_order[slots[i]]=by_ordinal[newest_first?slots.size()-1-i:i];
+        }
+    }
+    out.balances.resize(out.rows.size(),zero);
+    for(const auto i:posting_order) {
+        out.ending=out.ending+out.rows[i].draft.transaction.effective_total();
+        out.balances[i]=out.ending;
+    }
+    const auto needle=folded(std::string(literal));
+    for(const auto i:file_order) {
         const auto& r=out.rows[i]; const auto& amount=r.draft.transaction.effective_total();
-        out.ending=out.ending+amount; out.balances.push_back(out.ending);
         bool match=needle.empty();
         if(!match) {
             for(const auto* text:{&r.draft.date,&r.draft.payee,&r.draft.memo}) match|=folded(*text).find(needle)!=std::string::npos;
@@ -38,7 +68,7 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
         out.order.push_back(i); (amount.units()<0?withdrawals:deposits).push_back(amount);
     }
     out.withdrawals=imports::sum(account.currency,withdrawals); out.deposits=imports::sum(account.currency,deposits);
-    std::sort(out.order.begin(),out.order.end(),[&](std::size_t a,std::size_t b){
+    std::stable_sort(out.order.begin(),out.order.end(),[&](std::size_t a,std::size_t b){
         const auto& x=out.rows[a]; const auto& y=out.rows[b]; int cmp=0;
         if(column<3) {
             const std::string_view l=column==0?std::string_view(x.draft.date):column==1?std::string_view(x.draft.payee):category(x);
@@ -47,9 +77,8 @@ LedgerView ledger_view(const Account& account,std::vector<LedgerRow> rows,std::s
             auto value=[&](std::size_t i){const auto units=out.rows[i].draft.transaction.effective_total().units();return column==3?std::min<std::int64_t>(0,units):column==4?std::max<std::int64_t>(0,units):out.balances[i].units();};
             const auto l=value(a),r=value(b);cmp=l<r?-1:l>r?1:0;if(column==3)cmp=-cmp;
         }
-        // Newest-first Date reverses the whole chronological order, including one day.
-        // Other columns keep the earlier row first when their values match.
-        return cmp==0?(column==0 && descending?x.sequence>y.sequence:x.sequence<y.sequence):descending?cmp>0:cmp<0;
+        // Date keeps the same within-day display order in either direction.
+        return cmp==0?(column!=0 && x.sequence<y.sequence):descending?cmp>0:cmp<0;
     });return out;
 }
 LedgerView search_ledger(const Account& account,std::vector<LedgerRow> rows,LedgerSearch& query,int column,bool descending,

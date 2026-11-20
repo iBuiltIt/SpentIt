@@ -23,14 +23,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-104. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-105. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
 
-None. The next entry is MAN-104.
+**MAN-104 — Date sort and statement balances (2026-11-20).** In
+[Find transactions](../manual/find-transactions.md), explain that Date flips the
+days and keeps statement order within each day. In
+[Import transactions](../manual/import-transactions.md), explain how to compare
+running balances and that existing imports use the retained statement order.
+If updating the ledger or search pictures, use synthetic same-day postings.
+See [the ledger contract](search-ledger.md#search-contract).
 
 ## Recapturing pictures
 

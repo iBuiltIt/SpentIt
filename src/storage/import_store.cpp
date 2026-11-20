@@ -2333,6 +2333,30 @@ app::Receipt ImportStore::publish_review(std::string_view id,std::int64_t expect
 }
 std::vector<app::LedgerRow> ImportStore::ledger(bool projected) const { return ledger_rows(projected,false); }
 std::vector<app::LedgerRow> ImportStore::current_ledger() const { return ledger_rows(true,true); }
+namespace {
+app::LedgerSourceOrder ledger_source_order(sqlite3* db,std::string_view batch_id) {
+    using Order=app::LedgerSourceOrder;
+    Statement kind(db,"SELECT parser FROM batches WHERE id=?");kind.text(1,batch_id);
+    if(!kind.row())fail(SQLITE_CORRUPT);
+    const auto parser=kind.bytes(0);
+    if(parser=="manual-v1")return Order::none;
+    if(parser!="ofx-sgml-1" && parser!="ofx-xml-2")return Order::file_order;
+
+    // Use the original statement, including excluded rows. Ledger date edits
+    // and duplicate decisions provide no evidence of the file's direction.
+    Statement dates(db,"SELECT original_date FROM source_occurrences WHERE batch=? ORDER BY ordinal");
+    dates.text(1,batch_id);
+    std::string previous;
+    bool decreased=false;
+    while(dates.row()) {
+        auto date=dates.bytes(0);
+        if(date.empty() || (!previous.empty() && date>previous))return Order::file_order;
+        decreased|=!previous.empty() && date<previous;
+        previous=std::move(date);
+    }
+    return decreased?Order::newest_first:Order::file_order;
+}
+}
 std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current) const {
     ScopedStatements read_plans(impl_->db);
         if(projected && !current && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
@@ -2355,7 +2379,19 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
         }
         if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
-        std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});return result;
+        std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});
+        std::map<std::string_view,app::LedgerSourceOrder> orders;
+        for(auto day=result.begin();day!=result.end();) {
+            const auto next=std::find_if(day+1,result.end(),[&](const auto& row){return row.draft.date!=day->draft.date;});
+            if(next-day>1)for(auto row=day;row!=next;++row) {
+                if(row->sequence<=0)continue;
+                const auto [order,inserted]=orders.try_emplace(row->identity.batch);
+                if(inserted)order->second=ledger_source_order(impl_->db,row->identity.batch);
+                row->source_order=order->second;
+            }
+            day=next;
+        }
+        return result;
 }
 Money ImportStore::balance_for(std::int64_t id) const {
     const auto acct=account_by_id(id);

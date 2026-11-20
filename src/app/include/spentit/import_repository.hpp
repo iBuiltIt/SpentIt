@@ -192,11 +192,13 @@ struct AcceptanceReceipt {
     std::size_t transactions=0,failed_records=0;
     bool ignored_warnings=false;
 };
+enum class LedgerSourceOrder { none, file_order, newest_first };
 struct LedgerRow {
     imports::Occurrence identity;
     std::int64_t sequence;
     imports::DraftRow draft;
     bool committed;
+    LedgerSourceOrder source_order = LedgerSourceOrder::none;
 };
 // One atomic portable-definition import. References are resolved before saving.
 struct DefinitionImport {

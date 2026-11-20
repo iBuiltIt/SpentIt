@@ -12,6 +12,22 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Same-day statement order in the ledger — 2026-11-20
+
+Date sort flips the days and preserves each statement's file order within a
+day. Running balances use the inferred posting sequence for OFX-family
+exports whose original dates run newest-first. Existing imports use retained
+evidence. See [ledger sorting and balances](search-ledger.md#search-contract)
+and [MAN-104](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, 13 rules-enabled Release CTest targets passed,
+including ledger, search, statement parser, statement balance and ordering,
+navigation, the import UI suite, and offscreen startup. The ordering regression exercises ascending,
+descending, single-day, and mixed-date statements before acceptance, after
+acceptance, and after reopening. The updated ledger also passed both Date
+directions and per-row balance checks on a synthetic file created and closed
+by the previous Release build.
+
 ## Import Undo restores matched transfers — 2026-11-19
 
 Undoing an import that automatically matched a transfer restores the surviving

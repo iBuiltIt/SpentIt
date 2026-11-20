@@ -465,7 +465,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),records)}});run(m,"commit");
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-20\nPDownloaded again\n^\n")}});
         QVariantMap fresh,old;for(const auto& v:m.state().value("reviewQuestions").toList()[0].toMap().value("rows").toList()){const auto r=v.toMap();if(r.value("committed").toBool())old=r;else fresh=r;}
-        // Newest first puts this later same-day row at the top. Oldest first places it below the fold.
+        // Earlier imports on this date put the later row below the fold.
         run(m,"query",{{"sort",0},{"descending",false}});
         QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QTest::qWait(100);
         auto* ledger=visualItem(window->contentItem(),"durableLedger");QVERIFY(ledger);QVERIFY(ledger->property("contentY").toReal()>0);

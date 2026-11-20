@@ -1,4 +1,5 @@
 #include "session_test_helpers.hpp"
+#include <spentit/import_view.hpp>
 #include <spentit/import_store.hpp>
 #include <spentit/statements.hpp>
 #include "fault_vfs.hpp"
@@ -84,6 +85,57 @@ app::ImportGroup capture(ImportStore& store, std::string id, std::string_view by
 app::ImportGroup materialize(ImportStore& store, std::string_view id) {
     app::OperationContext context;
     return store.resume_import_group(id, context);
+}
+void ledger_order() {
+    const std::string same_day="20260417120000[-5:EST]";
+    const auto latest=txn("last","20260418","-10.00","Last day");
+    const auto earlier=txn("first","20260416","-1.00","First day");
+    const auto purchases=txn("a",same_day,"-15.00","Shop A")+txn("b",same_day,"-3.00","Shop B");
+    for(const auto& records:{latest+purchases+earlier,earlier+purchases+latest,purchases,purchases+earlier+latest}) {
+        Directory d;
+        const auto path=d.path/"doc";
+        auto store=create(path);
+        store.opening(0,"2026-01-01",Money(10000,cad));
+        const auto source=sgml(bank(records));
+        capture(store,"statement",source,{{0,1,{}}});
+        materialize(store,"statement");
+        const bool newest_first=records.starts_with(latest);
+        const auto reconcile=[&] {
+            const auto rows=store.current_ledger();
+            for(const bool descending:{false,true}) {
+                const auto view=app::ledger_view(store.account(),rows,"",0,descending);
+                std::vector<std::string> payees;
+                std::vector<std::int64_t> balances;
+                for(const auto index:view.order) {
+                    const auto& row=view.rows[index];
+                    if(row.draft.payee.starts_with("Shop")) {
+                        payees.push_back(row.draft.payee);
+                        balances.push_back(view.balances[index].units());
+                    }
+                }
+                check(payees==std::vector<std::string>{"Shop A","Shop B"});
+                if(newest_first)check(balances==std::vector<std::int64_t>{8100,9600});
+                else if(records==purchases)check(balances==std::vector<std::int64_t>{8500,8200});
+                else check(balances==std::vector<std::int64_t>{8400,8100});
+                check(view.ending==store.balance());
+                app::LedgerSearch query("Shop B",2026);
+                const auto filtered=app::search_ledger(store.account(),rows,query,0,descending);
+                check(filtered.order.size()==1 && filtered.balances[filtered.order.front()].units()==balances[1]);
+                if(newest_first) {
+                    std::vector<std::string> displayed;
+                    for(const auto index:view.order)displayed.push_back(view.rows[index].draft.payee);
+                    if(descending)check(displayed==std::vector<std::string>{"Last day","Shop A","Shop B","First day","Opening Balance"});
+                    else check(displayed==std::vector<std::string>{"Opening Balance","First day","Shop A","Shop B","Last day"});
+                }
+            }
+        };
+        reconcile();
+        store.accept_all("accept");
+        reconcile();
+        test_session::close_reopen(store,path,password);
+        check(store.evidence("statement-account-0")==source);
+        reconcile();
+    }
 }
 void common_matching() {
     for(const auto prior:{"qif","ofx","qfx","qbo","aso"})for(const auto incoming:{"qif","ofx","qfx","qbo","aso"}) {
@@ -1072,6 +1124,7 @@ int main(int argc, char** argv) {
     try {
         const std::string name = argc > 1 ? argv[1] : "";
         if(name == "review") review();
+        else if(name == "ledger_order") ledger_order();
         else if(name == "reimport") exact_reimport();
         else if(name == "reimport_faults") overlap_faults(true);
         else if(name == "overlap") strict_overlap();
