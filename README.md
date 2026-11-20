@@ -4,19 +4,22 @@ I developed SpentIt so I could get an answer to this one simple question: "Where
 
 SpentIt is a single-user desktop program. It brings your transactions together, sorts them into categories that mean something to you, and shows where the money actually went.
 
-There is no budget to keep, no tax preparation, and no investment tracking. SpentIt does not connect to your bank. When you want new transactions, you save a statement from your bank or card and bring that file in, or you simply type the transaction yourself.
+![SpentIt](assets/images/SpentIt_light_512.png)
+
+There is no budget to keep, no tax preparation, and no investment tracking. SpentIt does not connect to your bank. When you want to add transactions, you save a statement from your bank or card and bring that file in, or you simply type the transaction yourself.
 
 Your data stays on your own computer. If you would like the file to stay private, give it a password and SpentIt encrypts it for you. 
 
-SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows and Linux.
+SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows and Linux.  
+[Download SpentIt now](https://github.com/iBuiltIt/SpentIt/releases)
 
-![SpentIt](assets/images/SpentIt_light_512.png)
+[Watch SpentIt in action - 40 seconds](https://youtu.be/tC_EH4smn28)  
 
 ## What you can do
 
 - Bring in a statement you downloaded (QIF, OFX, QFX, QBO, or ASO), or type a transaction yourself.
 - Keep your bank, cash, and credit-card accounts together.
-- Sort spending into categories, and let rules fill in the ones that come around again.
+- Sort spending into categories, and let rules categorize recurring transactions automatically.
 - Review possible duplicates and transfers before you rely on them.
 - Accept transactions when you are happy with them.
 - Open a report and see the transactions behind a total spent.
@@ -26,7 +29,7 @@ SpentIt was developed with the aid of AI.  It has been tested on macOS, Windows 
 
 ## But the bank does this already
 
-Banks can already sort spending, and they do a lot of it for you. SpentIt is still worth having for these reasons.
+SpentIt is still worth having for these reasons.
 
 - **Your history stays.** What did the new roof cost 10 years ago? If you brought it in, you can still look it up.
 - **Your categories.** You decide how to sort the spending. Want Amazon as its own category? You can.
@@ -63,9 +66,9 @@ The build steps are in [Building](doc/building.md).
 
 ## License
 
-Use SpentIt if you want to. I do not promise that it is correct, complete, or safe to rely on. Keep your own copies of your records. If you trust SpentIt and it lets you down, that rests with you. If you are not comfortable with that, do not use it.
-
 SpentIt is released under the Unlicense. See [LICENSE](LICENSE). Third-party components have their own licenses, which are shown in the [LICENSE](LICENSE) file and in the application's About dialog.
+
+SpentIt is provided as-is, without warranties of any kind. Although I have tested it, I cannot guarantee that it is free from errors. Please keep backups of your financial records and verify important results.
 
 Stefan Wessels  
 swessels@email.com  
