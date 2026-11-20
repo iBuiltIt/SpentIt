@@ -589,7 +589,7 @@ private slots:
             run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,true);run(model,"close");
         }
     }
-    void searchShortcutPreservesFilter() {
+    void ledgerSearchShortcuts() {
         QTemporaryDir dir;
         ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;
@@ -600,18 +600,93 @@ private slots:
         QVERIFY(window);
         QVERIFY(QTest::qWaitForWindowExposed(window));
         run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Search account"},{"currency","CAD"}});
+        QFile source(dir.filePath("search.qif"));
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        const QByteArray bytes="D2026-01-01\nT-1\nPPlay Alpha\n^\nD2026-01-02\nT-2\nPPlay Beta\n^\nD2026-01-03\nT-3\nPOther\n^\n";
+        QCOMPARE(source.write(bytes),bytes.size());
+        source.close();
+        run(model,"import",{{"path",source.fileName()}});
+        const auto fullCount=model.rowCount();
         auto* ledger=qobject_cast<QQuickItem*>(object(window,"durableLedger"));
         auto* search=qobject_cast<QQuickItem*>(object(window,"ledgerSearch"));
         QVERIFY(ledger && search);
-        QVERIFY(search->setProperty("text","Opening"));
-        QVERIFY(click(window,"applyFilter"));
-        QTRY_COMPARE(model.state().value("filter").toString(),"Opening");
-        QVERIFY(search->setProperty("text","Draft query"));
+        const auto filter=[&]{return model.state().value("filter").toString();};
+        const auto toggle=[&]{QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);};
+        const auto clear=[&]{QTest::keyClick(window,Qt::Key_F,Qt::AltModifier|Qt::ShiftModifier);};
+
         ledger->forceActiveFocus();
-        QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);
+        toggle();
+        QTRY_VERIFY(search->hasActiveFocus());
+        toggle();
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        toggle();
+        QTRY_VERIFY(search->hasActiveFocus());
+        for(char letter:QByteArray("PLAY"))QTest::keyClick(window,letter);
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_COMPARE(filter().toLower(),"play");
+        QCOMPARE(model.rowCount(),2);
+        QTRY_VERIFY(search->hasActiveFocus());
+
+        QVERIFY(search->setProperty("text","Draft query"));
+        toggle();
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        toggle();
         QTRY_VERIFY(search->hasActiveFocus());
         QCOMPARE(search->property("text").toString(),"Draft query");
-        QCOMPARE(model.state().value("filter").toString(),"Opening");
+        QCOMPARE(filter().toLower(),"play");
+        toggle();
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_End);
+        QTRY_COMPARE(model.state().value("selectionIndex").toInt(),1);
+        const auto chosen=model.rowIdentity(1);
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_VERIFY(!model.busy());
+        QCOMPARE(model.selectedRowIndex(),1);
+        QCOMPARE(model.state().value("selected").toMap().value("draft").toMap().value("payee"),
+                 model.rowRecord(1).value("payee"));
+
+        QVERIFY(edit(window,"durablePayee","Unsaved"));
+        clear();
+        auto* dialog=object(window,"unsavedDialog");
+        QVERIFY(dialog);
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        toggle();
+        clear();
+        QVERIFY(!search->hasActiveFocus());
+        QCOMPARE(search->property("text").toString(),"Draft query");
+        QVERIFY(click(window,"guardStay"));
+        QCOMPARE(filter().toLower(),"play");
+        QVERIFY(window->property("dirty").toBool());
+        ledger->forceActiveFocus();
+        clear();
+        QTRY_VERIFY(dialog->property("visible").toBool());
+        QVERIFY(click(window,"guardDiscard"));
+        QTRY_COMPARE(filter(),QString());
+        QCOMPARE(model.rowCount(),fullCount);
+        QCOMPARE(model.rowIdentity(model.selectedRowIndex()),chosen);
+        QCOMPARE(search->property("text").toString(),QString());
+        QTRY_VERIFY(ledger->hasActiveFocus());
+
+        toggle();
+        QTRY_VERIFY(search->hasActiveFocus());
+        QVERIFY(search->setProperty("text","no matching transactions"));
+        QTest::keyClick(window,Qt::Key_Return);
+        QTRY_COMPARE(model.rowCount(),0);
+        toggle();
+        QVERIFY(search->hasActiveFocus());
+        QVERIFY(search->setProperty("text",QString()));
+        clear();
+        QTRY_COMPARE(filter(),QString());
+        QCOMPARE(model.rowCount(),fullCount);
+        QTRY_VERIFY(search->hasActiveFocus());
+
+        QVERIFY(search->setProperty("text","Draft only"));
+        toggle();
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        clear();
+        QTRY_COMPARE(search->property("text").toString(),QString());
+        QTRY_VERIFY(!model.busy());
+        QTRY_VERIFY(ledger->hasActiveFocus());
     }
     void categoryPopupFiltersAndScrolls() {
         ImportModel model(spentit::storage::document_gateway());
@@ -633,6 +708,8 @@ private slots:
         auto* filter=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryFilter"));QVERIFY(filter);
         QTRY_VERIFY(filter->hasActiveFocus());
         QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);
+        QVERIFY(filter->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_F,Qt::AltModifier|Qt::ShiftModifier);
         QVERIFY(filter->hasActiveFocus());
         QVERIFY(filter->setProperty("text",QString()));
         for(char c:QByteArray("CATEGORY 7"))QTest::keyClick(window,c);

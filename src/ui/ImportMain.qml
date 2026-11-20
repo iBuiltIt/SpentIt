@@ -322,7 +322,13 @@ ApplicationWindow {
         if(next[key]) delete next[key]; else next[key]=true
         splitViews=next
     }
-    property var searchReturn: null
+    property var accountSearchReturn: null
+    property var reportSearchReturn: null
+    readonly property var searchReturn: s.reportLedgerActive ? reportSearchReturn : accountSearchReturn
+    function setSearchReturn(value) {
+        if (s.reportLedgerActive) reportSearchReturn=value
+        else accountSearchReturn=value
+    }
     property var pendingSearch: null
     property string appliedFilter: ""
     function transferCommand(action, args) {
@@ -1221,12 +1227,6 @@ ApplicationWindow {
         sequence:"Alt+C";autoRepeat:false
         enabled:ledgerKeyboardFocused && !ledgerContext.visible && !ledgerCategoryMenu.visible && ledgerCategoryMenu.enabled
         onActivated:changeCategoryFromLedgerShortcut()
-    }
-    Shortcut {
-        sequence:"Alt+F";autoRepeat:false
-        enabled:!!s.active && search.visible && search.enabled && !workflow.busy &&
-            !ledgerContext.visible && !ledgerCategoryMenu.visible
-        onActivated:search.forceActiveFocus()
     }
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
@@ -2351,7 +2351,7 @@ ApplicationWindow {
                 if(!success && action==="resolve_import_categories" && (s.importCategoryDecisions||[]).some(function(d){return d.source===importCategories.source}))importCategories.open()
             }
             if(success && (action==="report_drill" || (action==="report_show" && pendingReportRestore && s.reportLedgerActive))) {
-                search.clearSearch();editorClosed=true
+                reportSearchReturn=null;appliedFilter=s.filter||"";search.clearSearch();editorClosed=true
             }
             if(action==="report_show" && pendingReportRestore) {
                 const request=pendingReportRestore;pendingReportRestore=null
@@ -2362,7 +2362,7 @@ ApplicationWindow {
             } else if(success && currentPage==="reports" && action==="report_drill") {
                 pushNavigation("reports",s.reportResult.id,s.reportDetails.cell)
             }
-            if(success && action==="report_leave"){search.text=s.filter||"";editorClosed=true}
+            if(success && action==="report_leave"){reportSearchReturn=null;appliedFilter=s.filter||"";search.text=appliedFilter;editorClosed=true}
             if(action==="report_leave" && pendingReportNavigation){let next=pendingReportNavigation;pendingReportNavigation=null;if(success)Qt.callLater(next)}
             if(success && action==="preview_import_undo")importUndoConfirm.open()
             if(success && action==="undo_import"){importUndoConfirm.close();importUndoPicker.close();workspaceFeedback=(s.receipt||{}).summary||"Import undone."}
@@ -2433,9 +2433,9 @@ ApplicationWindow {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
                     appliedFilter=change.filter
-                    if(change.start) searchReturn=change.start
+                    if(change.start) setSearchReturn(change.start)
                     if(change.clear) {
-                        let saved=searchReturn;searchReturn=null
+                        let saved=searchReturn;setSearchReturn(null)
                         if(!saved.chosen) loadEditor()
                         Qt.callLater(function(){
                             if(saved.chosen) {let focus=s.selectionIndex===undefined?ledger.currentIndex:s.selectionIndex;if(focus>=0) ledger.positionViewAtIndex(focus,ListView.Contain)}
@@ -2449,7 +2449,7 @@ ApplicationWindow {
             if(success && action==="select" && searchReturn)searchReturn.chosen=true
             if(!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) {
                 historyOpenId="";historySelectedKey="";historyAccountSeen=""
-                duplicateOriginKey="";duplicateCandidateKey="";pendingDuplicateReveal=null;searchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
+                duplicateOriginKey="";duplicateCandidateKey="";pendingDuplicateReveal=null;accountSearchReturn=null;reportSearchReturn=null;pendingSearch=null;appliedFilter="";search.clear();resetNavigation()
                 loadCategoryForm();categoryVisitAdditions=[];categorySort="ascending";categorySelection="";categoryReveal="";categoryMenuEntry=({});categoryContext.close()
                 ledgerViewRestore=null;ledgerViewKind=""
             }
@@ -2466,7 +2466,7 @@ ApplicationWindow {
                 }
                 if(action==="correct_opening")correctAmount.text=s.opening
                 if(action==="select_account" || action==="create_account" || action==="map_import" || action==="group_abort" || action==="archive_account" || action==="delete_account") {
-                    addingAccount=false;splitViews={};searchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
+                    addingAccount=false;splitViews={};accountSearchReturn=null;reportSearchReturn=null;pendingSearch=null;appliedFilter=s.filter||"";search.text=appliedFilter
                     if(pendingReviewLedger)++accountViewportRestoreSerial
                     else if(pendingCounterpart){
                         const editDateOnArrival=pendingCounterpart.editDate
@@ -5158,9 +5158,24 @@ ApplicationWindow {
                     id:ledgerPage;objectName:"ledgerPage"
                     parent:window.reportLedger?reportsWorkspace.ledgerHost:workspaceBody;anchors.fill:parent;visible:currentPage==="ledger" || window.reportLedger
                     enabled:!workflow.busy || workflow.selecting
+                    readonly property bool searchShortcutsEnabled: !!s.active && search.visible && search.enabled &&
+                        !workflow.busy && !ledgerContext.visible && !ledgerCategoryMenu.visible
+                    Shortcut {
+                        sequence:"Alt+F";autoRepeat:false
+                        enabled:ledgerPage.searchShortcutsEnabled
+                        onActivated:{
+                            if (!search.activeFocus) search.forceActiveFocus()
+                            else if (ledger.count>0) ledger.forceActiveFocus()
+                        }
+                    }
+                    Shortcut {
+                        sequence:"Alt+Shift+F";autoRepeat:false
+                        enabled:ledgerPage.searchShortcutsEnabled && (search.text.length>0 || search.hasAppliedFilter)
+                        onActivated:clearLedgerSearch(false)
+                    }
             RowLayout {
                 Layout.fillWidth:true
-                ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:appliedFilter.length>0;onClearRequested:guard(function(){search.clearSearch();query()});placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:guard(function(){search.clear();query()});Accessible.name:"Ledger search"}
+                ClearableSearchField {id:search;objectName:"ledgerSearch";clearObjectName:"clearFilter";hasAppliedFilter:!!s.filter;onClearRequested:clearLedgerSearch(true);placeholderText:'Search · category:Auto · period:may-june · QIF: · regex:"pattern"';maximumLength:4096;Layout.fillWidth:true;onAccepted:guard(query);Keys.onEscapePressed:clearLedgerSearch(false);Accessible.name:"Ledger search"}
                 Button {objectName:"searchHelp";text:"Search help";focusPolicy:Qt.TabFocus;onClicked:openContextHelp("help:search-examples")}
                 Button {objectName:"applyFilter";text:"Apply";onClicked:guard(query)}
                 Button {objectName:"addTransaction";visible:!window.reportLedger;text:"+ New transaction";enabled:!s.readOnly && !workflow.busy;onClicked:addTransaction();ToolTip.visible:hovered;ToolTip.text:"Add transaction";Accessible.name:"Add transaction"}
@@ -5632,6 +5647,13 @@ ApplicationWindow {
 
             }
         }
+    }
+    function clearLedgerSearch(focusSearch) {
+        guard(function() {
+            if (focusSearch) search.clearSearch()
+            else search.clear()
+            query()
+        })
     }
     function query(sort, descending) {
         if(workflow.busy) return

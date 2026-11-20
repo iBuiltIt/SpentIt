@@ -40,9 +40,17 @@ The manual already describes selection shortcuts. Later user-visible changes go 
 
 ## Search contract
 
-**Option+F** on macOS or **Alt+F** on Windows and Linux focuses Search in the
-account ledger or report transaction list. The current text and applied filter
-stay in place.
+**Option+F** on macOS or **Alt+F** on Windows and Linux moves focus between
+Search and the transaction list in an account ledger or report. Press Enter
+in Search to apply the query, then use the shortcut again to move to the
+results. The search text, applied filter, and selection stay in place while
+moving focus. If the list has no rows, focus stays in Search.
+
+**Option+Shift+F** on macOS or **Alt+Shift+F** on Windows and Linux clears
+both the search text and the applied filter from Search or the transaction
+list. Focus stays where it was. The shortcut uses the same selection
+restoration and Save / Discard / Stay guard as the Clear button. Clearing a
+report search restores its transaction list within the same report.
 
 - Space-separated terms are case-insensitive Unicode literals combined with AND. A term can match a different field from another term. Double quotes form a phrase within one field. Quoting an entire operator-looking term makes it literal, for example `"regex:word"`.
 - `regex:"pattern"` explicitly uses the existing bounded PCRE2 adapter. Inline pattern flags can override case matching. In quoted text, `\"` and `\\` escape a quote and a backslash; other backslashes are preserved for regex syntax. There is no OR/NOT grammar or implicit regex interpretation.

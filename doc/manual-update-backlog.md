@@ -52,11 +52,13 @@ Rules, and [Categories](../manual/categories.md). See
 [ledger editing](ledger-editing.md#ledger-rule-creation-and-menu-availability--owner-go-2026-11-08)
 and [Rules behavior](../features/004-rules-and-explanations.md#workspace).
 
-**MAN-106 — Focus ledger Search (2026-11-20).** In
+**MAN-106 — Ledger Search shortcuts (2026-11-20).** In
 [Keyboard and mouse](../manual/keyboard-mouse.md) and
 [Find transactions](../manual/find-transactions.md), document Option+F on
-macOS and Alt+F on Windows and Linux for focusing Search in the account ledger
-or report transaction list. See [the search contract](search-ledger.md#search-contract).
+macOS and Alt+F on Windows and Linux for moving between Search and the
+transaction list. Document Option+Shift+F or Alt+Shift+F for clearing Search
+from either place. Both shortcuts work in the account ledger and report
+transaction list. See [the search contract](search-ledger.md#search-contract).
 
 **MAN-107 — Rule capacity (2026-11-20).** In [Rules](../manual/rules.md),
 explain the 4,096-rule limit, the message at the limit, and that disabled rules

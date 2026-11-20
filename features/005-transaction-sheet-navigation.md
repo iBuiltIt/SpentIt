@@ -102,4 +102,7 @@ Search covers the displayed fields and original imported text, including the
 `QIF:` token for retained occurrence bytes. An invalid pattern is an error, not
 an empty result. Clearing search restores the previous view unless the user
 opened a result; that result then stays selected and visible. Clear and Escape
-honor Save, Discard, and Stay.
+honor Save, Discard, and Stay. Option+F (Alt+F on Windows and Linux) moves
+between Search and the transaction list. Option+Shift+F (Alt+Shift+F on
+Windows and Linux) clears Search from either place. See the
+[search contract](../doc/search-ledger.md#search-contract).

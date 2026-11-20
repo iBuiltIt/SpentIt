@@ -62,18 +62,22 @@ The tests cover both transaction lists, selection eligibility, focus in Ledger
 Search, and changing two rows through the category filter. Native interactive
 use and the Windows and Linux bindings were unverified.
 
-## Focus ledger Search — 2026-11-20
+## Ledger Search shortcuts — 2026-11-20
 
-Option+F on macOS or Alt+F on Windows and Linux focuses Search in the account
-ledger or report transaction list and preserves the current text and applied
-filter. See [the search contract](search-ledger.md#search-contract) and
+Option+F on macOS or Alt+F on Windows and Linux moves focus between Search
+and the account ledger or report transaction list. With no results, focus
+stays in Search. Option+Shift+F or Alt+Shift+F clears the search text and
+filter from either place, using the existing unsaved-edit guard and selection
+restoration. See [the search contract](search-ledger.md#search-contract) and
 [MAN-106](manual-update-backlog.md#open-items).
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release Navigation, Reports,
-and startup offscreen targets passed. The checks cover the shortcut in both
-lists, retention of a draft query and active filter, and focus staying in
-the Change category popup. Native keyboard input and Windows and Linux were
-unverified.
+Rules, and startup offscreen targets passed. The checks cover the shortcuts
+in both lists, empty results, draft and applied queries, keeping a chosen
+result selected after clearing, and modal keyboard ownership. The full Import
+UI target had one failure in `reviewAcceptWithoutBankMatch`. That case and
+the focused Import UI search and selection cases passed on rerun. Native
+keyboard input and Windows and Linux were unverified.
 
 ## Same-day statement order in the ledger — 2026-11-20
 
