@@ -58,13 +58,13 @@ void rule_retention() {
         if(sqlite3_exec(db,sql,nullptr,nullptr,nullptr)!=SQLITE_OK)throw std::runtime_error(std::string("Corruption fixture: ")+sqlite3_errmsg(db));check(sqlite3_close(db)==SQLITE_OK);
         bool refused=false;try{auto s=ImportStore::open(damaged,password);s.verify();}catch(const ImportError&){refused=true;}check(refused);
     }
-    // Deleted baseline members must not consume the live evaluator's 128-rule limit.
+    // Deleted baseline members must not consume the live evaluator's rule limit.
     const auto capacity=dir.path/"capacity";
     {auto s=create(capacity);std::vector<app::RuleDefinitionImage> rules;
-        for(int i=0;i<128;++i){auto r=retention_rule();r.identity="deleted-"+std::to_string(i);rules.push_back(r);}
+        for(std::size_t i=0;i<rules::EvaluationLimits::rules;++i){auto r=retention_rule();r.identity="deleted-"+std::to_string(i);rules.push_back(r);}
         save_rules(s,"many",rules,0);save_rules(s,"remove-all",{},1);s.certify({});}
     {auto s=ImportStore::open(capacity,password);save_rules(s,"new-live",{retention_rule()},2);s.certify({});}
-    {auto s=ImportStore::open(capacity,password);check(s.rule_tombstones().size()==128);s.ingest("new",plain_source,qif::DateOrder::dmy);
+    {auto s=ImportStore::open(capacity,password);check(s.rule_tombstones().size()==rules::EvaluationLimits::rules);s.ingest("new",plain_source,qif::DateOrder::dmy);
         app::OperationContext c;auto p=s.preview_pending_rules({"new",0,std::nullopt,false},c);check(p.changed==1);s.verify();s.certify({});}
     no_leaks(dir.path);
 }

@@ -229,13 +229,57 @@ void validation(){
     rejects_kind([&]{save_rules(s,"enabled-archived",{rule_of("enabled","Enabled",rules::Scope::split,rules::InputField::memo,"fee",{{},{},"fees",false})},1);},rules::RegexFailure::invalid_input,"Enabled rule targets an unavailable category");
     check(save_rules(s,"group-rule",{rule_of("grouped","Grouped",rules::Scope::split,rules::InputField::memo,"fee",{{},{},"group",false},false)},1).ruleset_after==2);}
     {Directory dir("spentit-rulestore-later-XXXXXX");auto s=create(dir.path/"doc");apply_category(s,"fees",make("fees","Fees"));save_rules(s,"enabled",{rule_of("enabled","Enabled",rules::Scope::split,rules::InputField::memo,"fee",{{},{},"fees",false})},0);apply_category(s,"archive",change(app::CategoryAction::archive,"fees"));check(s.rule_image().ordered[0].enabled);const imports::Occurrence row{"pending",0};s.ingest(row.batch,split_source,qif::DateOrder::dmy);rejects_kind([&]{preview(s,row.batch,0);},rules::RegexFailure::invalid_input,"Enabled rule targets an unavailable category");check(s.rule_image().ordered[0].enabled);}
-    {Directory dir("spentit-rulestore-limit-XXXXXX");auto s=create(dir.path/"doc");std::vector<app::RuleDefinitionImage> many;for(int i=0;i<129;++i)many.push_back(rule_of("r"+std::to_string(i),"Rule",rules::Scope::transaction,rules::InputField::payee,"fee",{"X",{},"rule-default",false}));rejects_kind([&]{save_rules(s,"too-many",many,0);},rules::RegexFailure::resource_limit,"Too many rules");
+    {Directory dir("spentit-rulestore-scope-XXXXXX");auto s=create(dir.path/"doc");
     std::string bulk;bulk.reserve(4097*32);for(int i=0;i<4097;++i)bulk+="D10/08/2026\nT-1.00\nPItem\n^\n";s.ingest("bulk",bulk,qif::DateOrder::dmy);check(preview(s,"bulk",0).evaluated==4097);}
     {Directory dir("spentit-rulestore-ordinal-XXXXXX");const auto path=dir.path/"doc";const imports::Occurrence row{"pending",0};
     {auto s=create(path);apply_category(s,"fees",make("fees","Fees"));const auto split=rule_of("split-rule","Split rule",rules::Scope::split,rules::InputField::memo,"fee",{{},{},"fees",false});save_rules(s,"save-split",{split},0);s.ingest(row.batch,split_source,qif::DateOrder::dmy);auto forged=*s.row(row).draft;auto allocations=forged.transaction.allocations();allocations[0].source_ordinal=1;forged.transaction=forged.transaction.corrected(forged.transaction.effective_total(),allocations);rejects_text([&]{s.save(row,0,forged);},"Source association");
     auto invented=*s.row(row).draft;allocations=invented.transaction.allocations();allocations[0].category_owner=FieldOwnership::rule;allocations[0].category_rule.reset();invented.transaction=invented.transaction.corrected(invented.transaction.effective_total(),std::move(allocations));rejects_text([&]{s.save(row,0,invented);},"Ordinary save cannot introduce rule ownership");
     auto applied=apply_rules(s,"apply-split",request_from(preview(s,row.batch,0)));check(applied.changed>=1);auto carried=*s.row(row).draft;check(carried.transaction.allocations()[0].category_rule==RuleMark{"split-rule",0});s.save(row,1,carried);}
     {auto carry=ImportStore::open(path,password);check(carry.row(row).draft->transaction.allocations()[0].category_rule==RuleMark{"split-rule",0});}}
+}
+
+void capacity(){
+    Directory dir("spentit-rulestore-capacity-XXXXXX");
+    const auto path=dir.path/"document";
+    const imports::Occurrence row{"pending",0};
+    std::vector<app::RuleDefinitionImage> definitions;
+    const auto limit=rules::EvaluationLimits::rules;
+    for(std::size_t i=0;i<limit;++i){
+        definitions.push_back(rule_of("rule-"+std::to_string(i),"Synthetic rule",
+            rules::Scope::transaction,rules::InputField::payee,
+            "^Synthetic "+std::to_string(i)+"$",{{},{},"rule-default",false},i!=0));
+    }
+    definitions.back().expression=marker;
+    {
+        auto store=create(path);
+        check(save_rules(store,"at-capacity",definitions,0).versions.size()==limit);
+        auto excess=definitions;
+        excess.push_back(rule_of("excess","Excess",rules::Scope::transaction,
+            rules::InputField::payee,".*",{{},{},"rule-default",false}));
+        rejects_kind([&]{save_rules(store,"over-capacity",excess,1);},
+            rules::RegexFailure::resource_limit,"Too many rules");
+        check(!store.rule_save_outcome("over-capacity"));
+        check(store.rule_image().revision==1 && store.rule_image().ordered.size()==limit);
+        auto transactions=plain_source;
+        for(int i=0;i<64;++i)
+            transactions+="D10/08/2026\nT-2.00\nPUnmatched "+std::to_string(i)+"\n^\n";
+        store.ingest(row.batch,transactions,qif::DateOrder::dmy);
+        const auto result=preview(store,row.batch,0);
+        check(result.evaluated==65 && result.changed==1);
+        check(apply_rules(store,"apply-last-rule",request_from(result)).changed==1);
+        const auto draft=store.row(row).draft;
+        check(draft->transaction.effective_total()==Money(-100,cad));
+        check(draft->transaction.allocations().at(0).category_rule==RuleMark{definitions.back().identity,0});
+        store.certify({});
+    }
+    {
+        auto store=ImportStore::open(path,password);
+        const auto image=store.rule_image();
+        check(image.ordered.size()==limit && !image.ordered.front().enabled);
+        for(std::size_t i=0;i<limit;++i)check(image.ordered[i].identity==definitions[i].identity);
+        check(store.row(row).draft->transaction.allocations().at(0).category_rule==RuleMark{definitions.back().identity,0});
+        store.certify({});
+    }
 }
 
 void backup(){
@@ -642,4 +686,4 @@ void category_faults() {
     }
     std::cout<<"Import category resolution: "<<positions<<" write/sync faults, cancellation and both commit boundaries passed\n";
 }
-int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="cache_consistency")cache_consistency();else if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="overlapping_import_redo")overlapping_import_redo();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(int argc,char** argv){try{const std::string mode=argc>1?argv[1]:"";if(mode=="cache_consistency")cache_consistency();else if(mode=="category_scale")category_scale(argc>2?std::stoul(argv[2]):120);else if(mode=="retention")rule_retention();else if(mode=="retention_faults")rule_retention_faults();else if(mode=="session_rules")session_rules();else if(mode=="category_multi")category_multi();else if(mode=="category_faults")category_faults();else if(mode=="category_gate")category_gate();else if(mode=="account_faults")account_faults();else if(mode=="account_apply")account_apply();else if(mode=="all_accounts")all_accounts();else if(mode=="match_preview")match_preview();else if(mode=="large_preview")large_preview(100000);else if(mode=="paged_preview")large_preview(5000,true);else if(mode=="definitions")definitions();else if(mode=="application")application();else if(mode=="overlapping_import_redo")overlapping_import_redo();else if(mode=="schema")schema();else if(mode=="validation")validation();else if(mode=="capacity")capacity();else if(mode=="backup")backup();else if(mode=="io")io();else if(mode=="crashes")crashes();else if(mode=="bulk")bulk_basics();else if(mode=="bulk_io")bulk_sweep(false);else if(mode=="bulk_crashes")bulk_sweep(true);else if(mode=="reapply")reapply_basics();else if(mode=="reapply_faults")reapply_faults();else return 2;std::cout<<"Rule store "<<mode<<" passed\n";}catch(const ImportError& e){std::cerr<<e.what()<<" code="<<e.code()<<'\n';return 1;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -76,6 +76,48 @@ private slots:
         income["incomeChoices"]=QVariantMap{{QString::number(wage),2}};auto change=ex::plan(missing,doc,income,missing.action_token());missing.import_definitions("income",change,context);QVERIFY(missing.category_catalog().categories.back().income);
         QVERIFY_THROWS_EXCEPTION(std::exception,ex::plan(dest,doc,input,token));
     }
+    void ruleCapacityRoundTrip() {
+        QTemporaryDir dir;
+        const Currency cad("CAD");
+        auto source=ImportStore::create(dir.filePath("source").toStdString(),"test","Checking",cad,"2026-01-01");
+        if(!source.rules_supported())QSKIP("Rules are disabled in this build.");
+        category(source,"food","Food");
+        const auto limit=rules::EvaluationLimits::rules;
+        app::RuleSaveRequest sourceRules;
+        QVariantList indexes;
+        for(std::size_t i=0;i<limit;++i) {
+            app::RuleDefinitionImage rule;
+            rule.identity="source-"+std::to_string(i);
+            rule.label="Rule "+std::to_string(i);
+            rule.expression="^Synthetic "+std::to_string(i)+"$";
+            rule.enabled=i!=0;
+            rule.actions.category="food";
+            sourceRules.ordered.push_back(std::move(rule));
+            indexes.append(static_cast<int>(i));
+        }
+        app::OperationContext saveContext;
+        source.save_rules("save",sourceRules,0,saveContext);
+        const auto doc=ex::decode(ex::encode(source,true,false,true));
+        QCOMPARE(doc.value("rules").toArray().size(),static_cast<qsizetype>(limit));
+        const auto path=dir.filePath("dest").toStdString();
+        {
+            auto dest=ImportStore::create(path,"test","Checking",cad,"2026-01-01");
+            const auto request=ex::plan(dest,doc,{{"rules",indexes},{"categories",QVariantList{0}}},dest.action_token());
+            app::OperationContext importContext;
+            dest.import_definitions("exchange",request,importContext);
+            QVERIFY_THROWS_EXCEPTION(std::invalid_argument,ex::plan(dest,doc,{{"rules",QVariantList{0}}},dest.action_token()));
+            QCOMPARE(dest.rule_image().revision,1);
+            dest.certify({});
+        }
+        auto dest=ImportStore::open(path,"test");
+        const auto imported=dest.rule_image().ordered;
+        QCOMPARE(imported.size(),limit);
+        for(std::size_t i=0;i<limit;++i) {
+            QCOMPARE(imported[i].expression,sourceRules.ordered[i].expression);
+            QCOMPARE(imported[i].enabled,sourceRules.ordered[i].enabled);
+            QVERIFY(imported[i].identity!=sourceRules.ordered[i].identity);
+        }
+    }
     void atomicFaults(){
         QTemporaryDir dir;const Currency cad("CAD");auto source=ImportStore::create(dir.filePath("source").toStdString(),"test","Checking",cad,"2026-01-01");definitions(source);const auto doc=ex::decode(ex::encode(source,source.rules_supported(),true,true));
         auto dest=ImportStore::create(dir.filePath("dest").toStdString(),"test","Checking",cad,"2026-01-01");auto request=ex::plan(dest,doc,choose(source.rules_supported()),dest.action_token());const auto token=dest.action_token();app::OperationContext context;

@@ -63,7 +63,7 @@ struct Explanation {
 struct MatchSummary { bool raw=false, categorized=false, earlier=false, eligible=false; };
 struct Result { Record record; std::vector<Explanation> explanations; MatchSummary match{}; };
 struct EvaluationLimits {
-    static constexpr std::size_t rules=128, records=4096, allocations=4096;
+    static constexpr std::size_t rules=4096, records=4096, allocations=4096;
     static constexpr std::size_t scope_allocations=16384;
     static constexpr std::size_t input_bytes=16U*1024U*1024U;
     static constexpr std::size_t comparisons=100000, callouts=1000000, explanations=100000;

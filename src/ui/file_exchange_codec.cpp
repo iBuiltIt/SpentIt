@@ -79,7 +79,7 @@ QJsonObject decode(const QByteArray& bytes){
     for(const auto& v:array(o,"categoryReferences")){const auto c=object(v);keys(c,{"key","name"});const auto key=string(c,"key"),name=string(c,"name");validate_category_name(s(name));if(key.isEmpty() || !cats.insert(key).second)invalid();catNames[key]=name;}
     for(const auto& v:array(o,"accountReferences",10000)){const auto a=object(v);keys(a,{"key","name","currency"});const auto key=string(a,"key");if(key.isEmpty() || string(a,"name").isEmpty() || !acs.insert(key).second)invalid();(void)Currency::from_definition(s(string(a,"currency")));}
     for(const auto& v:array(o,"categories")){const auto c=object(v);keys(c,{"key","name","income"});const auto key=string(c,"key");if(!cats.contains(key) || !defined.insert(key).second || catNames.at(key)!=string(c,"name"))invalid();(void)boolean(c,"income");}
-    for(const auto& v:array(o,"rules")){const auto r=object(v);keys(r,{"name","enabled","scope","input","expression","payee","memo","category"});if(string(r,"name").size()>256)invalid();(void)boolean(r,"enabled");const auto scope=string(r,"scope"),input=string(r,"input");if(scope!="transaction" && scope!="split")invalid();if(input!="payee" && input!="memo" && input!="category")invalid();(void)string(r,"expression");(void)optional(r,"payee");(void)optional(r,"memo");const auto cat=optional(r,"category");if(!cat || !cats.contains(q(*cat)))invalid();}
+    for(const auto& v:array(o,"rules",static_cast<qsizetype>(rules::EvaluationLimits::rules))){const auto r=object(v);keys(r,{"name","enabled","scope","input","expression","payee","memo","category"});if(string(r,"name").size()>256)invalid();(void)boolean(r,"enabled");const auto scope=string(r,"scope"),input=string(r,"input");if(scope!="transaction" && scope!="split")invalid();if(input!="payee" && input!="memo" && input!="category")invalid();(void)string(r,"expression");(void)optional(r,"payee");(void)optional(r,"memo");const auto cat=optional(r,"category");if(!cat || !cats.contains(q(*cat)))invalid();}
     for(const auto& v:array(o,"reports",1000)){const auto r=object(v);keys(r,{"name","graph","accounts","categories","periods"});reports::Definition d;d.id="validation";d.name=s(string(r,"name"));d.graph=s(string(r,"graph"));for(const auto& a:strings(array(r,"accounts",10000)))if(!acs.contains(a))invalid();for(const auto& c:strings(array(r,"categories")))if(!c.isEmpty() && !cats.contains(c))invalid();for(const auto& p:array(r,"periods",32)){const auto period=object(p);keys(period,{"preset","start","end"});d.periods.push_back({s(string(period,"preset")),s(string(period,"start")),s(string(period,"end"))});}reports::validate(d);}
     return o;
 }
@@ -122,7 +122,11 @@ app::DefinitionImport plan(app::ImportRepository& repo,const QJsonObject& doc,co
     };
     if(!selectedRules.empty()){
         if(!repo.rules_supported())throw std::invalid_argument("Rules are unavailable in this file. Deselect them to import the other items.");
-        const auto current=repo.rule_image();out.rules_revision=current.revision;out.rules=app::RuleSaveRequest{current.ordered};
+        auto current=repo.rule_image();
+        if(current.ordered.size()+selectedRules.size()>rules::EvaluationLimits::rules)
+            throw std::invalid_argument("This file can hold up to "+std::to_string(rules::EvaluationLimits::rules)+" rules. Deselect some rules before importing.");
+        out.rules_revision=current.revision;
+        out.rules=app::RuleSaveRequest{std::move(current.ordered)};
         for(auto i:selectedRules){const auto r=rs[i].toObject();app::RuleDefinitionImage d;d.identity=id();d.label=s(r.value("name").toString());d.enabled=r.value("enabled").toBool();d.scope=r.value("scope").toString()=="split"?rules::Scope::split:rules::Scope::transaction;const auto inputField=r.value("input").toString();d.input=inputField=="memo"?rules::InputField::memo:inputField=="category"?rules::InputField::category:rules::InputField::payee;d.expression=s(r.value("expression").toString());d.actions.payee_template=optional(r,"payee");d.actions.memo_template=optional(r,"memo");d.actions.category=category(r.value("category").toString());out.rules->ordered.push_back(std::move(d));}
     }
     if(!selectedReports.empty()){

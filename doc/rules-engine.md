@@ -35,7 +35,8 @@ The current engineering limits are explicit rejection boundaries, not truncation
 
 - 4 KiB pattern, 64 KiB source field/output, 32 captures, 64 nested pattern parentheses.
 - Per-pattern 1 MiB compiled code and 8 MiB allocator budget; per-match 8 MiB allocator budget, 4 MiB match heap, depth 128 and 100,000 matching/callout steps.
-- At most 128 rules and 16 MiB total compiled code in a ruleset.
+- At most 4,096 rules, including disabled rules, and 16 MiB total compiled
+  code in a ruleset.
 - A single evaluator call permits 4,096 records, 4,096 allocations per record and 16,384 aggregate current/source allocations. Account/pending previews stream per transaction; the legacy committed reapply API retains its 4,096-row scope limit.
 - 16 MiB total input text and generated field bytes, 100,000 rule comparisons/explanations, and 1,000,000 aggregate callouts per preview scope.
 

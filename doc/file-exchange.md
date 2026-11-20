@@ -86,6 +86,8 @@ UTF-8/unpaired Unicode surrogates, unsupported versions and nesting beyond 32 le
 are rejected. Maximum file size is 16 MiB; at most 4,096 rules/categories/category
 references, 1,000 reports, 10,000 account references and 32 periods per report.
 Existing domain limits also apply to the resulting combined catalogs.
+The selected rules and the destination's saved rules must fit within its
+4,096-rule limit. A selection that exceeds the limit is refused before saving.
 
 ```json
 {

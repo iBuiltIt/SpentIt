@@ -40,6 +40,10 @@ The manual already describes selection shortcuts. Later user-visible changes go 
 
 ## Search contract
 
+**Option+F** on macOS or **Alt+F** on Windows and Linux focuses Search in the
+account ledger or report transaction list. The current text and applied filter
+stay in place.
+
 - Space-separated terms are case-insensitive Unicode literals combined with AND. A term can match a different field from another term. Double quotes form a phrase within one field. Quoting an entire operator-looking term makes it literal, for example `"regex:word"`.
 - `regex:"pattern"` explicitly uses the existing bounded PCRE2 adapter. Inline pattern flags can override case matching. In quoted text, `\"` and `\\` escape a quote and a backslash; other backslashes are preserved for regex syntax. There is no OR/NOT grammar or implicit regex interpretation.
 - `period:2026-05-01..2026-06-30` includes both endpoint dates. Full dates accept `YYYYMMDD`, `YYYY-MM-DD`, and `YYYY/MM/DD`; a four-digit year means that whole year. English full month names and three-letter abbreviations use the local current year. `period:may-june` means May 1 through June 30 of that year. Reversed/cross-year month ranges, impossible dates, ambiguous numeric dates, and multiple period clauses are rejected. An ambiguous-date preference has not been added.

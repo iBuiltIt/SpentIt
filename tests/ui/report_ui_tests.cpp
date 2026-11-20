@@ -427,6 +427,10 @@ private slots:
         QCOMPARE(model.rowCount(),3);QVERIFY(model.state().value("reportLedgerActive").toBool());QCOMPARE(workspace->property("mode").toString(),"detail");
         QTRY_VERIFY(object(root,"durableLedger")->property("visible").toBool());
         auto* reportLedger=qobject_cast<QQuickItem*>(object(root,"durableLedger"));QVERIFY(reportLedger);
+        auto* search=qobject_cast<QQuickItem*>(object(root,"ledgerSearch"));QVERIFY(search);
+        reportLedger->forceActiveFocus();
+        QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);
+        QTRY_VERIFY(search->hasActiveFocus());
         QVERIFY(QMetaObject::invokeMethod(workspace,"load"));
         QVERIFY(!workspace->property("dirty").toBool());
         run(model,"select",{{"row",0}});

@@ -8,6 +8,13 @@ The evaluator is [rules-engine.md](rules-engine.md).
 The format and upgrade policy are in [release schema](release-schema.md).
 A rules-off file uses version 69 and rejects rule commands.
 
+The rules-enabled build supports 4,096 saved rules in the existing release
+database layout. Disabled rules count toward the limit. Use the updated build
+to open files saved with more than 128 rules. The previous Release storage
+build rejected a synthetic 129-rule file during verification and left its
+bytes intact. The updated build opened that file and a 128-rule file created
+by the previous build.
+
 Save versions document-wide definitions independently of import state.
 Discarding an import does not discard saved rules. Preview and Apply are
 separate. Apply is atomic for the chosen scope. Manual fields stay unless that

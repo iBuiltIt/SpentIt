@@ -14,7 +14,7 @@ NavigableTextField {
     property string scrollBarObjectName: objectName + "ScrollBar"
     property var choices: []
     property bool choosing: false
-    signal choiceAccepted(var choice)
+    signal choiceAccepted(var choice, bool viaTab)
     signal backwardRequested()
     signal forwardRequested()
     signal escapeRequested()
@@ -44,15 +44,16 @@ NavigableTextField {
         if(readOnly || index<0 || index>=model.length)return
         choose(model[index])
     }
-    function choose(choice) {
+    function choose(choice, viaTab) {
         choosing=true
         text=choice.path
         completion.close()
-        choiceAccepted(choice)
+        choiceAccepted(choice, viaTab === true)
         choosing=false
     }
-    function acceptChoice() {
-        if(matches.currentIndex>=0 && matches.currentIndex<choices.length)choose(choices[matches.currentIndex])
+    function acceptChoice() { acceptHighlightedChoice(false) }
+    function acceptHighlightedChoice(viaTab) {
+        if(matches.currentIndex>=0 && matches.currentIndex<choices.length)choose(choices[matches.currentIndex], viaTab)
     }
     onActiveFocusChanged: {
         if(activeFocus) {
@@ -77,7 +78,7 @@ NavigableTextField {
         } else if(event.key===Qt.Key_Tab) {
             if(searchEdited || highlightMoved) {
                 if(!completion.visible)openChoices()
-                if(matches.currentIndex>=0 && matches.currentIndex<choices.length)acceptChoice()
+                if(matches.currentIndex>=0 && matches.currentIndex<choices.length)acceptHighlightedChoice(true)
                 else {resetText();forwardRequested()}
             } else passThrough()
             event.accepted=true

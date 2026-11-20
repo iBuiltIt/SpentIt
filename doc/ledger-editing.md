@@ -41,6 +41,16 @@ and explicit committed-edit opt-in presentation.
 
 ## Ledger rule creation and menu availability — owner Go, 2026-11-08
 
+The ledger context menu lists **Create rule…**, **Change category…**,
+**Add transaction…**, **Set memo…**, **Set payee…**, **Merge**, **Unmerge**,
+**Link to other account…**, **Restore imported values…**, and
+**Delete selected…**, in that order.
+
+With the account or report transaction list focused, **Option+R** on macOS
+or **Alt+R** on Windows and Linux opens **Create rule…** for one eligible
+selection. **Option+C** or **Alt+C** opens **Change category…** and focuses
+its filter. The shortcuts use the same selection and edit guards as the menu.
+
 The account and report ledger context menus offer Create rule… for exactly one eligible
 selected transaction without opening its editor. Right-click preserves an existing
 multiple selection; the action never silently chooses one row from it. Unsaved-edit
@@ -59,7 +69,7 @@ Report-ledger Create rule… uses the same source inspection without opening the
 transaction editor. Save, apply and back returns to the report transactions,
 with refreshed allocations and totals. Commands unavailable in report ledgers
 (Add transaction, Merge, Unmerge, and Link) remain visible and disabled.
-Change category, Rename payee, Set memo, and choosing an account in that list
+Change category, Set payee, Set memo, and choosing an account in that list
 can include several accounts in one save. One Undo reverses that selection.
 Each chosen account transfer gets its own opposite posting. A row already in
 the chosen account, or a source account in another currency, stops the save

@@ -561,25 +561,28 @@ ApplicationWindow {
     Menu {
         id:ledgerContext;objectName:"ledgerContext";popupType:Popup.Item;cascade:true
         delegate:LedgerMenuItem {}
-        LedgerMenuItem {objectName:"addTransactionContext";text:"Add transaction…";enabled:!window.reportLedger && !s.readOnly && !workflow.busy;onTriggered:addTransaction()}
-        LedgerMenuItem {objectName:"createRuleContext";text:"Create rule…";enabled:canCreateLedgerRule();onTriggered:if(canCreateLedgerRule())transactionRuleAction()}
-        LedgerMenuItem {objectName:"renamePayeeSelection";text:"Rename payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
-        LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
-        LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
-        LedgerMenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!window.reportLedger && ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
-        LedgerMenuItem {objectName:"unmergeSelection";text:"Unmerge";enabled:!window.reportLedger && !s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
-        LedgerMenuItem {objectName:"mergeSelection";text:"Link to other account…";enabled:!window.reportLedger && !s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
-        LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
+        LedgerMenuItem {
+            objectName:"createRuleContext"
+            text:ruleLimitReached?"Create rule… (rule limit reached)":"Create rule…"
+            enabled:canCreateLedgerRule()
+            onTriggered:if(canCreateLedgerRule())transactionRuleAction()
+        }
         LedgerMenuItem {
             objectName:"openLedgerCategoryFilter";text:"Change category…"
             enabled:ledgerCategoryMenu.enabled
             onTriggered: {
                 const point=ledgerContext.parent.mapToItem(window.contentItem,ledgerContext.x,ledgerContext.y)
-                ledgerCategoryMenu.anchorX=point.x
-                ledgerCategoryMenu.anchorY=point.y
-                ledgerContext.close();ledgerCategoryMenu.open()
+                showLedgerCategoryMenu(point)
             }
         }
+        LedgerMenuItem {objectName:"addTransactionContext";text:"Add transaction…";enabled:!window.reportLedger && !s.readOnly && !workflow.busy;onTriggered:addTransaction()}
+        LedgerMenuItem {objectName:"setMemoSelection";text:"Set memo…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedMemos()}
+        LedgerMenuItem {objectName:"renamePayeeSelection";text:"Set payee…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(false)}
+        LedgerMenuItem {objectName:"duplicateMergeSelection";text:"Merge";enabled:!window.reportLedger && ledgerMergeEnabled();onTriggered:guard(ledgerMerge)}
+        LedgerMenuItem {objectName:"unmergeSelection";text:"Unmerge";enabled:!window.reportLedger && !s.readOnly && !workflow.busy && !!s.canUnmerge;onTriggered:guard(function(){pendingUnmergeNotice=s.unmergeNotice||"";if(pendingUnmergeNotice.length)unmergeConfirm.open();else{captureLedgerView("review");workflow.command("unmerge")}})}
+        LedgerMenuItem {objectName:"mergeSelection";text:"Link to other account…";enabled:!window.reportLedger && !s.readOnly && !!s.transfersSupported && !workflow.busy && (s.selectionCount||0)===1;onTriggered:mergeSelected()}
+        LedgerMenuItem {objectName:"restoreImportedSelection";text:"Restore imported values…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:editSelectedTransactions(true)}
+        LedgerMenuItem {objectName:"deleteSelectedContext";text:"Delete selected…";enabled:!s.readOnly && !workflow.busy && (s.selectionCount||0)>0;onTriggered:removeSelected()}
     }
     Popup {
         id:ledgerCategoryMenu
@@ -661,31 +664,53 @@ ApplicationWindow {
             }
         }
     }
-    property bool inspectingLedgerRuleContext: false
+    function showLedgerCategoryMenu(point) {
+        ledgerCategoryMenu.anchorX=point.x
+        ledgerCategoryMenu.anchorY=point.y
+        ledgerContext.close()
+        ledgerCategoryMenu.open()
+    }
+    function changeCategoryFromLedgerShortcut() {
+        guard(function(){
+            if(!ledger.visible || !ledgerCategoryMenu.enabled)return
+            const anchor=ledger.itemAtIndex(s.selectionIndex??-1) || ledger
+            showLedgerCategoryMenu(anchor.mapToItem(window.contentItem,0,0))
+        })
+    }
+    property string ledgerRuleInspection: ""
     property bool ledgerRuleContextReady: false
-    function canCreateLedgerRule() {
+    readonly property bool canRequestLedgerRule: {
         let generation=ruleEditGeneration
         const rows=s.selection||[]
-        return ledgerRuleContextReady && !workflow.busy && !s.readOnly && !!s.rulesSupported
-            && rows.length===1 && !!selected.batch && !selected.newManual
-            && rows[0].batch===selected.batch && rows[0].ordinal===selected.ordinal
-            && newRuleIndex()<0 && ruleModel.count<128 && ruleCreateChoices().length>0
+        return !workflow.busy && !s.readOnly && !!s.rulesSupported && rows.length===1 && !!rows[0].batch
+            && canAddRule
+    }
+    function canCreateLedgerRule() {
+        if(!ledgerRuleContextReady || !canRequestLedgerRule || !selected.batch || selected.newManual)return false
+        const row=s.selection[0]
+        return row.batch===selected.batch && row.ordinal===selected.ordinal && ruleCreateChoices().length>0
+    }
+    function inspectLedgerRuleSelection(source) {
+        ledgerRuleContextReady=false
+        const rows=s.selection||[]
+        if(!s.rulesSupported || rows.length!==1)return
+        ledgerRuleInspection=source
+        editorClosed=true
+        workflow.command("inspect",{batch:rows[0].batch,ordinal:rows[0].ordinal})
+    }
+    function createRuleFromLedgerShortcut() {
+        guard(function(){if(ledger.visible && canRequestLedgerRule)inspectLedgerRuleSelection("shortcut")})
     }
     function openLedgerContext(row) {
         if(workflow.busy)return
         const target=row>=0?workflow.rowRecord(row):null
         guard(function(){
-            ledgerRuleContextReady=false
             if(target && !(s.selectionKeys||{})[target.batch+":"+target.ordinal]) {
                 const index=workflow.occurrenceIndex(target.batch,target.ordinal)
                 if(index<0)return
                 workflow.command("select",{row:index})
             }
-            const rows=s.selection||[]
-            if(s.rulesSupported && rows.length===1) {
-                inspectingLedgerRuleContext=true;editorClosed=true
-                workflow.command("inspect",{batch:rows[0].batch,ordinal:rows[0].ordinal})
-            }
+            inspectLedgerRuleSelection("menu")
             ledgerContext.popup()
         })
     }
@@ -937,7 +962,7 @@ ApplicationWindow {
     readonly property bool reportLedger: currentPage==="reports" && reportsWorkspace.mode==="detail"
     readonly property string ledgerStatementAccount: currentPage==="ledger" && !reportLedger ? (s.accountId||"") : ""
     property var pendingReportNavigation:null
-    property int pendingReportIndex: -1
+    property var pendingReportRestore: null
     property string currentPage: "ledger"
     property string historyOpenId: ""
     property string historySelectedKey: ""
@@ -1037,7 +1062,7 @@ ApplicationWindow {
     function resetNavigation() {
         ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;reviewInspecting=false;pendingReviewInspection=false;currentPage="ledger"
         navigation=[{page:"ledger",account:s.accountId||""}];navigationIndex=0
-        pendingAccountNavigation=null;pendingReportNavigation=null;pendingReportIndex=-1
+        pendingAccountNavigation=null;pendingReportNavigation=null;pendingReportRestore=null
     }
     function pushNavigation(page, reportId, drill) {
         navigation=navigation.slice(0,navigationIndex+1).concat([{page:page,account:s.accountId,reportId:reportId,drill:drill}])
@@ -1143,40 +1168,66 @@ ApplicationWindow {
         for(let i=0;i<rows.length;++i) if(rows[i].id===historyOpenId){chooseHistoryMember(rows[i]);return}
         historySelectedKey=""
     }
-    function traverseNavigation(delta) {
+    function traverseNavigation(delta) { traverseNavigationTo(delta,false) }
+    function traverseNavigationTo(delta, focusLedger) {
         const destination=navigationIndex+delta
         if(workflow.busy || !s.active || destination<0 || destination>=navigation.length) return
-        guard(function(){restoreNavigation(destination)})
+        guard(function(){restoreNavigation(destination, focusLedger)})
     }
-    function restoreNavigation(index) {
+    function showNavigationDestination(index, page, focusLedger) {
+        navigationIndex=index;currentPage=page
+        if(focusLedger)Qt.callLater(function(){
+            if(navigationIndex===index && currentPage===page && ledger.visible)
+                ledger.forceActiveFocus()
+        })
+    }
+    function restoreNavigation(index, focusLedger) {
         const destination=navigation[index]
         // Return from a rule to the still-open drill-down, including rows changed by the rule.
         if(s.reportLedgerActive && currentPage==="rules" && destination.drill) {
-            navigationIndex=index;currentPage="reports";return
+            showNavigationDestination(index,"reports",focusLedger);return
         }
         if(s.reportLedgerActive) {
-            pendingReportNavigation=function(){restoreNavigation(index)}
+            pendingReportNavigation=function(){restoreNavigation(index,focusLedger)}
             workflow.command("report_leave");return
         }
         rememberAccountViewport()
         if(destination.page==="reports") {
             if(destination.drill || (destination.reportId && destination.reportId!==(s.reportResult||{}).id)) {
-                pendingReportIndex=index
+                pendingReportRestore={index:index,focusLedger:focusLedger}
                 const args={id:destination.reportId,history:true}
                 if(destination.drill)args.drill=destination.drill
                 workflow.command("report_show",args);return
             }
             reportsWorkspace.mode=destination.reportId?"result":"workspace"
         } else if(destination.account!==s.accountId) {
-            pendingAccountNavigation={index:index,page:destination.page}
+            pendingAccountNavigation={index:index,page:destination.page,focusLedger:focusLedger}
             workflow.command("select_account",{id:destination.account});return
         }
-        navigationIndex=index;currentPage=destination.page
+        showNavigationDestination(index,destination.page,focusLedger)
         if(currentPage==="ledger")restoreAccountViewport()
     }
     Shortcut {sequence:"Ctrl+Shift+B";enabled:!!s.active;onActivated:sidebarVisible=!sidebarVisible}
     Shortcut {objectName:"duplicateMergeShortcut";sequence:"Alt+M";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && ledgerMergeEnabled();onActivated:guard(ledgerMerge)}
     Shortcut {objectName:"mergeShortcut";sequence:"Alt+L";enabled:!window.reportLedger && !!s.active && !workflow.busy && !s.readOnly && !!s.transfersSupported;onActivated:mergeSelected()}
+    readonly property bool ledgerKeyboardFocused: ledger.visible && (window.activeFocusItem===ledger ||
+        (window.activeFocusItem && window.activeFocusItem.ledgerSelectionRow===true))
+    Shortcut {
+        sequence:"Alt+R";autoRepeat:false
+        enabled:ledgerKeyboardFocused && !ledgerContext.visible && !ledgerCategoryMenu.visible && canRequestLedgerRule
+        onActivated:createRuleFromLedgerShortcut()
+    }
+    Shortcut {
+        sequence:"Alt+C";autoRepeat:false
+        enabled:ledgerKeyboardFocused && !ledgerContext.visible && !ledgerCategoryMenu.visible && ledgerCategoryMenu.enabled
+        onActivated:changeCategoryFromLedgerShortcut()
+    }
+    Shortcut {
+        sequence:"Alt+F";autoRepeat:false
+        enabled:!!s.active && search.visible && search.enabled && !workflow.busy &&
+            !ledgerContext.visible && !ledgerCategoryMenu.visible
+        onActivated:search.forceActiveFocus()
+    }
     Shortcut {sequences:[StandardKey.Back];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(-1)}
     Shortcut {sequences:[StandardKey.Forward];enabled:!!s.active && !workflow.busy;onActivated:traverseNavigation(1)}
     property bool restoringImportedText: false
@@ -1194,6 +1245,13 @@ ApplicationWindow {
     function rulesPreviewKey() {return JSON.stringify([ruleApplyAllAccounts?"*":s.accountId,rulesImage(),rulePreviewSingle?ruleIndex:-1,ruleTransactionScope.currentIndex,false])}
     property int ruleEditGeneration: 0
     property var ruleBaseline: []
+    property var ruleBaselineById: Object.create(null)
+    readonly property int ruleLimit: s.ruleLimit||0
+    readonly property bool ruleLimitReached: ruleLimit>0 && ruleBaseline.length>=ruleLimit
+    readonly property bool canAddRule: {
+        let generation=ruleEditGeneration
+        return !ruleSync && ruleModel.count<ruleLimit && newRuleIndex()<0
+    }
     property var ruleMovedIds: ({})
     property string ruleSavingId: ""
     property bool ruleSavingAll: false
@@ -1229,7 +1287,13 @@ ApplicationWindow {
     property bool ruleValidatingAll: false
     property int unsavedRuleCount: {let generation=ruleEditGeneration;return dirtyRuleIndices().length}
     function ruleImage(r) {return {id:r.id,label:r.label||"",enabled:!!r.ruleOn,scope:r.scope||"transaction",input:r.input||"payee",expression:r.expression||"",payeeTemplate:r.payeeTemplate||"",memoTemplate:r.memoTemplate||"",categoryId:r.categoryId||"",inheritParent:!!r.inheritParent}}
-    function savedRule(id) {return ruleBaseline.find(r=>r.id===id)}
+    function setRuleBaseline(rows) {
+        const byId=Object.create(null)
+        for(const row of rows)byId[row.id]=row
+        ruleBaseline=rows
+        ruleBaselineById=byId
+    }
+    function savedRule(id) {return ruleBaselineById[id]}
     function newRuleIndex() {for(let i=0;i<ruleModel.count;i++)if(!savedRule(ruleModel.get(i).id))return i;return -1}
     function ruleChanged(index) {
         if(index<0 || index>=ruleModel.count)return false
@@ -1249,8 +1313,14 @@ ApplicationWindow {
         id:ruleRevealTimer;interval:16
         onTriggered:{
             if(currentPage!=="rules" || ruleIndex<0)return
-            let y=ruleEditor.mapToItem(rulesPage.contentItem.contentItem,0,0).y
-            rulesPage.contentItem.contentY=Math.max(0,Math.min(y-60,rulesPage.contentItem.contentHeight-rulesPage.availableHeight))
+            const flick=rulesPage.contentItem
+            let top=ruleEditor.mapToItem(flick.contentItem,0,0).y-60
+            const focused=window.activeFocusItem
+            if(focused===ruleCategoryField || focused===ruleApplyButton) {
+                const bottom=focused.mapToItem(flick.contentItem,0,focused.height).y
+                top=Math.max(top,bottom-rulesPage.availableHeight+12)
+            }
+            flick.contentY=Math.max(0,Math.min(top,flick.contentHeight-rulesPage.availableHeight))
             if(--ruleRevealPasses>0)restart()
         }
     }
@@ -1749,8 +1819,17 @@ ApplicationWindow {
     readonly property string rulesApplyScopeName: ruleApplyAllAccounts?"All accounts":rulesAccountName
     readonly property bool rulePendingRemoval: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !!ruleModel.get(ruleIndex).pendingDelete}
     readonly property bool ruleCanRun: {let generation=ruleEditGeneration;return ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!ruleModel.get(ruleIndex).ruleOn}
-    function ruleMatchesSearch(row) {if(!row)return false;return (row.label+" "+row.expression+" "+actionSummary(row)).toLowerCase().indexOf(ruleSearch.text.toLowerCase())>=0}
-    readonly property int matchingRuleCount: {let generation=ruleEditGeneration;let count=0;for(let i=0;i<ruleModel.count;i++)if(ruleMatchesSearch(ruleModel.get(i)))count++;return count}
+    function ruleMatchesSearch(row) {
+        if(!row)return false
+        const query=ruleSearch.text.toLowerCase()
+        return !query || (row.label+" "+row.expression+" "+actionSummary(row)).toLowerCase().includes(query)
+    }
+    readonly property bool anyRuleMatchesSearch: {
+        let generation=ruleEditGeneration
+        if(ruleSync || !ruleSearch.text)return true
+        for(let i=0;i<ruleModel.count;i++)if(ruleMatchesSearch(ruleModel.get(i)))return true
+        return false
+    }
     function selectRulesAccount(index) {
         const account=(s.accounts||[])[index]
         if(!account || account.id===s.accountId || workflow.busy)return
@@ -1767,8 +1846,10 @@ ApplicationWindow {
     function loadRulesForm() {
         ledgerRuleDraftId="";returnAfterRuleApply=false
         ruleSync=true; ruleModel.clear()
-        for(let rule of (s.rules||[])) ruleModel.append(ruleRow(rule))
-        ruleMovedIds=({});ruleBaseline=[];for(let i=0;i<ruleModel.count;i++)ruleBaseline.push(ruleImage(ruleModel.get(i)))
+        const rows=(s.rules||[]).map(ruleRow)
+        setRuleBaseline(rows.map(ruleImage))
+        if(rows.length)ruleModel.append(rows)
+        ruleMovedIds=({})
         ruleIndex=-1; ruleCategoryId=""; rulesDirty=false; ruleSync=false;ruleEditGeneration++
     }
     function showRulesPage() {
@@ -1838,7 +1919,7 @@ ApplicationWindow {
     }
     function syncAssist() { ruleSync=true; ruleCaseSensitive.checked=ruleExpression.text.startsWith("(?-i)"); ruleWholeField.checked=wholeRecognized(ruleExpression.text); ruleSync=false }
     function newRule() {
-        if(ruleModel.count>=128 || newRuleIndex()>=0) return
+        if(!canAddRule) return
         ruleModel.append(ruleRow({id:workflow.newIdentity(),enabled:true}))
         updateRulesDirty();ruleSearch.clear(); openRule(ruleModel.count-1)
     }
@@ -1883,7 +1964,7 @@ ApplicationWindow {
         }
     }
     function copyRemoved(id) {
-        if(ruleModel.count>=128 || newRuleIndex()>=0) return
+        if(!canAddRule) return
         let tomb=null
         for(let item of (s.ruleTombstones||[])) if(item.id===id) tomb=item
         if(!tomb) return
@@ -1967,12 +2048,16 @@ ApplicationWindow {
     }
     function previewRules() {rulePreviewSingle=false;previewAccountRules()}
     function applyReady() {return !workflow.busy && ruleCanRun && (ruleApplyAllAccounts?(s.accounts||[]).length>0:!!s.accountId)}
+    readonly property bool ruleReturnsAfterApply: {
+        let generation=ruleEditGeneration
+        return navigationIndex>0 && !!ledgerRuleDraftId &&
+            ruleIndex>=0 && ruleIndex<ruleModel.count && ruleModel.get(ruleIndex).id===ledgerRuleDraftId
+    }
     function applyRules() {
         if(!applyReady() || !acceptRuleCategory())return
         rulePreviewSingle=true
         if(ruleChanged(ruleIndex)){
-            let row=ruleModel.get(ruleIndex)
-            returnAfterRuleApply=navigationIndex>0 && !!row && row.id===ledgerRuleDraftId
+            returnAfterRuleApply=ruleReturnsAfterApply
             if(!saveRules(true)) returnAfterRuleApply=false
         }
         else {returnAfterRuleApply=false;ruleApplyAfterPreview=true;previewAccountRules()}
@@ -1985,7 +2070,7 @@ ApplicationWindow {
         else {
             // Refresh the saved baseline without replacing any other local editor
             // row or its position. Other drafts can remain invalid or reordered.
-            ruleBaseline=(s.rules||[]).map(r=>ruleImage(ruleRow(r)))
+            setRuleBaseline((s.rules||[]).map(r=>ruleImage(ruleRow(r))))
             for(let i=0;i<ruleModel.count;i++)if(ruleModel.get(i).id===ruleSavingId) {
                 let saved=savedRule(ruleSavingId)
                 if(saved)ruleModel.set(i,ruleRow(saved))
@@ -2006,10 +2091,10 @@ ApplicationWindow {
         returnAfterRuleApply=false
         if(savedId && savedId===ledgerRuleDraftId) ledgerRuleDraftId=""
         if(rulesLeaving && !rulesDirty){setRulesLeaving(false);let next=pendingAction;pendingAction=null;if(next)guard(next)}
-        else if(returnToPrevious && currentPage==="rules" && navigationIndex>0) Qt.callLater(function(){traverseNavigation(-1)})
+        else if(returnToPrevious && currentPage==="rules" && navigationIndex>0) Qt.callLater(function(){traverseNavigationTo(-1,true)})
     }
     function createFromSource(kind, allocation) {
-        if(workflow.busy || !s.rulesSupported) return
+        if(workflow.busy || !s.rulesSupported || !canAddRule) return
         if(dirty) { pendingAction=function(){createFromSource(kind,allocation)}; unsaved.open(); return }
         if(categoryDirty) { pendingAction=function(){createFromSource(kind,allocation)}; finishCategoryEdit(); return }
         let args={kind:kind}; if(allocation!==undefined) args.allocation=allocation
@@ -2024,11 +2109,16 @@ ApplicationWindow {
     }
     function acceptPrefill() {
         if(!rulesDirty) loadRulesForm()
-        if(ruleModel.count>=128 || newRuleIndex()>=0) return
+        if(!canAddRule) return
         let row=s.rulePrefill||{}; if(!row.id) return
         ruleModel.append(ruleRow(row))
         ledgerRuleDraftId=row.id
         updateRulesDirty();ruleSearch.clear(); openRule(ruleModel.count-1); showRulesPage()
+        const draftId=row.id
+        Qt.callLater(function(){
+            if(currentPage==="rules" && ruleReturnsAfterApply && ledgerRuleDraftId===draftId)
+                ruleCategoryField.forceActiveFocus()
+        })
     }
     function inspectRecord(batch, ordinal) { guard(function(){workflow.command("inspect",{batch:batch,ordinal:ordinal})}) }
     function toggleRecord(batch, ordinal) {
@@ -2252,20 +2342,20 @@ ApplicationWindow {
             if(success && action==="exchange_qif_prepare"){qifExportRows=(s.qifExportAccounts||[]).map(r=>Object.assign({},r));qifExportDialog.open()}
             if(success && action==="exchange_read")prepareDefinitionImport()
             if(success && (action==="exchange_qif_export" || action==="exchange_export" || action==="exchange_import")){qifExportDialog.close();definitionExportDialog.close();definitionImportDialog.close();exchangeResultDialog.title=action==="exchange_import"?"Import complete":"Export saved";exchangeResultDialog.open()}
-            const contextInspection=action==="inspect" && inspectingLedgerRuleContext
-            if(contextInspection){inspectingLedgerRuleContext=false;ledgerRuleContextReady=success}
+            const contextInspection=action==="inspect"?ledgerRuleInspection:""
+            if(contextInspection){ledgerRuleInspection="";ledgerRuleContextReady=success}
             if(success)ruleValidationError=""
             if(action===importProgressAction) {
                 importProgressAction=""
                 if(action==="map_import" && !(s.importPlan||[]).length)importMapping.retainChoices=false
                 if(!success && action==="resolve_import_categories" && (s.importCategoryDecisions||[]).some(function(d){return d.source===importCategories.source}))importCategories.open()
             }
-            if(success && (action==="report_drill" || (action==="report_show" && pendingReportIndex>=0 && s.reportLedgerActive))) {
+            if(success && (action==="report_drill" || (action==="report_show" && pendingReportRestore && s.reportLedgerActive))) {
                 search.clearSearch();editorClosed=true
             }
-            if(action==="report_show" && pendingReportIndex>=0) {
-                const index=pendingReportIndex;pendingReportIndex=-1
-                if(success){navigationIndex=index;currentPage="reports"}
+            if(action==="report_show" && pendingReportRestore) {
+                const request=pendingReportRestore;pendingReportRestore=null
+                if(success)showNavigationDestination(request.index,"reports",request.focusLedger)
             } else if(success && currentPage==="reports" && action==="report_show") {
                 const id=s.reportResult.id
                 if(navigation[navigationIndex].reportId!==id || navigation[navigationIndex].drill)pushNavigation("reports",id)
@@ -2392,7 +2482,10 @@ ApplicationWindow {
                     }
                     else if(accountViewports[s.accountId])restoreAccountViewport()
                     if(switchingRulesAccount) {currentPage="rules";let entries=navigation.slice();entries[navigationIndex]={page:"rules",account:s.accountId};navigation=entries}
-                    else if(pendingAccountNavigation) {navigationIndex=pendingAccountNavigation.index;currentPage=pendingAccountNavigation.page;pendingAccountNavigation=null}
+                    else if(pendingAccountNavigation) {
+                        const request=pendingAccountNavigation;pendingAccountNavigation=null
+                        showNavigationDestination(request.index,request.page,request.focusLedger)
+                    }
                     else pushNavigation("ledger")
                     if(pendingReviewInspection){currentPage="review";editorClosed=false;pendingReviewInspection=false}
                     loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
@@ -2465,6 +2558,7 @@ ApplicationWindow {
             }
             if(success && ["history","entry_history","select_account","create_account","undo_action","redo_action","undo_edit"].indexOf(action)>=0) syncHistoryOpen()
             settleLedgerView(action,success)
+            if(contextInspection==="shortcut" && ledger.visible && canCreateLedgerRule())transactionRuleAction()
             if(action==="save" || action==="save_manual" || action==="accept_edit" || (action==="undo_edit" || action==="undo_action" || action==="redo_action"))restoreEditView()
             if(success && action==="begin_manual"){editorClosed=false;Qt.callLater(function(){ledger.positionViewAtIndex(workflow.selectedRowIndex(),ListView.Contain);editPayee.forceActiveFocus()})}
         }
@@ -4629,8 +4723,14 @@ ApplicationWindow {
                         Label {objectName:"rulesEmpty";visible:ruleModel.count===0;text:(s.ruleTombstones||[]).length?"No active rules.":"No rules yet."}
                         ClearableSearchField {visible:ruleModel.count>0;id:ruleSearch;objectName:"ruleSearch";placeholderText:"Search rules";Layout.fillWidth:true;onClearRequested:clearSearch()}
                         RowLayout {
-                            Button {objectName:"newRule";text:"New rule";visible:enabled;enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0 && ruleModel.count<128} onClicked:newRule()}
+                            Button {objectName:"newRule";text:"New rule";visible:enabled || ruleLimitReached;enabled:canAddRule;onClicked:newRule()}
                             CheckBox {id:showRemovedRules;objectName:"showRemovedRules";visible:(s.ruleTombstones||[]).length>0;text:"Removed rules ("+(s.ruleTombstones||[]).length+")"}
+                        }
+                        Label {
+                            objectName:"ruleLimitNotice"
+                            visible:ruleLimitReached
+                            text:"This file can hold up to "+ruleLimit.toLocaleString(Qt.locale(),"f",0)+" rules. Delete a rule before adding another."
+                            Layout.fillWidth:true;wrapMode:Text.Wrap
                         }
                         RowLayout {
                             id:ruleListHeader;objectName:"ruleListHeader";visible:ruleModel.count>0
@@ -4712,7 +4812,7 @@ ApplicationWindow {
                                     required property var modelData
                                     width:rulesPage.availableWidth
                                     Label {text:(modelData.label||"Unnamed rule")+" · "+(modelData.scope==="split"?"Split":"Transaction")+" / "+modelData.input+"\n"+modelData.expression+"\n"+actionSummary(modelData);Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText}
-                                    Button {objectName:"copyRemoved_"+modelData.id;text:"Copy into new rule";visible:enabled;enabled:{let generation=ruleEditGeneration;return newRuleIndex()<0 && ruleModel.count<128} onClicked:copyRemoved(modelData.id)}
+                                    Button {objectName:"copyRemoved_"+modelData.id;text:"Copy into new rule";visible:enabled;enabled:canAddRule;onClicked:copyRemoved(modelData.id)}
                                 }
                             }
                         }
@@ -4762,7 +4862,15 @@ ApplicationWindow {
                                 placeholderText:"Choose a category";restoreOnFocusLoss:false
                                 model:sortedCategories((s.categories||[]).filter(c=>c.id===ruleCategoryId || (c.assignable && !c.archived && !c.deleted)))
                                 savedText:{let row=model.find(c=>c.id===ruleCategoryId);return row?row.path:""}
-                                onChoiceAccepted:function(choice){ruleCategoryId=choice.id;writeRule();ruleTransactionScope.forceActiveFocus()}
+                                onChoiceAccepted:function(choice, viaTab) {
+                                    const changed=choice.id!==ruleCategoryId
+                                    ruleCategoryId=choice.id
+                                    writeRule()
+                                    if(viaTab && changed && ruleReturnsAfterApply && ruleApplyButton.enabled && ruleApplyButton.visible) {
+                                        ruleApplyButton.forceActiveFocus(Qt.TabFocusReason)
+                                        revealRuleEditor()
+                                    } else ruleTransactionScope.forceActiveFocus()
+                                }
                                 onForwardRequested:ruleTransactionScope.forceActiveFocus()
                                 onBackwardRequested:ruleMemoTemplate.forceActiveFocus()
                                 onEscapeRequested:resetText()
@@ -4775,7 +4883,7 @@ ApplicationWindow {
                             Button {objectName:ruleIndex>=0?"deleteRule_"+ruleIndex:"removeSelectedRule";text:"Delete rule…";visible:ruleIndex>=0 && ruleIndex<ruleModel.count && !rulePendingRemoval && !!savedRule(ruleModel.get(ruleIndex).id);onClicked:deleteRule(ruleIndex)}
                         }
                         }
-                        Label {textFormat:Text.PlainText;objectName:"ruleSearchEmpty";visible:ruleModel.count>0 && matchingRuleCount===0;text:'No rules match “'+ruleSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
+                        Label {textFormat:Text.PlainText;objectName:"ruleSearchEmpty";visible:ruleModel.count>0 && !anyRuleMatchesSearch;text:'No rules match “'+ruleSearch.text+'”.';wrapMode:Text.Wrap;Layout.fillWidth:true}
                         Label {visible:ruleIndex>=0 && !ruleMatchesSearch(ruleModel.get(ruleIndex));text:"Selected rule is outside the search results."}
                         Label {objectName:"ruleApplyHelp";visible:ruleModel.count>0 && ruleIndex<0;text:"Select a rule to edit."}
                         Rectangle {
@@ -4797,7 +4905,17 @@ ApplicationWindow {
                             RowLayout {
                                 visible:!!s.accountId
                                 Button {objectName:"previewThisRule";text:"Preview";enabled:ruleCanRun;onClicked:previewThisRule()}
-                                Button {objectName:"applyRules";text:{let generation=ruleEditGeneration;return !ruleChanged(ruleIndex)?"Apply rule":(navigationIndex>0 && ledgerRuleDraftId && ruleModel.get(ruleIndex).id===ledgerRuleDraftId?"Save, apply and back":"Save and apply rule")} enabled:applyReady();onClicked:applyRules()}
+                                Button {
+                                    id:ruleApplyButton;objectName:"applyRules"
+                                    text:{let generation=ruleEditGeneration;return !ruleChanged(ruleIndex)?"Apply rule":(ruleReturnsAfterApply?"Save, apply and back":"Save and apply rule")}
+                                    enabled:applyReady()
+                                    onClicked:applyRules()
+                                    Keys.onPressed:function(event) {
+                                        if(!ruleReturnsAfterApply || (event.key!==Qt.Key_Return && event.key!==Qt.Key_Enter))return
+                                        event.accepted=true
+                                        if(!event.isAutoRepeat)applyRules()
+                                    }
+                                }
                             }
                         }
                         Label {objectName:"rulePreviewStatus";visible:currentRulePreview;text:'Preview · '+(ruleLabel.text||"Unnamed rule")+' · '+rulesApplyScopeName+' · '+(ruleTransactionScope.currentIndex===1?"New transactions only":"All transactions");font.bold:true;wrapMode:Text.Wrap;Layout.fillWidth:true;textFormat:Text.PlainText}
@@ -5159,7 +5277,7 @@ ApplicationWindow {
                 activeFocusOnTab:true
                 Keys.onPressed: function(event) {
                     // Keep text fields and modal dialogs in charge of their own keys.
-                    if((window.activeFocusItem===ledger || (window.activeFocusItem && window.activeFocusItem.ledgerSelectionRow===true)) && !workflow.busy) {
+                    if(ledgerKeyboardFocused && !workflow.busy) {
                         if(event.matches(StandardKey.SelectAll)) {
                             workflow.command("select",{mode:"all"});event.accepted=true;return
                         }
@@ -5474,7 +5592,7 @@ ApplicationWindow {
                 Button {objectName:"editTransferDateOrigin";visible:!!selected.transferDateOrigin && !s.readOnly;text:selected.transferOriginFullyEditable?"Edit original transaction":"Edit date on original transaction";onClicked:showCounterpart(selected.transferDateOrigin,true)}
                 RowLayout {
                     visible:editEnabled || (!!s.rulesSupported && !!selected.batch)
-                    Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}
+                    Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && canAddRule && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}
                     Button {objectName:"editTransactionRule";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Edit rule…";enabled:!workflow.busy && ruleChoices().length>0;onClicked:editTransactionRule()}
                     Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true,transferAccount:""});dirty=true}}
                     Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}

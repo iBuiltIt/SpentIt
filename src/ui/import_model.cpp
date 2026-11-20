@@ -1488,6 +1488,7 @@ struct ImportModel::Worker {
         state["accountDeletionClearsHistory"]=accountDeletionClears;state["categorySelected"]=categorySelected;state["categoryHistory"]=categoryHistory;state["categoryPreview"]=categoryPreview;state["categoryReceipt"]=categoryReceipt;
         if(repo.rules_supported() && !rulesLoaded) loadRules();
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
+        state["ruleLimit"]=static_cast<int>(rules::EvaluationLimits::rules);
         state["canUndoRules"]=repo.can_undo_account_rules();state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
         state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["deletionPreview"]=deletionPreview;state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
@@ -2835,7 +2836,8 @@ struct ImportModel::Worker {
             auto refreshFailed=[&](const QString& sentence){diagnosticPresentationFailed=true;const auto saved=ruleReceipt;gateway->close();active=false;selected.clear();selectedBatch.clear();clearChanges();ruleReceipt=saved;throw std::runtime_error(sentence.toStdString());};
             const auto images=[&]{
                 const auto rows=a.value("rules").toList();
-                if(rows.size()>static_cast<qsizetype>(rules::EvaluationLimits::rules)) throw std::invalid_argument("Too many rules");
+                if(rows.size()>static_cast<qsizetype>(rules::EvaluationLimits::rules))
+                    throw std::invalid_argument("This file can hold up to "+std::to_string(rules::EvaluationLimits::rules)+" rules.");
                 std::vector<app::RuleDefinitionImage> ordered;for(const auto& value:rows) ordered.push_back(imageFrom(value.toMap()));return ordered;
             };
             if(action=="rules_load" || action=="rules_discard") {loadRules();if(action=="rules_discard"){rulePreview.clear();preparedApply.reset();preparedAccountApply.reset();}}

@@ -12,6 +12,69 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Rule capacity — 2026-11-20
+
+Each file can hold 4,096 saved rules, including disabled rules. Removed rules
+free slots. Rules and the ledger menu explain when the limit is reached.
+Definition exchange checks the resulting number of rules before saving.
+Existing pattern, memory, and matching limits still apply. See
+[Rules](../features/004-rules-and-explanations.md#workspace),
+[file exchange](file-exchange.md#json-version-1-wire-format), and
+[compatibility](durable-rules.md).
+
+On macOS arm64 with Qt 6.12.0, twelve rules-enabled Release targets passed.
+They covered the engine, preview, storage, offscreen rule editor, exchange,
+startup, and rule write and crash recovery. At 4,096 rules the tests applied
+the last rule to one of 65 transactions, preserved its amount and attribution
+after reopening, round-tripped the definitions through exchange, and rejected
+an excess rule without saving it. The storage capacity test also passed
+under AddressSanitizer and UndefinedBehaviorSanitizer with leak detection
+disabled. The rules-off exchange suite passed. Native interactive use and
+other platforms were unverified.
+
+## Ledger menu and Create rule keyboard flow — 2026-11-20
+
+The ledger context menu starts with Create rule and Change category. The
+payee action is labeled Set payee. Create rule puts the cursor in Category.
+Tab advances to Save, apply and back when it selects a different category.
+See [the ledger menu](ledger-editing.md#ledger-rule-creation-and-menu-availability--owner-go-2026-11-08),
+[Rules](../features/004-rules-and-explanations.md#workspace), and
+[MAN-105](manual-update-backlog.md#open-items).
+
+The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed all six
+offscreen targets for Rules, Categories, committed editing, Reports, Import UI,
+and startup.
+The keyboard regression covers initial focus, changed and repeated category
+choices, an unmatched search, and Shift+Tab. After the Enter follow-up, the
+offscreen Rules and startup targets passed again. The regression verifies that
+Return, keypad Enter, and Space activate Save, apply and back immediately
+after Tab moves focus there. The return-focus follow-up verifies that Up and
+Down move the selection immediately in both the account ledger and report
+transactions. The offscreen Rules, Navigation, Reports, Categories, and
+startup targets passed with that change, as did the focused Import UI
+account-navigation case.
+
+Option+R and Option+C open Create rule and Change category from the focused
+transaction list on macOS. The Windows and Linux bindings are Alt+R and
+Alt+C. On macOS arm64 with Qt 6.12.0, the rules-enabled Release Rules,
+Navigation, Reports, and startup offscreen targets passed with the shortcuts.
+The tests cover both transaction lists, selection eligibility, focus in Ledger
+Search, and changing two rows through the category filter. Native interactive
+use and the Windows and Linux bindings were unverified.
+
+## Focus ledger Search — 2026-11-20
+
+Option+F on macOS or Alt+F on Windows and Linux focuses Search in the account
+ledger or report transaction list and preserves the current text and applied
+filter. See [the search contract](search-ledger.md#search-contract) and
+[MAN-106](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release Navigation, Reports,
+and startup offscreen targets passed. The checks cover the shortcut in both
+lists, retention of a draft query and active filter, and focus staying in
+the Change category popup. Native keyboard input and Windows and Linux were
+unverified.
+
 ## Same-day statement order in the ledger — 2026-11-20
 
 Date sort flips the days and preserves each statement's file order within a

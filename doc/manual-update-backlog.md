@@ -23,7 +23,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-105. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-108. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -37,6 +37,32 @@ days and keeps statement order within each day. In
 running balances and that existing imports use the retained statement order.
 If updating the ledger or search pictures, use synthetic same-day postings.
 See [the ledger contract](search-ledger.md#search-contract).
+
+**MAN-105 — Ledger menu and Create rule keyboard flow (2026-11-20).**
+Update the menu order and Set payee label in
+[Where to find things](../manual/where-to-find.md),
+[Add and correct transactions](../manual/add-correct-transactions.md), and
+[Reports](../manual/reports.md). Update the report ledger menu picture. In
+[Rules](../manual/rules.md) and [Keyboard and mouse](../manual/keyboard-mouse.md),
+describe the initial Category focus, the Tab shortcut to Save, apply and
+back after a changed category, pressing Enter to activate it, and using Up
+and Down immediately on return to the ledger. Document Option+R and Option+C
+on macOS and Alt+R and Alt+C on Windows and Linux in the keyboard reference,
+Rules, and [Categories](../manual/categories.md). See
+[ledger editing](ledger-editing.md#ledger-rule-creation-and-menu-availability--owner-go-2026-11-08)
+and [Rules behavior](../features/004-rules-and-explanations.md#workspace).
+
+**MAN-106 — Focus ledger Search (2026-11-20).** In
+[Keyboard and mouse](../manual/keyboard-mouse.md) and
+[Find transactions](../manual/find-transactions.md), document Option+F on
+macOS and Alt+F on Windows and Linux for focusing Search in the account ledger
+or report transaction list. See [the search contract](search-ledger.md#search-contract).
+
+**MAN-107 — Rule capacity (2026-11-20).** In [Rules](../manual/rules.md),
+explain the 4,096-rule limit, the message at the limit, and that disabled rules
+still occupy slots. In [Copy transactions or saved definitions](../manual/backup-recovery.md#copy-transactions-or-saved-definitions),
+describe the destination limit when importing saved rules. See
+[Rules](../features/004-rules-and-explanations.md#workspace).
 
 ## Recapturing pictures
 

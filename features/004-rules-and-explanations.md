@@ -49,6 +49,10 @@ that import.
 
 ## Workspace
 
+A file can hold up to 4,096 saved rules, including disabled rules. Removed
+rules free a slot. Rules and the ledger menu explain when the file has
+reached the limit. See [Rules storage](../doc/durable-rules.md) for compatibility.
+
 One searchable list and one expanded editor. One new draft at a time. Save rule
 and Discard changes affect the selected definition. Leaving with outstanding
 edits offers Save all changes, Discard all changes, or Cancel. Save validates
@@ -71,10 +75,16 @@ The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. An open transaction does not list which
 rule assigned its payee, memo, or category. **Edit rule…** still opens one.
 Several targets use the existing chooser.
-That new draft’s button reads **Save, apply and back**. A successful click
-saves the rule, applies it to every active account unless the Apply section
-was limited to one account, and returns through **Back** to the page that was
-open before Rules. A missing category or a failed save stays in Rules. **New
+The ledger draft opens with keyboard focus in **Category**. When forward Tab
+selects a different category, focus moves to **Save, apply and back** if the
+button is available. Tab with the same category or no matching choice follows
+the usual order. Shift+Tab from Category goes back to Memo.
+Press Enter or Space with **Save, apply and back** focused to activate it.
+Successful activation saves the rule, applies it to every active account
+unless the Apply section was limited to one account, and returns through
+**Back** to the page that was open before Rules. The transaction list regains
+keyboard focus so Up and Down can move the selection. A missing category or a
+failed save stays in Rules. **New
 rule** and **Copy into new rule** keep **Save and apply rule** and stay in
 Rules. An existing rule keeps **Apply rule**, or **Save and apply rule** when
 it has unsaved edits, and stays in Rules.

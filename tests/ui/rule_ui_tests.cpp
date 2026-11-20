@@ -51,6 +51,19 @@ class RuleUiTests : public QObject {
     static QVariantMap selected(const ImportModel& m){return m.state().value("selected").toMap();}
     static QVariantMap draftOf(const ImportModel& m){return selected(m).value("draft").toMap();}
     static QString page(QObject* root){return root->property("currentPage").toString();}
+    void verifyLedgerArrowNavigation(Session& s) {
+        auto* ledger=qobject_cast<QQuickItem*>(object(s.root,"durableLedger"));
+        QVERIFY(ledger);
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        const int start=s.model.state().value("selectionIndex",-1).toInt();
+        QVERIFY(start>=0);
+        QVERIFY(s.model.rowCount()>1);
+        const bool last=start==s.model.rowCount()-1;
+        QTest::keyClick(s.window,last?Qt::Key_Up:Qt::Key_Down);
+        QTRY_COMPARE(s.model.state().value("selectionIndex").toInt(),start+(last?-1:1));
+        QTest::keyClick(s.window,last?Qt::Key_Down:Qt::Key_Up);
+        QTRY_COMPARE(s.model.state().value("selectionIndex").toInt(),start);
+    }
     void applyCategory(ImportModel& m,QObject* root){auto* field=qobject_cast<QQuickItem*>(object(root,"categoryName"));QVERIFY(field);field->forceActiveFocus();QTest::keyClick(qobject_cast<QQuickWindow*>(root),Qt::Key_Return);wait(m);QTRY_VERIFY(!root->property("categoryDirty").toBool());}
     QString createCategory(ImportModel& m,QObject* root,const QString& name){
         if(!click(root,"newCategory") || !edit(root,"categoryName",name))qFatal("Category form unavailable");
@@ -135,6 +148,17 @@ private slots:
         auto* row=qobject_cast<QQuickItem*>(object(s.root,"ledgerRow_"+QString::number(s.model.occurrenceIndex(batch,1))));QVERIFY(row);
         QTest::mouseClick(s.window,Qt::RightButton,Qt::NoModifier,row->mapToScene(QPointF(120,15)).toPoint());wait(s.model);
         QTRY_VERIFY(object(s.root,"ledgerContext")->property("visible").toBool());
+        auto* menu=object(s.root,"ledgerContext");
+        const QStringList labels{"Create rule…","Change category…","Add transaction…",
+            "Set memo…","Set payee…","Merge","Unmerge","Link to other account…",
+            "Restore imported values…","Delete selected…"};
+        QCOMPARE(menu->property("count").toInt(),labels.size());
+        for(int index=0;index<labels.size();++index) {
+            QQuickItem* menuItem=nullptr;
+            QVERIFY(QMetaObject::invokeMethod(menu,"itemAt",Q_RETURN_ARG(QQuickItem*,menuItem),Q_ARG(int,index)));
+            QVERIFY(menuItem);
+            QCOMPARE(menuItem->property("text").toString(),labels[index]);
+        }
         QVERIFY(s.root->property("editorClosed").toBool());
         QCOMPARE(selected(s.model).value("ordinal").toInt(),1);
         auto* action=object(s.root,"createRuleContext");QVERIFY(action);
@@ -186,6 +210,60 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(manual.value("batch").toString(),0)))));wait(s.model);
         QVERIFY(!action->property("enabled").toBool());
     }
+    void ledgerShortcutsUseSelectionAndFocus() {
+        Session s;createDocument(s,"Ledger shortcuts");
+        const auto source=s.path("shortcuts.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPFirst shop\n^\nD02/01/2026\nT-2.00\nPSecond shop\n^\n");
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch").toString();
+        const auto first=s.model.occurrenceIndex(batch,0);
+        const auto second=s.model.occurrenceIndex(batch,1);
+        run(s.model,"inspect",{{"batch",batch},{"ordinal",0}});
+        run(s.model,"select",{{"row",second}});
+        auto* ledger=qobject_cast<QQuickItem*>(object(s.root,"durableLedger"));
+        auto* ruleCategory=qobject_cast<QQuickItem*>(object(s.root,"ruleCategory"));
+        auto* filter=qobject_cast<QQuickItem*>(object(s.root,"ledgerCategoryFilter"));
+        auto* search=qobject_cast<QQuickItem*>(object(s.root,"ledgerSearch"));
+        auto* picker=object(s.root,"ledgerCategoryMenu");
+        QVERIFY(ledger && ruleCategory && filter && search && picker);
+        search->forceActiveFocus();
+        QTest::keyClick(s.window,Qt::Key_C,Qt::AltModifier);
+        QVERIFY(!picker->property("visible").toBool());
+        QTest::keyClick(s.window,Qt::Key_R,Qt::AltModifier);
+        QVERIFY(!s.model.busy());
+        QCOMPARE(page(s.root),"ledger");
+
+        ledger->forceActiveFocus();
+        QTest::keyClick(s.window,Qt::Key_R,Qt::AltModifier);
+        wait(s.model);
+        QTRY_VERIFY(ruleCategory->hasActiveFocus());
+        QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Second shop$");
+        QVERIFY(s.root->property("editorClosed").toBool());
+        QVERIFY(!object(s.root,"ledgerContext")->property("visible").toBool());
+        QVERIFY(click(s.root,"discardRules"));
+        QVERIFY(click(s.root,"accountNavigation"));
+        wait(s.model);
+        run(s.model,"select",{{"row",first}});
+        run(s.model,"select",{{"row",second},{"toggle",true}});
+        QCOMPARE(s.model.state().value("selectionCount").toInt(),2);
+        ledger->forceActiveFocus();
+        QTest::keyClick(s.window,Qt::Key_R,Qt::AltModifier);
+        QVERIFY(!s.model.busy());
+        QCOMPARE(page(s.root),"ledger");
+        QTest::keyClick(s.window,Qt::Key_C,Qt::AltModifier);
+        QTRY_VERIFY(filter->hasActiveFocus());
+        QCOMPARE(s.model.state().value("selectionCount").toInt(),2);
+        QTest::keyClick(s.window,Qt::Key_Escape);
+        QTRY_VERIFY(ledger->hasActiveFocus());
+        QTest::keyClick(s.window,Qt::Key_C,Qt::AltModifier);
+        QTRY_VERIFY(filter->hasActiveFocus());
+        QVERIFY(filter->setProperty("text","Test category"));
+        QTRY_COMPARE(picker->property("currentIndex").toInt(),0);
+        QTest::keyClick(s.window,Qt::Key_Return);
+        wait(s.model);
+        QCOMPARE(s.model.rowRecord(s.model.occurrenceIndex(batch,0)).value("category").toString(),"Test category");
+        QCOMPARE(s.model.rowRecord(s.model.occurrenceIndex(batch,1)).value("category").toString(),"Test category");
+    }
     void reportContextCreatesRule_data(){
         QTest::addColumn<bool>("dark");QTest::newRow("light")<<false;QTest::newRow("dark")<<true;
     }
@@ -227,8 +305,23 @@ private slots:
         }
         if(qEnvironmentVariableIsSet("SPENTIT_LEDGER_MENU_SCREENSHOT")){QTest::qWait(100);QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_MENU_SCREENSHOT")+(dark?"-report-dark.png":"-report-light.png")));}
         auto* action=object(s.root,"createRuleContext");QVERIFY(action);QVERIFY(action->property("visible").toBool());QVERIFY(action->property("enabled").toBool());
-        QVERIFY(QMetaObject::invokeMethod(action,"triggered"));wait(s.model);
-        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        if(dark) {
+            QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+            auto* ledger=qobject_cast<QQuickItem*>(object(s.root,"durableLedger"));
+            auto* filter=qobject_cast<QQuickItem*>(object(s.root,"ledgerCategoryFilter"));
+            QVERIFY(ledger && filter);
+            QTRY_VERIFY(!object(s.root,"ledgerContext")->property("visible").toBool());
+            ledger->forceActiveFocus();
+            QTest::keyClick(s.window,Qt::Key_C,Qt::AltModifier);
+            QTRY_VERIFY(filter->hasActiveFocus());
+            QTest::keyClick(s.window,Qt::Key_Escape);
+            QTRY_VERIFY(ledger->hasActiveFocus());
+            QTest::keyClick(s.window,Qt::Key_R,Qt::AltModifier);
+            wait(s.model);
+        } else {
+            QVERIFY(QMetaObject::invokeMethod(action,"triggered"));wait(s.model);
+            QVERIFY(QMetaObject::invokeMethod(object(s.root,"ledgerContext"),"close"));
+        }
         QCOMPARE(page(s.root),"rules");QCOMPARE(object(s.root,"ruleExpression")->property("text").toString(),"^Report shop$");
         QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
         QVERIFY(click(s.root,"applyRules"));wait(s.model);
@@ -238,6 +331,7 @@ private slots:
         QCOMPARE(s.model.rowCount(),2);
         QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
         for(int i=0;i<s.model.rowCount();++i)QVERIFY(!s.model.rowRecord(i).value("reportMatches").toBool());
+        verifyLedgerArrowNavigation(s);
         run(s.model,"undo_action",s.model.state().value("actionUndo").toMap());
         QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"2.00");
         run(s.model,"redo_action",s.model.state().value("actionRedo").toMap());
@@ -249,20 +343,56 @@ private slots:
         QCOMPARE(s.model.state().value("reportDetails").toMap().value("total").toString(),"0.00");
         QCOMPARE(s.model.rowCount(),0);
     }
+    void ledgerCreatedRuleReturnsAfterSaveAndApply_data(){
+        QTest::addColumn<int>("activationKey");
+        QTest::newRow("return") << int(Qt::Key_Return);
+        QTest::newRow("keypad-enter") << int(Qt::Key_Enter);
+        QTest::newRow("space") << int(Qt::Key_Space);
+    }
     void ledgerCreatedRuleReturnsAfterSaveAndApply(){
+        QFETCH(int,activationKey);
         Session s;createDocument(s,"Ledger rule return");
         const auto source=s.path("return.qif");
-        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPSecond shop\n^\n");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPSecond shop\n^\nD02/01/2026\nT-2.00\nPNeighboring shop\n^\n");
         run(s.model,"import",{{"path",source},{"profile","DMY"}});
         const auto batch=selected(s.model).value("batch").toString();
         QVERIFY(s.root->setProperty("editorClosed",true));
         QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));wait(s.model);
-        QVERIFY(QMetaObject::invokeMethod(object(s.root,"createRuleContext"),"triggered"));wait(s.model);
+        auto* createRule=qobject_cast<QQuickItem*>(object(s.root,"createRuleContext"));
+        QVERIFY(createRule);
+        QTRY_VERIFY(createRule->isVisible());
+        QTest::mouseClick(s.window,Qt::LeftButton,Qt::NoModifier,
+            createRule->mapToScene(QPointF(createRule->width()/2,createRule->height()/2)).toPoint());
+        wait(s.model);
         QCOMPARE(page(s.root),"rules");
         QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save, apply and back");
+        auto* category=qobject_cast<QQuickItem*>(object(s.root,"ruleCategory"));
+        auto* scope=qobject_cast<QQuickItem*>(object(s.root,"ruleTransactionScope"));
+        auto* apply=qobject_cast<QQuickItem*>(object(s.root,"applyRules"));
+        auto* memo=qobject_cast<QQuickItem*>(object(s.root,"ruleMemoTemplate"));
+        QVERIFY(category && scope && apply && memo);
+        QTRY_VERIFY(category->hasActiveFocus());
+        QTest::keyClick(s.window,Qt::Key_Tab);
+        QTRY_VERIFY(scope->hasActiveFocus());
+        category->forceActiveFocus();
+        QTest::keyClick(s.window,Qt::Key_Tab,Qt::ShiftModifier);
+        QTRY_VERIFY(memo->hasActiveFocus());
         QVERIFY(click(s.root,"applyRules"));
         QCOMPARE(page(s.root),"rules");
         QCOMPARE(s.model.state().value("rules").toList().size(),0);
+        category->forceActiveFocus();
+        QVERIFY(edit(s.root,"ruleCategory","Test category"));
+        QTest::keyClick(s.window,Qt::Key_Return);
+        QTRY_VERIFY(scope->hasActiveFocus());
+        category->forceActiveFocus();
+        QVERIFY(edit(s.root,"ruleCategory","Test category"));
+        QTest::keyClick(s.window,Qt::Key_Tab);
+        QTRY_VERIFY(scope->hasActiveFocus());
+        category->forceActiveFocus();
+        QVERIFY(edit(s.root,"ruleCategory","No matching category"));
+        QTest::keyClick(s.window,Qt::Key_Tab);
+        QTRY_VERIFY(scope->hasActiveFocus());
+        QCOMPARE(category->property("text").toString(),"Test category");
         QVERIFY(click(s.root,"discardRules"));
         QVERIFY(click(s.root,"newRule"));
         QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save and apply rule");
@@ -270,14 +400,23 @@ private slots:
         QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
         QVERIFY(s.root->setProperty("editorClosed",true));
         QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));wait(s.model);
-        QVERIFY(QMetaObject::invokeMethod(object(s.root,"createRuleContext"),"triggered"));wait(s.model);
+        QTRY_VERIFY(createRule->isVisible());
+        QTest::mouseClick(s.window,Qt::LeftButton,Qt::NoModifier,
+            createRule->mapToScene(QPointF(createRule->width()/2,createRule->height()/2)).toPoint());
+        wait(s.model);
         QCOMPARE(object(s.root,"applyRules")->property("text").toString(),"Save, apply and back");
         QVERIFY(edit(s.root,"rulePayeeTemplate","Shop renamed"));
-        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
-        QVERIFY(click(s.root,"applyRules"));wait(s.model);
+        QTRY_VERIFY(category->hasActiveFocus());
+        QVERIFY(edit(s.root,"ruleCategory","Test category"));
+        QTest::keyClick(s.window,Qt::Key_Tab);
+        QTRY_VERIFY(apply->hasActiveFocus());
+        QCOMPARE(s.model.state().value("rules").toList().size(),0);
+        QTest::keyClick(s.window,static_cast<Qt::Key>(activationKey));
+        wait(s.model);
         QTRY_COMPARE(page(s.root),"ledger");
         QCOMPARE(draftOf(s.model).value("payee").toString(),"Shop renamed");
         QCOMPARE(s.model.state().value("rules").toList().size(),1);
+        verifyLedgerArrowNavigation(s);
         QVERIFY(s.root->setProperty("editorClosed",false));
         QVERIFY(click(s.root,"editTransactionRule"));
         QCOMPARE(page(s.root),"rules");
@@ -569,6 +708,39 @@ private slots:
         QVERIFY(!object(s.root,"newRule")->property("enabled").toBool());
         QVERIFY(!object(s.root,"allRules"));QVERIFY(!object(s.root,"previewRules"));
         if(qEnvironmentVariableIsSet("SPENTIT_LONG_RULE_SCREENSHOT"))QVERIFY(s.window->grabWindow().save(qEnvironmentVariable("SPENTIT_LONG_RULE_SCREENSHOT")));
+    }
+    void ruleCapacityInEditor() {
+        Session s;createDocument(s,"Rule capacity");
+        const int limit=s.model.state().value("ruleLimit").toInt();
+        QCOMPARE(limit,4096);
+        QVariantList definitions;
+        const auto categoryId=s.model.state().value("categories").toList().front().toMap().value("id");
+        for(int i=0;i<limit-1;++i)definitions.push_back(QVariantMap{
+            {"id",s.model.newIdentity()},{"enabled",true},{"label",QString("Synthetic rule %1").arg(i)},
+            {"scope","transaction"},{"input","payee"},{"expression",QString("^Synthetic %1$").arg(i)},
+            {"categoryId",categoryId}});
+        run(s.model,"rules_save",{{"rules",definitions}});
+        QVERIFY(click(s.root,"rulesNavigation"));wait(s.model);
+        QVERIFY(click(s.root,"newRule"));
+        QVERIFY(edit(s.root,"ruleLabel","At capacity"));
+        QVERIFY(edit(s.root,"ruleExpression","^At capacity$"));
+        QVERIFY(QMetaObject::invokeMethod(object(s.root,"ruleCategory"),"selectIndex",Q_ARG(QVariant,QVariant(0))));
+        QVERIFY(click(s.root,"saveRules"));wait(s.model);
+        QCOMPARE(s.model.state().value("rules").toList().size(),limit);
+        auto* button=object(s.root,"newRule");
+        QVERIFY(button->property("visible").toBool());
+        QVERIFY(!button->property("enabled").toBool());
+        QTRY_VERIFY(object(s.root,"ruleLimitNotice")->property("visible").toBool());
+        const auto source=s.path("capacity.qif");
+        writeQif(source,"!Type:Bank\nD01/01/2026\nT-1.00\nPSynthetic shop\n^\n");
+        QVERIFY(click(s.root,"accountNavigation"));wait(s.model);
+        run(s.model,"import",{{"path",source},{"profile","DMY"}});
+        const auto batch=selected(s.model).value("batch").toString();
+        QVERIFY(QMetaObject::invokeMethod(s.root,"openLedgerContext",Q_ARG(QVariant,QVariant(s.model.occurrenceIndex(batch,0)))));
+        wait(s.model);
+        auto* createRule=object(s.root,"createRuleContext");
+        QVERIFY(!createRule->property("enabled").toBool());
+        QCOMPARE(createRule->property("text").toString(),"Create rule… (rule limit reached)");
     }
     void independentDraftAndSelectedSaveApply(){
         Session s;createDocument(s,"Independent rule editing");

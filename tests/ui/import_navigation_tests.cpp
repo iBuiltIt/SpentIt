@@ -589,6 +589,30 @@ private slots:
             run(model,"create",{{"path",path},{"overwrite",true},{"protected",false},{"name","Replacement"},{"currency","CAD"}});checkSort(model,0,true);run(model,"close");
         }
     }
+    void searchShortcutPreservesFilter() {
+        QTemporaryDir dir;
+        ImportModel model(spentit::storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        run(model,"create",{{"path",dir.filePath("document")},{"protected",false},{"name","Search account"},{"currency","CAD"}});
+        auto* ledger=qobject_cast<QQuickItem*>(object(window,"durableLedger"));
+        auto* search=qobject_cast<QQuickItem*>(object(window,"ledgerSearch"));
+        QVERIFY(ledger && search);
+        QVERIFY(search->setProperty("text","Opening"));
+        QVERIFY(click(window,"applyFilter"));
+        QTRY_COMPARE(model.state().value("filter").toString(),"Opening");
+        QVERIFY(search->setProperty("text","Draft query"));
+        ledger->forceActiveFocus();
+        QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);
+        QTRY_VERIFY(search->hasActiveFocus());
+        QCOMPARE(search->property("text").toString(),"Draft query");
+        QCOMPARE(model.state().value("filter").toString(),"Opening");
+    }
     void categoryPopupFiltersAndScrolls() {
         ImportModel model(spentit::storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&model);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
@@ -608,6 +632,9 @@ private slots:
         auto* bar=object(root,"ledgerCategoryScrollBar");QVERIFY(bar);QVERIFY(bar->property("size").toReal()<1);QVERIFY(bar->property("interactive").toBool());
         auto* filter=qobject_cast<QQuickItem*>(object(root,"ledgerCategoryFilter"));QVERIFY(filter);
         QTRY_VERIFY(filter->hasActiveFocus());
+        QTest::keyClick(window,Qt::Key_F,Qt::AltModifier);
+        QVERIFY(filter->hasActiveFocus());
+        QVERIFY(filter->setProperty("text",QString()));
         for(char c:QByteArray("CATEGORY 7"))QTest::keyClick(window,c);
         QCOMPARE(filter->property("text").toString().toLower(),QString("category 7"));
         QTRY_COMPARE(menu->property("count").toInt(),10);
