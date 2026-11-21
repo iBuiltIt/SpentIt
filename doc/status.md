@@ -31,6 +31,12 @@ failure and crash sweeps across 153 write and sync positions each. The parser
 suite passed under AddressSanitizer and UndefinedBehaviorSanitizer with leak
 detection disabled, including 20,000 deterministic mutations.
 
+Saving a manual payee correction now clears the Review warning immediately.
+The offscreen Release regression verified that saving a memo alone keeps the
+warning, Undo restores it, Redo clears it again, and the transaction stays New
+through reopening with the original QIF available. Three focused Import UI
+cases and five Release targets passed on macOS arm64 with Qt 6.12.0.
+
 ## Rule capacity — 2026-11-20
 
 Each file can hold 4,096 saved rules, including disabled rules. Removed rules

@@ -3119,8 +3119,31 @@ private slots:
         QTRY_VERIFY(window->findChild<QObject*>("transactionImportWarning")->property("visible").toBool());
         const auto index=m.occurrenceIndex(batch.toString(),0);QVERIFY(index>=0);
         QVERIFY(!m.data(m.index(index,0),Qt::UserRole).toMap().value("importWarning").toString().isEmpty());
-        auto edit=selected(m).value("draft").toMap();edit["payee"]="Edited shop";
+        auto edit=selected(m).value("draft").toMap();edit["memo"]="Purchase";
         run(m,"save",edit);
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+
+        QVERIFY(payee->setProperty("text","Edited shop"));
+        QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
+        QVERIFY(QMetaObject::invokeMethod(payee,"accepted"));
+        QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+        QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QCOMPARE(m.state().value("newTransactions").toInt(),1);
+        QCOMPARE(m.state().value("committed").toString(),"0.00");
+        QCOMPARE(m.state().value("balance").toString(),"-10.38");
+        QCOMPARE(selected(m).value("source").toString().trimmed(),QString::fromUtf8(raw).trimmed());
+
+        run(m,"undo_action",m.state().value("actionUndo").toMap());
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(m.state().value("newTransactions").toInt(),1);
+        QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"TEST SHOP");
+        run(m,"redo_action",m.state().value("actionRedo").toMap());
+        QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QCOMPARE(m.state().value("newTransactions").toInt(),1);
+
+        run(m,"close");run(m,"open",{{"path",path}});run(m,"review_load");
+        QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QCOMPARE(m.state().value("newTransactions").toInt(),1);
         QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));
         QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("committed").toString(),"-10.38");

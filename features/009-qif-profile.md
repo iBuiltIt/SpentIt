@@ -38,7 +38,7 @@ New imports use `bank-v7`. Retained `bank-v6` imports replay with their original
 
 A run of lines immediately after `P` can repeat the exact bytes of the payee value. The banking parser uses the first payee line when the repeats start with an unknown field marker or resemble an amount field with an alphabetic value after a valid total has already been read. Supported fields, numeric amount lines, section headers and record terminators keep their ordinary interpretation. The record must otherwise validate, including exact totals and splits, before it can appear in the ledger.
 
-The original bytes are retained. A new transaction carries a payee warning in [Review](../doc/review-sheet.md#user-interaction) and the ledger. Accept clears the outstanding Review warning. The ledger and original source still show what happened.
+The original bytes are retained. A new transaction carries a payee warning in [Review](../doc/review-sheet.md#user-interaction) and the ledger. Saving a manual payee correction clears the Review warning while the transaction stays New. Undo restores the warning when it restores the prior payee and its ownership. Accept also clears any outstanding Review warning. The ledger and original source still show what happened.
 
 ## Embedded carriage returns — accepted 2026-10-28
 

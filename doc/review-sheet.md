@@ -254,7 +254,10 @@ Review shows the next question that remains. Inspect keeps Include match and
 checked rows for that return. Leaving Review another way clears them. A ledger
 search that would hide the transaction is cleared. Enter on a question and
 double-clicking a payee use Inspect. For a repeated-payee import warning,
-**Inspect** also opens the ledger editor so the payee can be edited. Link questions
+**Inspect** also opens the ledger editor so the payee can be edited. Saving a
+manual payee correction clears the Review warning while the transaction stays
+New. Undo restores the warning when it restores the prior payee and its
+ownership. The original QIF remains available in the ledger. Link questions
 stay in Review. Ledger Link joins two existing transactions. The count is outstanding questions, including correction tasks, rather
 than candidate transactions. Changing account/import, inspecting a record or
 attempting Commit does not resolve a question. The selected-import summary is

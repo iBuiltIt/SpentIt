@@ -33,7 +33,8 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 **MAN-108 — Import problems and repeated payees (2026-11-21).** In
 [Import transactions](../manual/import-transactions.md) and
 [Review duplicates and transfers](../manual/review-duplicates-transfers.md),
-document the repeated-payee warning, ledger inspection and editing, and the
+document the repeated-payee warning, ledger inspection and editing, how saving
+a payee correction clears the Review warning and Undo brings it back, and the
 actions for repairable and excluded records. Update Review pictures and
 captions that show the generic Correct button. See [Review](review-sheet.md#user-interaction).
 
