@@ -23,12 +23,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-114. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-115. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-114 — Scroll the category breakdown (2026-11-21).** In
+[Answer questions with reports](../manual/reports.md), show the scrollbar
+below the period headings for a report with more periods than fit in the
+window. Explain that it moves the headings and amounts together and keeps
+the Category column visible. Use a synthetic comparison report for the
+picture. See [Charts and drill-down](../features/006-reporting-drill-down.md#charts-and-drill-down).
 
 **MAN-113 — Reopened transfer matches (2026-11-21).** In
 [Review duplicates and transfers](../manual/review-duplicates-transfers.md),

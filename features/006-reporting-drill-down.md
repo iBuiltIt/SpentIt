@@ -62,6 +62,10 @@ edits and duplicating a report retain its existing period rules.
 
 Charts come before one striped table of the remaining categories. Grouped-period bars
 are an additional saved choice. Pie is available when the period is suitable.
+When a category table's period columns are wider than its pane, a horizontal
+scrollbar appears directly below the period headings. The headings and amounts
+scroll together, with the Category column pinned on the left. Chart scrolling
+is independent of the table.
 
 Drill-down reuses the ledger editor over the contributing transaction
 identities, with the account and the included amount. Saved edits and Undo

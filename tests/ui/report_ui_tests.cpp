@@ -409,7 +409,7 @@ private slots:
         auto* table=object(root,"reportCategoryTable");QVERIFY(table);
         const auto chartRows=model.state().value("reportResult").toMap().value("currencies").toList().front().toMap().value("rows").toList();
         QCOMPARE(chartRows.size(),1);QCOMPARE(chartRows.front().toMap().value("name").toString(),QString("Uncategorized"));
-        QCOMPARE(table->property("height").toInt(),64+(chartRows.size()+1)*34+16);
+        QCOMPARE(table->property("height").toInt(),64+(chartRows.size()+1)*34);
         QVERIFY(object(root,"reportGraphs")->property("height").toInt()>260);
         auto* plot=qobject_cast<QQuickItem*>(object(root,"reportChartHover"));QVERIFY(plot);QTRY_VERIFY(plot->width()>24);
         const auto last=chartRows.back().toMap();const auto cells=last.value("cells").toList();QCOMPARE(cells.size(),2);
@@ -739,6 +739,94 @@ private slots:
         QTRY_VERIFY(!model.busy());
         QVERIFY(model.error().contains("This report period changed."));
         QCOMPARE(warnings.size(),qsizetype(0));
+    }
+    void categoryTableScrollsIndependently() {
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        QSignalSpy warnings(&engine, &QQmlEngine::warnings);
+        engine.rootContext()->setContextProperty("workflow", &model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->resize(900, 850);
+        window->show();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+
+        run(model, "create", {{"path", dir.filePath("document")}, {"protected", false},
+                              {"name", "Checking"}, {"currency", "CAD"}});
+        QFile source(dir.filePath("report.qif"));
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        const QByteArray purchase = "D2022-01-01\nT-42\nPSynthetic purchase\n^\n";
+        QCOMPARE(source.write(purchase), purchase.size());
+        source.close();
+        run(model, "import", {{"path", source.fileName()}, {"account", model.state().value("accountId")}});
+        QVariantList periods;
+        for (int year = 2026; year >= 2022; --year) {
+            periods.push_back(QVariantMap{{"preset", "custom"}, {"start", QString("%1-01-01").arg(year)},
+                                          {"end", QString("%1-12-31").arg(year)}});
+        }
+        const QVariantMap definition{{"id", "five-years"}, {"name", "Five years"}, {"graph", "grouped_bar"},
+            {"accounts", QVariantList{"1"}}, {"categories", QVariantList{""}}, {"periods", periods}};
+        run(model, "report_save", {{"revision", model.state().value("reportRevision")},
+                                   {"reports", QVariantList{definition}}});
+        run(model, "report_show", {{"id", "five-years"}});
+        window->setProperty("currentPage", "reports");
+
+        const auto item = [&](const char* name) { return qobject_cast<QQuickItem*>(object(window, name)); };
+        QTRY_VERIFY(item("reportPeriodScrollBar") && item("reportPeriodScrollBar")->isVisible());
+        auto* bar = item("reportPeriodScrollBar");
+        auto* headings = item("reportPeriodHeadings");
+        auto* amounts = item("reportPeriodAmounts");
+        auto* categoryHeading = item("reportCategoryHeading");
+        auto* names = item("reportCategoryNames");
+        auto* chart = item("reportGraphs");
+        QVERIFY(headings && amounts && categoryHeading && names && chart);
+        QTRY_COMPARE(bar->y(), headings->y() + headings->height());
+        QCOMPARE(bar->x(), headings->x());
+        QCOMPARE(bar->width(), headings->width());
+        QTRY_COMPARE(amounts->y(), bar->y() + bar->height());
+        QCOMPARE(names->y(), amounts->y());
+        const auto pinnedHeading = categoryHeading->mapToScene(QPointF{}).x();
+        const auto pinnedNames = names->mapToScene(QPointF{}).x();
+        const auto chartOffset = chart->property("contentX");
+        auto* thumb = bar->property("contentItem").value<QQuickItem*>();
+        QVERIFY(thumb);
+        QTRY_VERIFY(thumb->isVisible() && thumb->width() > 0);
+        const auto thumbCenter = thumb->mapToScene(QPointF(thumb->width()/2, thumb->height()/2)).toPoint();
+        const auto barEnd = bar->mapToScene(QPointF(bar->width()-2, bar->height()/2)).toPoint();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, thumbCenter);
+        QVERIFY(bar->property("pressed").toBool());
+        QTest::mouseMove(window, barEnd);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, barEnd);
+        const auto endOffset = amounts->property("contentWidth").toReal() - amounts->width();
+        QVERIFY(endOffset > 0);
+        QTRY_COMPARE(amounts->property("contentX").toReal(), endOffset);
+        QCOMPARE(headings->property("contentX").toReal(), endOffset);
+        QCOMPARE(categoryHeading->mapToScene(QPointF{}).x(), pinnedHeading);
+        QCOMPARE(names->mapToScene(QPointF{}).x(), pinnedNames);
+        QCOMPARE(chart->property("contentX"), chartOffset);
+
+        // Check the actual category cell below the final period heading.
+        auto* content = amounts->property("contentItem").value<QQuickItem*>();
+        QVERIFY(content);
+        const auto point = content->mapFromItem(amounts, QPointF(amounts->width()-110, 51));
+        auto* row = content->childAt(point.x(), point.y());
+        QVERIFY(row);
+        const auto rowPoint = row->mapFromItem(content, point);
+        auto* period = row->childAt(rowPoint.x(), rowPoint.y());
+        QVERIFY(period);
+        const auto periodPoint = period->mapFromItem(row, rowPoint);
+        auto* amount = period->childAt(periodPoint.x(), periodPoint.y());
+        QVERIFY(amount);
+        QCOMPARE(amount->property("text").toString(), "42.00");
+
+        window->resize(1700, 850);
+        QTRY_VERIFY(item("reportPeriodAmounts")->width() >= 1100);
+        QTRY_VERIFY(!item("reportPeriodScrollBar")->isVisible());
+        QCOMPARE(item("reportPeriodAmounts")->y(), item("reportPeriodHeadings")->height());
+        QCOMPARE(warnings.size(), 0);
     }
     void reportsAndCalendar(){
         QTemporaryDir dir;ImportModel model(storage::document_gateway());QQmlApplicationEngine engine;

@@ -404,24 +404,41 @@ Item {
                             }
                         }
                         Item {
-                            id:table;objectName:"reportCategoryTable";Layout.fillWidth:true;Layout.preferredHeight:64+(currencyBlock.modelData.rows.length+1)*34+16
+                            id:table;objectName:"reportCategoryTable";Layout.fillWidth:true
+                            readonly property real rowsTop:64+(periodBar.visible?periodBar.height:0)
+                            Layout.preferredHeight:rowsTop+(currencyBlock.modelData.rows.length+1)*34
                             Rectangle {width:parent.width;height:64;color:reportTheme.surface}
-                            Label {textFormat:Text.PlainText;text:"Category";width:220;height:64;leftPadding:8;verticalAlignment:Text.AlignVCenter}
+                            Label {objectName:"reportCategoryHeading";textFormat:Text.PlainText;text:"Category";width:220;height:64;leftPadding:8;verticalAlignment:Text.AlignVCenter}
                             Flickable {
+                                id:periodHeadings;objectName:"reportPeriodHeadings"
                                 x:220;width:Math.max(0,parent.width-220);height:64;clip:true;interactive:false
                                 contentWidth:(root.result.periods||[]).length*220;contentX:tableBody.contentX
                                 Row {Repeater {model:root.result.periods||[]
                                     Label {required property var modelData;textFormat:Text.PlainText;text:modelData.label+"\n"+modelData.start+" – "+modelData.end;width:220;height:64;verticalAlignment:Text.AlignVCenter;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap}
                                 }}
                             }
+                            ScrollBar {
+                                id:periodBar;objectName:"reportPeriodScrollBar"
+                                anchors.top:periodHeadings.bottom
+                                anchors.left:periodHeadings.left
+                                anchors.right:periodHeadings.right
+                                height:16
+                                visible:width>0 && tableBody.contentWidth>width
+                                policy:ScrollBar.AlwaysOn;interactive:true;minimumSize:0.08;padding:2
+                                contentItem:Rectangle {
+                                    implicitWidth:12;implicitHeight:12;radius:6
+                                    color:periodBar.pressed?reportTheme.scrollPressed:periodBar.hovered?reportTheme.scrollHover:reportTheme.scrollThumb
+                                }
+                                background:Rectangle {color:reportTheme.scrollTrack;radius:8}
+                            }
                             Column {
-                                y:64;width:parent.width
+                                y:table.rowsTop;width:parent.width
                                 Repeater {model:currencyBlock.modelData.rows.length+1
                                     Rectangle {required property int index;width:table.width;height:34;color:index%2?reportTheme.row:reportTheme.rowAlternate}
                                 }
                             }
                             Column {
-                                y:64;width:220;spacing:0
+                                objectName:"reportCategoryNames";y:table.rowsTop;width:220;spacing:0
                                 Label {text:"Total";font.bold:true;width:220;height:34;leftPadding:8;verticalAlignment:Text.AlignVCenter}
                                 Repeater {model:currencyBlock.modelData.rows
                                     Item {required property var modelData;width:220;height:34
@@ -433,9 +450,10 @@ Item {
                                 }
                             }
                             Flickable {
-                                id:tableBody;x:220;y:64;width:Math.max(0,parent.width-220);height:parent.height-64;clip:true
+                                id:tableBody;objectName:"reportPeriodAmounts"
+                                x:220;y:table.rowsTop;width:Math.max(0,table.width-x);height:table.height-y;clip:true
                                 contentWidth:(root.result.periods||[]).length*220;contentHeight:height;flickableDirection:Flickable.HorizontalFlick
-                                ScrollBar.horizontal:ScrollBar {}
+                                ScrollBar.horizontal:periodBar
                                 Row {
                                     Repeater {model:root.result.periods||[]
                                         Column {id:periodColumn;required property int index;width:220;spacing:0
