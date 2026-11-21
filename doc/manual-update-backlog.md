@@ -58,11 +58,12 @@ a payee correction clears the Review warning and Undo brings it back, and the
 actions for repairable and excluded records. Update Review pictures and
 captions that show the generic Correct button. See [Review](review-sheet.md#user-interaction).
 
-**MAN-104 — Date sort and statement balances (2026-11-20).** In
-[Find transactions](../manual/find-transactions.md), explain that Date flips the
-days and keeps statement order within each day. In
+**MAN-104 — Date sort and statement balances (2026-11-21).** In
+[Find transactions](../manual/find-transactions.md), explain that Date reverses
+the full posting sequence and each balance stays with its transaction. In
 [Import transactions](../manual/import-transactions.md), explain how to compare
-running balances and that existing imports use the retained statement order.
+running balances by sorting Date in the statement's direction, and that
+existing imports use the retained statement order.
 If updating the ledger or search pictures, use synthetic same-day postings.
 See [the ledger contract](search-ledger.md#search-contract).
 

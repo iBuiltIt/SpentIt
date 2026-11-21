@@ -3454,6 +3454,61 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(app::UnlockRequired,g->open((dir.path()+"/protected").toStdString(),{}));
         g->open((dir.path()+"/protected").toStdString(),std::string("synthetic-protected-password"));g->close();
     }
+    void newestFirstQifKeepsPostingBalancesWhenDateSortFlips() {
+        QTemporaryDir dir;
+        ImportModel m(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&m);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        const auto path=dir.path()+"/doc";
+        create(m,path);
+        run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});
+        run(m,"import",{{"path",fixture(dir.path(),
+            "!Type:Bank\n"
+            "D2026-01-03\nT7.25\nPNewest deposit\n^\n"
+            "D2026-01-03\nT23.50\nPEarlier deposit\n^\n"
+            "D2026-01-02\nT-10.00\nPPrevious withdrawal\n^\n")}});
+
+        const auto verifyRow=[&](int index,const char* payee,const char* balance) {
+            const auto row=m.rowRecord(index);
+            QCOMPARE(row.value("payee").toString(),QString::fromLatin1(payee));
+            QCOMPARE(row.value("balance").toString(),QString::fromLatin1(balance));
+        };
+        const auto verifyLedger=[&](bool descending) {
+            QCOMPARE(m.state().value("sort").toInt(),0);
+            QCOMPARE(m.state().value("descending").toBool(),descending);
+            QCOMPARE(m.rowCount(),4);
+            verifyRow(descending?0:3,"Newest deposit","120.75");
+            verifyRow(descending?1:2,"Earlier deposit","113.50");
+            verifyRow(descending?2:1,"Previous withdrawal","90.00");
+            verifyRow(descending?3:0,"Opening Balance","100.00");
+            QCOMPARE(m.state().value("balance").toString(),QString("120.75"));
+        };
+        const auto checkBothDirections=[&] {
+            run(m,"query",{{"sort",0},{"descending",true}});
+            verifyLedger(true);
+            QQuickItem* dateHeader=nullptr;
+            QTRY_VERIFY(dateHeader=visualItem(window->contentItem(),"ledgerColumn_0"));
+            QVERIFY(QMetaObject::invokeMethod(dateHeader,"clicked"));
+            QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+            verifyLedger(false);
+            QVERIFY(QMetaObject::invokeMethod(dateHeader,"clicked"));
+            QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);
+            QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
+            verifyLedger(true);
+        };
+        checkBothDirections();
+        run(m,"commit");
+        verifyLedger(true);
+        run(m,"close");
+        run(m,"open",{{"path",path}});
+        checkBothDirections();
+        run(m,"close");
+    }
     void cachedViewsRemainCurrent() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());create(m,dir.path()+"/one");
         run(m,"opening",{{"date","2026-01-01"},{"amount","100.00"}});

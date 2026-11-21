@@ -2345,7 +2345,6 @@ app::LedgerSourceOrder ledger_source_order(sqlite3* db,std::string_view batch_id
     if(!kind.row())fail(SQLITE_CORRUPT);
     const auto parser=kind.bytes(0);
     if(parser=="manual-v1")return Order::none;
-    if(parser!="ofx-sgml-1" && parser!="ofx-xml-2")return Order::file_order;
 
     // Use the original statement, including excluded rows. Ledger date edits
     // and duplicate decisions provide no evidence of the file's direction.

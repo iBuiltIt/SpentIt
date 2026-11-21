@@ -1,7 +1,7 @@
 # 005 — Transaction sheet and navigation
 
 Status: **active**
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 The durable ledger is the application sheet. Editing, Set memo, Rename payee,
 Restore, splits, expressions, and amount formatting are in
@@ -25,9 +25,11 @@ every heading stays visible. A column stops growing at 4,000 pixels. The drag
 does not sort. Clicking the heading still sorts. Each heading edge shows a
 narrow shaded notch. The edge highlights while the pointer is on it.
 
-Date sort flips the order of the days. Transactions from the same imported
-statement keep their file order within each day in both directions. Each row
-shows the balance after that posting. See [ledger sorting and balances](../doc/search-ledger.md#search-contract).
+Date sort reverses the entire posting sequence, including rows on the same
+day. A newest-first statement keeps its file order within each day when the
+ledger is sorted newest first. An oldest-first statement keeps its file order
+within each day when the ledger is sorted oldest first. Each row shows the
+balance after that posting in either direction. See [ledger sorting and balances](../doc/search-ledger.md#search-contract).
 
 With the account ledger or the report transaction list focused, Up and Down
 move one row. Home and End go to the first and last row. Page Up and Page

@@ -11,8 +11,8 @@ int main(){try{
     add(1,"2026-01-01",-1000);add(2,"2026-01-02",2000);add(3,"2026-01-02",-3000);
     const auto v=ledger_view(a,rows,"",0,false);check(v.rows.size()==4 && v.balances[0].units()==-1000 && v.balances[1].units()==9000 && v.balances[2].units()==11000 && v.balances[3].units()==8000 && v.ending.units()==8000);
     check(v.order==std::vector<std::size_t>{0,1,2,3});
-    const auto newest=ledger_view(a,rows,"",0,true);check(newest.order==std::vector<std::size_t>{1,2,3,0} && newest.balances==v.balances);
-    const auto sameDay=ledger_view(a,rows,"Food",0,true);check(sameDay.order==std::vector<std::size_t>{2,3,0} && sameDay.balances==v.balances);
+    const auto newest=ledger_view(a,rows,"",0,true);check(newest.order==std::vector<std::size_t>{3,2,1,0} && newest.balances==v.balances);
+    const auto sameDay=ledger_view(a,rows,"Food",0,true);check(sameDay.order==std::vector<std::size_t>{3,2,0} && sameDay.balances==v.balances);
     const auto payee=ledger_view(a,rows,"Food",1,true);check(payee.order==std::vector<std::size_t>{0,2,3});
     check(v.withdrawals.units()==-4000 && v.deposits.units()==12000);
     for(int col=0;col<6;++col){const auto f=ledger_view(a,rows,"Food",col,true);check(f.order.size()==3 && f.balances==v.balances && f.ending==v.ending && f.deposits.units()==2000);}
@@ -29,7 +29,7 @@ int main(){try{
     rows.back().source_order=LedgerSourceOrder::newest_first;
     for(const bool descending:{false,true}) {
         const auto view=ledger_view(a,rows,"",0,descending);
-        check(view.order==std::vector<std::size_t>{0,3,2,1});
+        check(view.order==(descending?std::vector<std::size_t>{3,2,1,0}:std::vector<std::size_t>{0,1,2,3}));
         check(view.balances[3].units()==4000 && view.balances[2].units()==7000 && view.balances[1].units()==9000);
     }
     check(decimal(Money(std::numeric_limits<std::int64_t>::min(),cad))=="-92233720368547758.08");

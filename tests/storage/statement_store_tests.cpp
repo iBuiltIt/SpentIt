@@ -3,6 +3,7 @@
 #include <spentit/import_store.hpp>
 #include <spentit/statements.hpp>
 #include "fault_vfs.hpp"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <source_location>
@@ -209,19 +210,26 @@ void ledger_order() {
                         balances.push_back(view.balances[index].units());
                     }
                 }
-                check(payees==std::vector<std::string>{"Shop A","Shop B"});
-                if(newest_first)check(balances==std::vector<std::int64_t>{8100,9600});
-                else if(records==purchases)check(balances==std::vector<std::int64_t>{8500,8200});
-                else check(balances==std::vector<std::int64_t>{8400,8100});
+                const bool file_order=descending==newest_first;
+                std::vector<std::string> expected_payees{"Shop A","Shop B"};
+                std::vector<std::int64_t> expected_balances;
+                if(newest_first)expected_balances={8100,9600};
+                else if(records==purchases)expected_balances={8500,8200};
+                else expected_balances={8400,8100};
+                if(!file_order) {
+                    std::reverse(expected_payees.begin(),expected_payees.end());
+                    std::reverse(expected_balances.begin(),expected_balances.end());
+                }
+                check(payees==expected_payees && balances==expected_balances);
                 check(view.ending==store.balance());
                 app::LedgerSearch query("Shop B",2026);
                 const auto filtered=app::search_ledger(store.account(),rows,query,0,descending);
-                check(filtered.order.size()==1 && filtered.balances[filtered.order.front()].units()==balances[1]);
+                check(filtered.order.size()==1 && filtered.balances[filtered.order.front()].units()==expected_balances[file_order?1:0]);
                 if(newest_first) {
                     std::vector<std::string> displayed;
                     for(const auto index:view.order)displayed.push_back(view.rows[index].draft.payee);
                     if(descending)check(displayed==std::vector<std::string>{"Last day","Shop A","Shop B","First day","Opening Balance"});
-                    else check(displayed==std::vector<std::string>{"Opening Balance","First day","Shop A","Shop B","Last day"});
+                    else check(displayed==std::vector<std::string>{"Opening Balance","First day","Shop B","Shop A","Last day"});
                 }
             }
         };

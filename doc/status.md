@@ -12,6 +12,24 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Date sort and QIF running balances — 2026-11-21
+
+Date sort reverses the full posting sequence, including same-day rows. Each
+transaction keeps its balance in either direction. Newest-first QIF exports
+appear in file order when Date is newest first. SpentIt uses the dates and
+row positions retained with the import. See [ledger sorting and balances](search-ledger.md#search-contract)
+and [MAN-104](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the new offscreen regression reproduced the
+wrong balance on the earlier build and passed with the fix. It imports two
+same-day deposits, toggles the Date heading in both directions, and checks the
+posting balances before acceptance and after reopening. All 18 selected
+rules-enabled Release targets passed, including the full offscreen Import UI
+suite with 128 passing cases. The ledger, search, and statement-order tests
+passed under AddressSanitizer and UndefinedBehaviorSanitizer with leak
+detection disabled. The rebuilt `./build/SpentIt` passed offscreen startup.
+Native interaction was unverified.
+
 ## Apply Review decisions together — 2026-11-21
 
 **Apply decisions** saves staged duplicate merges and transfer decisions
@@ -141,11 +159,10 @@ keyboard input and Windows and Linux were unverified.
 
 ## Same-day statement order in the ledger — 2026-11-20
 
-Date sort flips the days and preserves each statement's file order within a
-day. Running balances use the inferred posting sequence for OFX-family
-exports whose original dates run newest-first. Existing imports use retained
-evidence. See [ledger sorting and balances](search-ledger.md#search-contract)
-and [MAN-104](manual-update-backlog.md#open-items).
+This change preserved each statement's same-day file order in both Date
+directions and used the inferred posting sequence for newest-first OFX-family
+exports. The [November 21 follow-up](#date-sort-and-qif-running-balances--2026-11-21)
+revised the Date sequence and extended direction inference to QIF.
 
 On macOS arm64 with Qt 6.12.0, 13 rules-enabled Release CTest targets passed,
 including ledger, search, statement parser, statement balance and ordering,
