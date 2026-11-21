@@ -21,7 +21,9 @@ tables. It is not the release format and it is not numbered 1.
 These are not the database schema number:
 
 - The application id `1397770577`.
-- The QIF parser name `bank-v6`.
+- The QIF parser identity. New imports use `bank-v7`. Retained `bank-v6` imports
+  keep their original interpretation. A build that supports only `bank-v6`
+  refuses files containing `bank-v7` imports.
 - The SpentIt export file, which is JSON version 1.
 - `manual-v1`.
 

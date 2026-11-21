@@ -1,6 +1,6 @@
 # Project status
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 SpentIt is the local rules-enabled application. The current rules database is
 version 2, and the application version is 1.0.2. Opening a version-1 file
@@ -11,6 +11,25 @@ Build and launch are in the [README](../README.md) and [building](building.md).
 macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
+
+## Repeated payee lines and Review actions — 2026-11-21
+
+New QIF imports use the first payee line when the following lines exactly
+repeat the payee and the record otherwise validates. Review flags the
+transaction and **Inspect** opens its ledger editor. The original QIF is
+retained. Review links to the available action for the issue and explains
+when a record has been excluded from the balance. Retained QIF imports
+continue to use their original parser. See the [QIF profile](../features/009-qif-profile.md#repeated-payee-lines--accepted-2026-11-21)
+and [Review](review-sheet.md#user-interaction).
+
+On macOS arm64 with Qt 6.12.0, 19 rules-enabled Release targets passed and the
+full offscreen Import UI suite reported 126 passes. Coverage includes the
+repeated-payee import, editing, acceptance, reopening, source inspection, date
+and amount repair, duplicate decisions, transfer correction, category choices
+and interrupted-import actions. Grouped import capture passed both the I/O
+failure and crash sweeps across 153 write and sync positions each. The parser
+suite passed under AddressSanitizer and UndefinedBehaviorSanitizer with leak
+detection disabled, including 20,000 deterministic mutations.
 
 ## Rule capacity — 2026-11-20
 

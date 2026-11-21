@@ -227,7 +227,7 @@ ApplicationWindow {
         if(correctOpeningDialog.visible) modals+=Math.pow(2,24)
         if(currencyDialog.visible) modals+=Math.pow(2,25)
         if(discardDialog.visible) modals+=Math.pow(2,27)
-        if(acceptanceDialog.visible || mappedTransferConfirm.visible || reviewDifference.visible || reviewSurvivor.visible || statusDetails.visible || statusExplanationDialog.visible) modals+=Math.pow(2,28)
+        if(acceptanceDialog.visible || mappedTransferConfirm.visible || reviewDifference.visible || reviewSurvivor.visible || reviewSourceDialog.visible || statusDetails.visible || statusExplanationDialog.visible) modals+=Math.pow(2,28)
         if(manualTransferConfirmation.visible) modals+=Math.pow(2,30)
         let pending=(startupPending?1:0)+(pendingAction?2:0)+(pendingSearch?4:0)+(pendingAccountNavigation?8:0)+(pendingCounterpart?16:0)+((ledgerViewRestore || reviewViewRestoring)?32:0)+(closingRequested?64:0)+(guardHandoff?128:0)+(workflow.busy?256:0)+(probeTimer.running?512:0)
         let observedList=currentPage==="review"?reviewQuestions:ledger
@@ -397,16 +397,35 @@ ApplicationWindow {
             workflow.command("select_account",{id:item.counterpartAccount,reveal:true,batch:item.counterpartBatch,ordinal:item.counterpartOrdinal})
         })
     }
-    property var pendingImportIssue: null
-    function openImportReview(item) {
-        guard(function(){
-            rememberAccountViewport()
-            pendingImportIssue=item.record<0?item:null
-            pendingReviewInspection=item.record>=0
-            reviewInspecting=item.record>=0
-            pendingCounterpart=item.record>=0?{batch:item.batch,ordinal:item.record}:null
-            workflow.command("select_account",{id:item.account,reveal:item.record>=0,reviewBatch:item.batch,batch:item.batch,ordinal:item.record})
-        })
+    property var pendingReviewResume: null
+    function reviewIssueEnabled(issue) {
+        return !workflow.busy && (issue.issueAction==="inspect" || issue.issueAction==="source" ||
+            issue.issueAction==="categories" || !(s.archivedAccounts||[]).some(account=>account.id===issue.account))
+    }
+    function openReviewIssue(issue) {
+        if(!reviewIssueEnabled(issue))return
+        switch(issue.issueAction) {
+        case "categories": showImportCategories(issue.categorySource); break
+        case "resume":
+            guard(function(){
+                const request={batch:issue.batch,revision:issue.revision}
+                if(issue.account===s.accountId)workflow.command("resume",request)
+                else {
+                    pendingReviewResume=request
+                    rememberAccountViewport()
+                    workflow.command("select_account",{id:issue.account})
+                }
+            })
+            break
+        case "source":
+            workflow.command("evidence",{account:issue.account,batch:issue.batch,ordinal:issue.ordinal})
+            break
+        case "inspect":
+        case "repair":
+        case "duplicate":
+            inspectReviewTransaction(issue,true)
+            break
+        }
     }
     function sortedCategories(rows, order) {
         return rows.slice().sort(function(a,b){
@@ -1066,7 +1085,7 @@ ApplicationWindow {
         ShaderEffectSource {anchors.fill:parent;sourceItem:accountDragRow;live:true}
     }
     function resetNavigation() {
-        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;reviewInspecting=false;pendingReviewInspection=false;currentPage="ledger"
+        ++accountViewportRestoreSerial;accountViewports={};pendingCounterpart=null;pendingMissingDestination=null;pendingMerge=null;mergeHint="";pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;currentPage="ledger"
         navigation=[{page:"ledger",account:s.accountId||""}];navigationIndex=0
         pendingAccountNavigation=null;pendingReportNavigation=null;pendingReportRestore=null
     }
@@ -1750,7 +1769,7 @@ ApplicationWindow {
     property bool commitAfterReview: false
     function requestCommit() {
         if(s.reviewReady===false){commitAfterReview=true;workflow.command("review_load");return}
-        if((s.reviewCount||0)>0 || (s.acceptanceWarnings||[]).length>0)acceptanceDialog.open()
+        if((s.reviewQuestions||[]).some(question=>question.kind!=="notice") || (s.acceptanceWarnings||[]).length>0)acceptanceDialog.open()
         else workflow.command("commit")
     }
     function beginQuit(skipAudit) {
@@ -2387,7 +2406,7 @@ ApplicationWindow {
             if(success && ["import","confirm_import_date","confirm_import_destination","map_import","resume"].indexOf(action)>=0)workspaceFeedback=(s.importDestination || (s.importPlan||[]).length>0)?"Choose the import destination.":(s.importFeedback||s.importOutcome||"Import completed.")
             if(success && ["open","unlock"].indexOf(action)>=0 && s.startupImportCleanup)workspaceFeedback="The previous shutdown interrupted an import. That incomplete import has been removed. You can import the file again."
             if(success && action==="resolve_import_categories") {importCategories.close();workspaceFeedback=s.importFeedback||"Imported categories applied.";Qt.callLater(showImportCategories)}
-            if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock"].indexOf(action)>=0)Qt.callLater(showImportCategories)
+            if(success && ["import","confirm_import_date","confirm_import_destination","map_import","open","unlock","resume"].indexOf(action)>=0)Qt.callLater(showImportCategories)
             if(success && (action==="review_answer" || action==="review_link_preview" || action==="review_batch") && s.reviewFeedback)workspaceFeedback=s.reviewFeedback
             if(success && action==="commit")workspaceFeedback=(s.receipt||{}).summary||"Transactions accepted."
             if(success && action==="assign_transfer_batch")workspaceFeedback="Transfers assigned. Undo reverses the whole batch."
@@ -2419,7 +2438,11 @@ ApplicationWindow {
                 const request=pendingAccountMenu;pendingAccountMenu=null
                 if(success && s.accountId===request.id) accountContext.popup(request.x,request.y)
             }
-            if(action==="select_account" && pendingImportIssue){if(success)navigate("review");pendingImportIssue=null}
+            if(action==="evidence" && success && !!s.reviewSource)reviewSourceDialog.open()
+            if(action==="select_account" && pendingReviewResume) {
+                const request=pendingReviewResume;pendingReviewResume=null
+                if(success)Qt.callLater(function(){workflow.command("resume",request)})
+            }
             if(!s.active) {pendingAccountMenu=null;accountContext.close()}
             if(action==="create" && s.overwriteRequired)overwriteDialog.open()
             ledger.currentIndex=workflow.selectedRowIndex()
@@ -2428,7 +2451,7 @@ ApplicationWindow {
                 Qt.callLater(function(){if(ledger.currentIndex>=0) ledger.positionViewAtIndex(ledger.currentIndex,ListView.Contain)})
             if(!success && (action==="save_manual" || action==="save" || action==="accept_edit" || action==="preview_change" || action==="apply_change" || action==="preview_category" || action==="apply_category" || action==="rules_save" || action==="rules_apply" || action==="rules_account_apply" || action==="rules_account_undo" || action==="rules_discard" || action==="rules_preview")) {if(!rulesLeaving)pendingAction=null}
             if (!s.active || (success && (action==="create" || action==="open" || action==="unlock"))) splitViews=({})
-            if(!s.active) {acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();reviewInspecting=false;pendingReviewInspection=false;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);ledgerRuleDraftId="";returnAfterRuleApply=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
+            if(!s.active) {reviewSourceDialog.close();reviewDuplicateRecord=null;acceptanceDialog.close();mappedTransferConfirm.close();importUndoConfirm.close();importUndoPicker.close();importCategories.close();linkExclusionDialog.close();pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;addingAccount=false;bulkDialog.close();reapplyDialog.close();changePreview.close();mergePreview.close();categoryPicker.close();setRulesLeaving(false);ledgerRuleDraftId="";returnAfterRuleApply=false;matchedRuleDialog.close();pendingAction=null;pendingMerge=null;mergeHint="";dirty=false;categoryDirty=false;committedEditing=false}
             if(action==="query" && pendingSearch) {
                 let change=pendingSearch;pendingSearch=null
                 if(success) {
@@ -2457,7 +2480,7 @@ ApplicationWindow {
                 categorySaving=false
                 if(categoryDirty && s.active)focusCategoryEditor()
             }
-            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewInspection=false;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
+            if(!success && action==="select_account"){pendingAccountNavigation=null;pendingCounterpart=null;pendingMissingDestination=null;pendingReviewLedger=null;suppressReviewSelectionClear=false;reviewReturnPending=false;pendingDuplicateReveal=null;switchingRulesAccount=false}
             if(success) {
                 if(action==="date_format"){
                     if(search.text===appliedFilter)search.text=s.filter||""
@@ -2487,16 +2510,18 @@ ApplicationWindow {
                         showNavigationDestination(request.index,request.page,request.focusLedger)
                     }
                     else pushNavigation("ledger")
-                    if(pendingReviewInspection){currentPage="review";editorClosed=false;pendingReviewInspection=false}
                     loadEditor();if(!switchingRulesAccount)loadRulesForm();loadCategoryForm();switchingRulesAccount=false
                     if(pendingReviewLedger){
                         const request=pendingReviewLedger;pendingReviewLedger=null
-                        editorClosed=true;reviewInspecting=false
+                        editorClosed=!request.edit
+                        reviewDuplicateRecord=request.decide?request:null
                         Qt.callLater(function(){
                             const index=workflow.occurrenceIndex(request.batch,request.ordinal)
-                            if(index<0)return
-                            ledger.currentIndex=index
-                            ledger.positionViewAtIndex(index,ListView.Contain)
+                            if(index>=0){
+                                ledger.currentIndex=index
+                                ledger.positionViewAtIndex(index,request.edit?ListView.Beginning:ListView.Contain)
+                            }
+                            if(request.edit && selected.importWarning && editEnabled)editPayee.forceActiveFocus()
                         })
                     }
                     if(pendingDuplicateReveal){
@@ -2688,13 +2713,14 @@ ApplicationWindow {
         }
     }
     ListModel {id:importCategoryModel}
-    function showImportCategories() {
+    function showImportCategories(source) {
         let pending=s.importCategoryDecisions||[]
-        if(!pending.length)return
-        importCategories.source=pending[0].source
+        const decision=source?pending.find(item=>item.source===source):pending[0]
+        if(!decision)return
+        importCategories.source=decision.source
         allImportCategories.checked=true
         importCategoryModel.clear()
-        for(let name of pending[0].names)importCategoryModel.append({categoryName:name,selected:true})
+        for(let name of decision.names)importCategoryModel.append({categoryName:name,selected:true})
         importCategories.open()
     }
     HelpDialog {
@@ -3637,22 +3663,21 @@ ApplicationWindow {
         const index=rows.findIndex(row=>row.key===duplicateOriginKey)
         if(rows.length)showDuplicateInLedger(rows[(index+1)%rows.length])
     }
-    property bool reviewInspecting: false
-    property bool pendingReviewInspection: false
+    property var reviewDuplicateRecord: null
     // Inspect leaves Review. Keep staged matches until Back returns, or until a later page leaves that trip.
     property bool suppressReviewSelectionClear: false
     property bool reviewReturnPending: false
     property var pendingReviewLedger: null
-    function inspectReviewTransaction(row) {
+    function inspectReviewTransaction(row, edit) {
         guard(function(){
             captureReviewView()
             reviewScrollPosition=reviewQuestions.contentY
             reviewReturnPending=true
             suppressReviewSelectionClear=true
-            reviewInspecting=false
             editorClosed=true
-            pendingReviewLedger={batch:row.batch,ordinal:row.ordinal}
-            workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal})
+            const decide=row.issueAction==="duplicate" || row.issueAction==="repair"
+            pendingReviewLedger={batch:row.batch,ordinal:row.ordinal,edit:!!edit,decide:decide}
+            workflow.command("select_account",{id:row.account,reveal:true,batch:row.batch,ordinal:row.ordinal,sourceOnly:decide})
         })
     }
     property real reviewScrollPosition: 0
@@ -3668,6 +3693,7 @@ ApplicationWindow {
     onReviewDecisionQuestionsChanged: Qt.callLater(reconcileReviewDecisions)
     onCurrentPageChanged: {
         categoryVisitAdditions=[];categorySort="ascending"
+        if(currentPage!=="ledger")reviewDuplicateRecord=null
         if(currentPage==="review") {
             Qt.callLater(reconcileReviewDecisions)
             if(reviewReturnPending){reviewReturnPending=false;reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
@@ -3707,10 +3733,12 @@ ApplicationWindow {
     readonly property var reviewProblemRows: {
         let represented={}
         for(let q of s.reviewQuestions||[]) {
-            if(q.batch && q.ordinal>=0)represented[q.batch+":"+q.ordinal]=true
-            for(let row of q.rows)represented[row.batch+":"+row.ordinal]=true
+            if(q.kind==="notice")continue
+            represented[q.account+":"+q.batch+":"+q.ordinal]=true
+            for(let row of q.rows)represented[row.account+":"+row.batch+":"+row.ordinal]=true
         }
-        return (s.acceptanceWarnings||[]).filter(w=>!w.missingDestination && !unmatchedTransferWarning(w) && !represented[w.batch+":"+w.ordinal])
+        return (s.acceptanceWarnings||[]).filter(w=>!w.missingDestination && !unmatchedTransferWarning(w) &&
+            !represented[w.account+":"+w.batch+":"+w.ordinal])
     }
     readonly property var acceptanceDialogRows: {
         const warnings=s.acceptanceWarnings||[]
@@ -3758,7 +3786,7 @@ ApplicationWindow {
     }
     function reviewProblems() {return reviewProblemRows}
     readonly property var orderedReviewRows: {
-        const order={same:0,link:1,correction:2}
+        const order={same:0,link:1,notice:2,correction:3}
         const questions=s.reviewQuestions||[], components=reviewLinkComponents(questions)
         // Keep related cards adjacent without moving inferred mirrors into the
         // initial one-to-one section when a checkbox is clicked.
@@ -4413,10 +4441,15 @@ ApplicationWindow {
             Repeater {model:reviewProblems()
                 delegate:RowLayout {required property var modelData;Layout.fillWidth:true
                     Label {Layout.fillWidth:true;wrapMode:Text.Wrap;textFormat:Text.PlainText;text:window.reviewAccountName(modelData.account)+" · "+modelData.reason+(modelData.overridable?" — Can accept anyway":" — Must be fixed before accepting")}
-                    Button {text:"Review…";enabled:!workflow.busy;onClicked:{if((s.importCategoryDecisions||[]).length>0)showImportCategories();else if(modelData.batch)openImportReview({account:modelData.account,batch:modelData.batch,record:modelData.ordinal===undefined || modelData.ordinal===null?-1:modelData.ordinal});else guard(function(){if(modelData.account===s.accountId)navigate("ledger");else workflow.command("select_account",{id:modelData.account})})}}
+                    Button {
+                        text:modelData.actionLabel
+                        visible:!!modelData.issueAction && s.reviewReady!==false
+                        enabled:reviewIssueEnabled(modelData)
+                        onClicked:openReviewIssue(modelData)
+                    }
                 }
             }
-            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.importFailures||0)>0;text:(s.importFailures||0)+" import problems will remain after accepting. Repair the affected records below or undo their import."}
+            Label {Layout.fillWidth:true;wrapMode:Text.Wrap;visible:(s.importFailures||0)>0;text:(s.importFailures||0)===1?"1 import problem will remain after accepting. Check the actions below.":s.importFailures+" import problems will remain after accepting. Check the actions below."}
             Button {objectName:"resolveMappedTransfers";text:"Set up imported transfers…";visible:!!s.importGroup && s.importGroup.unresolvedTransfers>0;enabled:!s.readOnly && !processingIncomplete && !workflow.busy;onClicked:mappedTransferConfirm.open()}
 
             }
@@ -4470,14 +4503,19 @@ ApplicationWindow {
             activeFocusOnTab:true;Accessible.role:Accessible.List;Accessible.name:"Review questions"
             Keys.onPressed:function(event){
                 if(event.key===Qt.Key_Up || event.key===Qt.Key_Down){currentIndex=Math.max(0,Math.min(count-1,currentIndex+(event.key===Qt.Key_Down?1:-1)));positionViewAtIndex(currentIndex,ListView.Contain);event.accepted=true}
-                else if((event.key===Qt.Key_Return || event.key===Qt.Key_Enter) && currentItem && currentItem.modelData.rows.length){inspectReviewTransaction(currentItem.modelData.rows[0]);event.accepted=true}
+                else if((event.key===Qt.Key_Return || event.key===Qt.Key_Enter) && currentItem && !workflow.busy){
+                    const question=currentItem.modelData
+                    if(question.issueAction)openReviewIssue(question)
+                    else if(question.rows.length)inspectReviewTransaction(question.rows[0])
+                    event.accepted=true
+                }
             }
             clip:true;spacing:4;contentWidth:count>0?Math.max(width,1000):width;model:orderedReviewQuestions()
             onModelChanged:{reviewViewRestoring=true;Qt.callLater(function(){restoreReviewView();reviewViewRestoring=false})}
             onMovementEnded:captureReviewView()
     Shortcut {objectName:"reviewUndoShortcut";
         sequences:[StandardKey.Undo]
-        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
+        enabled:reviewSheet.visible && !actionUndoConfirm.visible && !acceptanceDialog.visible && !mappedTransferConfirm.visible && !importUndoPicker.visible && !importUndoConfirm.visible && !reviewDifference.visible && !reviewSurvivor.visible && !reviewSourceDialog.visible && !!s.canUndoAction && !workflow.busy && !(window.activeFocusItem && typeof window.activeFocusItem.undo === "function")
         onActivated:undoEdit()
     }
             ScrollBar.vertical:UsableScrollBar {}
@@ -4503,7 +4541,7 @@ ApplicationWindow {
                 ColumnLayout {id:questionContent;width:parent.width;spacing:4
                 Rectangle {Layout.fillWidth:true;Layout.preferredHeight:2;color:theme.border}
                 Item {Layout.preferredHeight:6}
-                Label {text:questionCard.modelData.kind==="same"?"Possible duplicates":questionCard.modelData.kind==="link"?"Possible transfers":"Import problems";visible:questionCard.modelData.kind!=="same" && (questionCard.index===0 || orderedReviewQuestions()[questionCard.index-1].kind!==questionCard.modelData.kind);font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
+                Label {text:questionCard.modelData.kind==="same"?"Possible duplicates":questionCard.modelData.kind==="link"?"Possible transfers":questionCard.modelData.kind==="notice"?"Import warnings":"Import problems";visible:questionCard.modelData.kind!=="same" && (questionCard.index===0 || orderedReviewQuestions()[questionCard.index-1].kind!==questionCard.modelData.kind);font.bold:true;font.pixelSize:16;Layout.fillWidth:true}
                 Label {text:questionCard.modelData.accountName||"Import problems";font.bold:true;Layout.fillWidth:true}
                 RowLayout {
                     Layout.fillWidth:true
@@ -4517,7 +4555,7 @@ ApplicationWindow {
                         }
                         ToolTip.visible:hovered;ToolTip.text:"Choose at least two transaction rows in an ambiguous group before including the match."
                     }
-                    Label {text:questionCard.modelData.reason;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    Label {text:questionCard.modelData.reason;textFormat:Text.PlainText;wrapMode:Text.Wrap;Layout.fillWidth:true}
                     Button {text:reviewMergeLabel(questionCard.modelData.kind,questionCard.modelData.rows,questionCard.chosen);objectName:"reviewYes";visible:questionCard.modelData.kind!=="correction" && questionCard.modelData.rows.length>1;enabled:!workflow.busy && (questionCard.modelData.kind==="same"?questionCard.mergeRows.length>=2:questionCard.counterpart>=1);onClicked:{
                         if(questionCard.modelData.kind==="same")answerReview(questionCard.modelData,"merge",questionCard.mergeRows)
                         else {reviewScrollPosition=reviewQuestions.contentY;workflow.command("review_link_preview",{question:questionCard.modelData.key,generation:s.reviewGeneration,answer:"link",onlyThisPair:true,selected:[questionCard.modelData.rows[0],questionCard.modelData.rows[questionCard.counterpart]],leftAllocation:questionCard.leftAllocation,rightAllocation:questionCard.rightAllocation})}
@@ -4530,7 +4568,13 @@ ApplicationWindow {
                         checked:(reviewLinkChoices[questionCard.modelData.key]||{}).action==="accept_missing"
                         onClicked:selectWaitingTransfers([questionCard.modelData],checked)
                     }
-                    Button {objectName:"reviewCorrect";text:"Correct";visible:questionCard.modelData.kind==="correction";enabled:!workflow.busy;onClicked:openImportReview({account:questionCard.modelData.account,batch:questionCard.modelData.batch,record:questionCard.modelData.ordinal})}
+                    Button {
+                        objectName:"reviewIssue_"+questionCard.modelData.issueAction
+                        text:questionCard.modelData.actionLabel
+                        visible:!!questionCard.modelData.issueAction && questionCard.modelData.kind!=="notice"
+                        enabled:reviewIssueEnabled(questionCard.modelData)
+                        onClicked:openReviewIssue(questionCard.modelData)
+                    }
                 }
                 RowLayout {
                     visible:questionCard.modelData.kind==="link" && questionCard.modelData.rows.length>1
@@ -4562,7 +4606,7 @@ ApplicationWindow {
                         Label {text:reviewRow.modelData.committed?"Accepted":"New";Layout.preferredWidth:65}
                         Label {text:reviewRow.modelData.date;Layout.preferredWidth:95;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.accountName;Layout.preferredWidth:105;elide:Text.ElideRight;textFormat:Text.PlainText}
-                        Label {text:reviewRow.modelData.payee;Layout.fillWidth:true;Layout.minimumWidth:100;elide:Text.ElideRight;textFormat:Text.PlainText;MouseArea {anchors.fill:parent;onDoubleClicked:inspectReviewTransaction(reviewRow.modelData)}}
+                        Label {text:reviewRow.modelData.payee;Layout.fillWidth:true;Layout.minimumWidth:100;elide:Text.ElideRight;textFormat:Text.PlainText;MouseArea {anchors.fill:parent;onDoubleClicked:questionCard.modelData.issueAction==="inspect"?openReviewIssue(questionCard.modelData):inspectReviewTransaction(reviewRow.modelData)}}
                         Button {flat:true;text:reviewRow.modelData.splits.length>1?(reviewRow.showSplits?"▾ ":"▸ ")+reviewRow.modelData.splits.length+" splits":(reviewRow.modelData.splits[0]||{}).categoryDisplay||"Uncategorized";Layout.preferredWidth:145;onClicked:reviewRow.showSplits=!reviewRow.showSplits}
                         Label {text:reviewRow.modelData.withdrawal;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight;textFormat:Text.PlainText}
                         Label {text:reviewRow.modelData.deposit;Layout.preferredWidth:100;horizontalAlignment:Text.AlignRight;textFormat:Text.PlainText}
@@ -4570,7 +4614,12 @@ ApplicationWindow {
                         Item {Layout.preferredWidth:160;Layout.preferredHeight:40
                         Button {anchors.fill:parent;objectName:"hideLinkSuggestions";text:"Hide suggestions…";ToolTip.text:"Hide transfer suggestions like this…";ToolTip.visible:hovered;visible:questionCard.modelData.kind==="link" && questionCard.modelData.rows.length>1;enabled:!workflow.busy;onClicked:openLinkExclusion(reviewRow.modelData,null)}
                         }
-                        Button {Layout.preferredWidth:100;text:"Inspect";enabled:!workflow.busy;onClicked:inspectReviewTransaction(reviewRow.modelData)}
+                        Button {
+                            objectName:questionCard.modelData.kind==="notice"?"reviewPayeeInspect":"reviewRowInspect"
+                            Layout.preferredWidth:100;text:"Inspect";enabled:!workflow.busy
+                            visible:questionCard.modelData.kind!=="correction"
+                            onClicked:questionCard.modelData.kind==="notice"?openReviewIssue(questionCard.modelData):inspectReviewTransaction(reviewRow.modelData)
+                        }
                     }
                     Repeater {model:reviewRow.showSplits?reviewRow.modelData.splits:[];delegate:Label {required property var modelData;Layout.fillWidth:true;leftPadding:24;text:modelData.amount+" · "+modelData.categoryDisplay+" · "+modelData.memo;textFormat:Text.PlainText;wrapMode:Text.Wrap}}
                     Label {objectName:"reviewAmountDifference_"+reviewRow.index;visible:questionCard.modelData.kind==="link" && reviewRow.index>0 && !!reviewRow.modelData.amountsDiffer;text:"Amounts differ — review before linking";color:theme.warning;wrapMode:Text.Wrap;Layout.fillWidth:true}
@@ -4605,8 +4654,6 @@ ApplicationWindow {
                 }
             }
         }
-        Item {id:reviewInspector;Layout.fillWidth:true;Layout.preferredHeight:reviewInspecting && !!selected.batch?330:0;visible:reviewInspecting && !!selected.batch;clip:true}
-        Button {text:"Close inspection";visible:reviewInspecting;onClicked:guard(function(){reviewInspecting=false})}
         UsableScrollView {id:missingDestinationScroll;Layout.fillWidth:true;visible:missingDestinationWarningRows.length>0;Layout.preferredHeight:Math.min(140,missingDestinationList.implicitHeight);contentWidth:availableWidth
             ColumnLayout {id:missingDestinationList;width:missingDestinationScroll.availableWidth
                 Repeater {model:missingDestinationWarningRows
@@ -5329,7 +5376,7 @@ ApplicationWindow {
                     objectName:"ledgerRow_"+index
                     Accessible.role:Accessible.ListItem
                     Accessible.name:record.date+", "+record.payee+", "+record.category+", withdrawal "+record.withdrawal+", deposit "+record.deposit+", balance "+record.balance+" "+(s.currency||"")+", "+record.status
-                    Accessible.description:(possibleDuplicate?"Possible duplicate. ":"")+(samePayment?"Same payment. ":"")+(mergedMark?"Merged. ":"")+(linkedMark?linkedRows[duplicateKey]+". ":"")
+                    Accessible.description:(possibleDuplicate?"Possible duplicate. ":"")+(samePayment?"Same payment. ":"")+(mergedMark?"Merged. ":"")+(linkedMark?linkedRows[duplicateKey]+". ":"")+(record.importWarning||"")
                     Accessible.selectable:true
                     Accessible.selected:!!(s.selectionKeys||{})[record.batch+":"+record.ordinal]
                     Accessible.focusable:true
@@ -5360,13 +5407,14 @@ ApplicationWindow {
                     readonly property bool linkedMark:!window.reportLedger && !!linkedRows[duplicateKey]
                     readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
                     readonly property bool comparingPayment:samePayment && !!transferOrigin && (duplicateKey===transferOrigin.key || (transferOrigin.peers||[]).some(peer=>peer.key===duplicateKey))
-                    readonly property string attentionTip:(possibleDuplicate?"Possible duplicate":"")+(samePayment?(possibleDuplicate?" · ":"")+"Same payment":"")+(mergedMark?((possibleDuplicate||samePayment)?" · ":"")+"Merged":"")+(linkedMark?((possibleDuplicate||samePayment||mergedMark)?" · ":"")+linkedRows[duplicateKey]:"")
+                    readonly property string attentionTip:(record.importWarning?record.importWarning+" ":"")+(possibleDuplicate?"Possible duplicate":"")+(samePayment?(possibleDuplicate?" · ":"")+"Same payment":"")+(mergedMark?((possibleDuplicate||samePayment)?" · ":"")+"Merged":"")+(linkedMark?((possibleDuplicate||samePayment||mergedMark)?" · ":"")+linkedRows[duplicateKey]:"")
                     border.width:(comparingPayment||comparingDuplicate)?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingPayment?theme.transferDuplicate:comparingDuplicate?theme.duplicate:theme.focus
                     Row {
                         Rectangle {width:possibleDuplicate?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
                         Rectangle {width:samePayment?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.samePayment;color:theme.transferDuplicate}
                         Rectangle {width:mergedMark?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.mergedMark;color:theme.merged}
                         Rectangle {width:linkedMark?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.linkedMark;color:theme.linked}
+                        Rectangle {width:4;height:ledgerRow.rowHeight;visible:!!record.importWarning;color:theme.warning}
                     }
                     ToolTip.visible:duplicateHover.hovered && attentionTip.length>0 && columnTipKey.length===0
                     ToolTip.text:attentionTip
@@ -5499,8 +5547,8 @@ ApplicationWindow {
         // One persistent editor, visually attached to the inspected transaction.
         // Its fields and split buffer never belong to a recycled delegate.
         property bool inlineRow: !!window.ledgerEditorHost && window.ledgerEditorHost.expanded
-        parent:currentPage==="review"?reviewInspector:(inlineRow?window.ledgerEditorHost.editorSlot:reviewPanel)
-        visible:!!s.active && !!selected.batch && !window.editorClosed && (currentPage!=="review" || reviewInspecting)
+        parent:inlineRow?window.ledgerEditorHost.editorSlot:reviewPanel
+        visible:!!s.active && !!selected.batch && !window.editorClosed && (currentPage==="ledger" || window.reportLedger)
         Keys.priority:Keys.AfterItem
         Keys.onPressed:function(event) {
             if(event.key===Qt.Key_Return || event.key===Qt.Key_Enter)event.accepted=true
@@ -5517,6 +5565,7 @@ ApplicationWindow {
                 width:editorScroll.availableWidth
                 Label {textFormat:Text.PlainText;text:"Imported amount: "+(selected.original||"Unavailable");visible:!!selected.original;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.diagnostic||"";color:theme.error;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
+                Label {objectName:"transactionImportWarning";text:selected.importWarning||"";color:theme.warning;visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.sourceClasses ? "Details from file — "+selected.sourceClasses : "";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 Label {textFormat:Text.PlainText;text:selected.committed && !s.committedChangesSupported?"This file does not support editing accepted transactions.":"";visible:text.length>0;wrapMode:Text.Wrap;Layout.fillWidth:true}
                 RowLayout {
@@ -5610,10 +5659,13 @@ ApplicationWindow {
                     Button {objectName:"transactionRuleAction";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Create rule…";enabled:!workflow.busy && canAddRule && ruleCreateChoices().length>0;onClicked:transactionRuleAction()}
                     Button {objectName:"editTransactionRule";visible:!!s.rulesSupported && !!selected.batch && !selected.newManual;text:"Edit rule…";enabled:!workflow.busy && ruleChoices().length>0;onClicked:editTransactionRule()}
                     Button {objectName:"addSplit";visible:editEnabled;text:"Add split";enabled:splitModel.count<1000;onClicked:{splitModel.append({category:"",memo:"",amount:"0",categoryId:"",bindingRevision:"",allocationId:"",categoryDisplay:"Uncategorized",categoryTouched:true,memoTouched:true,transferAccount:""});dirty=true}}
-                    Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
+                    Button {objectName:"saveImportRepair";visible:editEnabled && !!selected.repair;text:"Save repair";enabled:dirty;onClicked:saveEditor()}
+                    Button {visible:!!reviewDuplicateRecord && !editor.inlineRow;text:"Close editor";onClicked:guard(function(){editorClosed=true;ledger.forceActiveFocus()})}
+                    Label {visible:editEnabled;textFormat:Text.PlainText;text:splitEditMessage!==""?splitEditMessage:dirty?"Press Enter to save, or Escape to discard your changes.":selected.repair || !editor.inlineRow?"":"Saved · double-click the transaction to close";wrapMode:Text.Wrap;Layout.fillWidth:true}
                 }
                 RowLayout {
-                    visible:currentPage==="review" && !!selected.editable && !selected.repair && !s.readOnly
+                    visible:currentPage==="ledger" && !!selected.editable && !selected.repair && !!window.reviewDuplicateRecord &&
+                        selected.batch===window.reviewDuplicateRecord.batch && selected.ordinal===window.reviewDuplicateRecord.ordinal && !s.readOnly
                     Label {textFormat:Text.PlainText;text:selected.decision===0?"Unresolved match":selected.decision===2?(selected.removedDuplicate?"Keep removed: ":"Excluded duplicate: ")+(selected.duplicate||""):"Include as new"}
                     Button {objectName:"includeSeparate";text:"Include as separate transaction";onClicked:guard(function(){workflow.command("decide",{duplicate:false})})}
                     UsableComboBox {id:candidate;objectName:"duplicateCandidate";model:selected.candidates||[];textRole:"label";Layout.fillWidth:true;Accessible.name:"Matching transaction"}
@@ -5645,6 +5697,18 @@ ApplicationWindow {
                 }
                 TextArea {objectName:"originalSnippet";visible:sourceToggle.enabled && sourceToggle.checked;text:selected.source||"";readOnly:true;selectByMouse:true;textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap;Layout.fillWidth:true;Accessible.name:"Original imported transaction"}
 
+            }
+        }
+    }
+    Dialog {
+        id:reviewSourceDialog;objectName:"reviewSourceDialog";title:"Original import source"
+        modal:true;anchors.centerIn:parent;width:Math.min(window.width-40,720);height:Math.min(window.height-40,500)
+        standardButtons:Dialog.Close
+        contentItem:UsableScrollView {
+            contentWidth:availableWidth
+            TextArea {
+                objectName:"reviewSourceText";text:s.reviewSource||"";readOnly:true;selectByMouse:true
+                textFormat:TextEdit.PlainText;wrapMode:TextEdit.Wrap;Accessible.name:"Original source"
             }
         }
     }

@@ -1,6 +1,6 @@
 # Unified Review sheet
 
-Last updated: 2026-11-18
+Last updated: 2026-11-21
 
 The release rules database is version 2. Incomplete preparation is cleaned up on
 cancellation or the next open. Completed uncommitted imports remain. Accept
@@ -252,9 +252,9 @@ transactions, and leaves the transaction editor closed. **Back** returns to
 Review with the question that was on screen. If an edit removes that question,
 Review shows the next question that remains. Inspect keeps Include match and
 checked rows for that return. Leaving Review another way clears them. A ledger
-search that would hide the transaction is cleared. **Correct** still opens the
-transaction panel on Review, including **Close inspection**. Enter on a question
-and double-clicking a payee use Inspect. Link questions
+search that would hide the transaction is cleared. Enter on a question and
+double-clicking a payee use Inspect. For a repeated-payee import warning,
+**Inspect** also opens the ledger editor so the payee can be edited. Link questions
 stay in Review. Ledger Link joins two existing transactions. The count is outstanding questions, including correction tasks, rather
 than candidate transactions. Changing account/import, inspecting a record or
 attempting Commit does not resolve a question. The selected-import summary is
@@ -289,8 +289,14 @@ splits remain unchanged. No currency conversion is inferred. Replacing a purely
 generated counterpart is identified in the question; independently supported
 postings are retained.
 
-**Needs correction** tasks use the existing record/import repair paths. Invalid
-records cannot be accepted by acknowledging a warning. Commit can accept valid
+**Repair record** opens the existing account ledger editor for repairable date
+or amount problems and retains the inclusion or duplicate decision after saving.
+**Review duplicate** brings a record that needs a duplicate disposition to that
+editor, including a reimport of a previously removed transaction. **Inspect**
+opens the ledger for transfer issues. Import-level issues offer **Choose
+categories** or **Resume import** when available. **View source** displays the
+original text for records that cannot be repaired. Review identifies what was
+excluded from the balance and points to Undo import. Accept can take valid
 transactions while failures remain visible. Review remains accessible when its
 count reaches zero if a Review decision can still be undone.
 

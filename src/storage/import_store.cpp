@@ -1682,9 +1682,10 @@ qif::Result ImportStore::parsed_source(std::string_view id,const std::function<v
     Statement association(impl_->db,"SELECT b.source_account,b.parser,h.format,h.grammar FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE b.id=?");association.text(1,id);if(!association.row())fail(SQLITE_CORRUPT,"Source header is missing");
     if(association.bytes(1)=="manual-v1")return manual_codec::parse(bytes,currency);
     if(association.bytes(1)==qif::parser_version || association.bytes(2)=="qif") {
-        if(association.null(0))return qif::parse(bytes,b.profile,currency,checkpoint);
+        const bool recover=association.bytes(1)==qif::parser_version;
+        if(association.null(0))return qif::parse(bytes,b.profile,currency,checkpoint,{},recover);
         const auto document=qif::index_document(bytes,checkpoint);
-        return qif::parse_account(bytes,document,static_cast<std::size_t>(association.integer(0)),b.profile,currency,checkpoint);
+        return qif::parse_account(bytes,document,static_cast<std::size_t>(association.integer(0)),b.profile,currency,checkpoint,recover);
     }
     if(association.null(0))fail(SQLITE_CORRUPT,"Statement import is missing its account mapping");
     statements::Index index;index.parser=association.bytes(1);index.format=association.bytes(2);index.grammar=association.bytes(3);index.explicit_accounts=true;
@@ -1793,7 +1794,11 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         return {id,std::move(source),{}, {imports::Disposition::unresolved,{}},{}};
     }
     Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
-    const auto parsed=parser.bytes(0)=="manual-v1" ? manual_codec::parse(src.bytes(0),source_currency) : parser.bytes(0)==qif::parser_version ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch)) : statements::parse_occurrence(src.bytes(0),parser.bytes(0),source_currency,b.profile);
+    const auto version=parser.bytes(0);
+    const auto parsed=version=="manual-v1" ? manual_codec::parse(src.bytes(0),source_currency) :
+        version==qif::parser_version || version==qif::strict_parser_version
+        ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch),version==qif::parser_version)
+        : statements::parse_occurrence(src.bytes(0),version,source_currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
     auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
     load_associated_ids(impl_->db,id,source);
@@ -2361,7 +2366,8 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
     ScopedStatements read_plans(impl_->db);
         if(projected && !current && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
-        Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
+        Statement entries(impl_->db,"SELECT h.batch,h.ordinal,h.revision,r.sequence,coalesce(s.format='qif' AND s.uninterpreted=?1,0) FROM entry_heads h JOIN entry_values e USING(batch,ordinal,revision) JOIN records r ON r.batch=h.batch AND r.ordinal=h.ordinal LEFT JOIN source_occurrences s ON s.batch=h.batch AND s.ordinal=h.ordinal WHERE h.batch IN(SELECT id FROM batches WHERE account_id=spentit_account()) AND e.active=1 ORDER BY e.date,r.sequence");
+        entries.text(1,qif::repeated_payee_evidence);
         const bool cache_current=current && projected && !impl_->verifying && sqlite3_get_autocommit(impl_->db);
         if(cache_current && impl_->ledger_entry_changes!=sqlite3_total_changes64(impl_->db)){
             impl_->ledger_entries.clear();impl_->ledger_entry_bytes=0;impl_->ledger_entry_changes=sqlite3_total_changes64(impl_->db);
@@ -2369,15 +2375,15 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
         while(entries.row()){
             imports::Occurrence identity{entries.bytes(0),static_cast<std::size_t>(entries.integer(1))};const auto revision=entries.integer(2);
             const auto cached=impl_->ledger_entries.find(identity);
-            if(cache_current && cached!=impl_->ledger_entries.end() && cached->second.revision==revision){result.push_back({identity,entries.integer(3),cached->second.draft,true});continue;}
+            if(cache_current && cached!=impl_->ledger_entries.end() && cached->second.revision==revision){result.push_back({identity,entries.integer(3),cached->second.draft,true,app::LedgerSourceOrder::none,entries.integer(4)!=0});continue;}
             auto snapshot=entry_snapshot(identity,revision);
             if(cache_current){
                 const auto& d=snapshot.draft;const auto bytes=sizeof(snapshot)+256+VerificationRows::text_size(identity.batch)+VerificationRows::text_size(d.date)+VerificationRows::text_size(d.payee)+VerificationRows::text_size(d.memo)+VerificationRows::text_size(d.remainder_allocation)+VerificationRows::transaction_size(d.transaction)+(d.payee_rule?VerificationRows::text_size(d.payee_rule->identity):0)+(d.memo_rule?VerificationRows::text_size(d.memo_rule->identity):0);
                 if(bytes<=64*1024*1024 && impl_->ledger_entry_bytes<=64*1024*1024-bytes){impl_->ledger_entries.insert_or_assign(identity,snapshot);impl_->ledger_entry_bytes+=bytes;}
             }
-            result.push_back({identity,entries.integer(3),std::move(snapshot.draft),true});
+            result.push_back({identity,entries.integer(3),std::move(snapshot.draft),true,app::LedgerSourceOrder::none,entries.integer(4)!=0});
         }
-        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};result.push_back({identity,pending.integer(2),*load_row(identity,false).draft,false});}}
+        if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};auto row=load_row(identity,false);result.push_back({identity,pending.integer(2),std::move(*row.draft),false,app::LedgerSourceOrder::none,row.source.format=="qif" && row.source.uninterpreted==qif::repeated_payee_evidence});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});
         std::map<std::string_view,app::LedgerSourceOrder> orders;
@@ -2522,14 +2528,14 @@ void ImportStore::verify(const app::OperationContext* context) const {
     }
     {diag::Span phaseSpan(diag::Code::accounts);verify_account_commands(context);}
     {diag::Span phaseSpan(diag::Code::groups);verify_import_groups(context);}
-    const auto acceptance_check=std::string("SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','ofx-sgml-1','ofx-xml-2','manual-v1') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) ")
+    const auto acceptance_check=std::string("SELECT 1 FROM batches b WHERE parser NOT IN('bank-v6','bank-v7','ofx-sgml-1','ofx-xml-2','manual-v1') OR (state=1 AND NOT EXISTS(SELECT 1 FROM operations o WHERE o.batch=b.id)) ")
         +"OR revision!=(SELECT max(revision) FROM events WHERE batch=b.id) OR (SELECT count(*) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence>(SELECT history_cut FROM document_session)) != b.revision-coalesce((SELECT max(e.revision) FROM events e JOIN history_order h ON h.batch=e.batch AND h.event_revision=e.revision WHERE e.batch=b.id AND h.sequence<=(SELECT history_cut FROM document_session)),-1) "
         +"UNION ALL SELECT 2 FROM versions v JOIN batches b ON b.id=v.batch WHERE v.revision>b.revision "
         +"UNION ALL SELECT 3 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id) "
         +"UNION ALL SELECT 4 FROM account a WHERE frozen!="+acceptance_frozen_predicate("a");
     Statement invalid(impl_->db,acceptance_check.c_str());
     if(invalid.row()){const auto code=invalid.integer(0);fail(SQLITE_CORRUPT,code==1?"Import revision history is inconsistent":code==2?"Transaction revision exceeds its import":code==3?"Import source has no owner":"Account acceptance state is inconsistent");}
-    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='manual-v1' AND h.format='manual' AND h.grammar='manual') OR (b.parser='bank-v6' AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso')))");
+    Statement headers(impl_->db,"SELECT 1 FROM sources s WHERE NOT EXISTS(SELECT 1 FROM source_headers h WHERE h.source_id=s.id) UNION ALL SELECT 1 FROM batches b JOIN source_headers h ON h.source_id=b.source_id WHERE NOT ((b.parser='manual-v1' AND h.format='manual' AND h.grammar='manual') OR (b.parser IN('bank-v6','bank-v7') AND h.format='qif' AND h.grammar='qif') OR (b.parser='ofx-sgml-1' AND h.grammar='ofx-sgml' AND h.format IN('ofx','qfx','qbo','aso')) OR (b.parser='ofx-xml-2' AND h.grammar='ofx-xml' AND h.format IN('ofx','qfx','qbo','aso')))");
     if(headers.row()) fail(SQLITE_CORRUPT,"Source evidence does not match its import");
     Statement manual_history(impl_->db,"SELECT 1 FROM batches b LEFT JOIN manual_creations m ON m.batch=b.id WHERE (b.parser='manual-v1')!=(m.batch IS NOT NULL) OR (m.batch IS NOT NULL AND m.generation>(SELECT revision FROM mutation_generation WHERE singleton=1))");
     if(manual_history.row())fail(SQLITE_CORRUPT,"Manual creation history is inconsistent");

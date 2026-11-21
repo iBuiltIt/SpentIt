@@ -233,12 +233,18 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         for(const auto& b:account_batches)manual_batches.emplace(b.id,b.manual);
         for(const auto& row:current_ledger()) {
             if(row.identity.batch.starts_with("~transfer-"))continue;
-            rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
+            const auto [entry,inserted]=rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
+            if(inserted && row.repeated_payee && !row.committed)
+                result.questions.push_back({"payee:"+review_key(row.identity),app::ReviewKind::notice,account.identity,account.name,std::string(qif::repeated_payee_warning),row.identity.batch,row.identity.ordinal,{entry->second},{},0,app::ReviewIssueAction::inspect});
         }
         for(const auto& b:account_batches)if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){
-            if(b.processing_incomplete){result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"Resume this import before reviewing its transactions",b.id,{},{}});continue;}
+            if(b.processing_incomplete){
+                result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"This import is unfinished.",b.id,{},{},{},0,app::ReviewIssueAction::resume,b.revision});
+                continue;
+            }
             const auto parsed=parsed_source(b.id);
-            if(parsed.diagnostic)result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,"Needs correction: import could not be fully read",b.id,{},{}});
+            if(parsed.diagnostic)result.questions.push_back({"file:"+b.id,app::ReviewKind::correction,account.identity,account.name,
+                "The imported file could not be fully read. "+std::string(qif::message(*parsed.diagnostic))+" Unread records are excluded from the balance. Use Undo import to check whether you can remove this import.",b.id,{},{},{},0,app::ReviewIssueAction::view_source});
             std::set<std::size_t> accepted;
             Statement accepted_rows(impl_->db,"SELECT ordinal FROM accepted_transactions WHERE batch=?");accepted_rows.text(1,b.id);
             while(accepted_rows.row())accepted.insert(static_cast<std::size_t>(accepted_rows.integer(0)));
@@ -246,7 +252,15 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
                 if(accepted.contains(i))continue;
                 const imports::Occurrence id{b.id,i};const auto row=load_row(id,false);
                 if(row.excluded_by_clear)continue;
-                if(!row.draft){result.questions.push_back({"repair:"+review_key(id),app::ReviewKind::correction,account.identity,account.name,"Needs correction: repair this imported record",b.id,i,{}});continue;}
+                if(!row.draft){
+                    const bool can_repair=row.source.repairable && b.state==app::BatchState::pending && !account.archived;
+                    auto reason="Record "+std::to_string(i+1)+". ";
+                    if(row.source.diagnostic)reason+=std::string(qif::message(*row.source.diagnostic))+" ";
+                    reason+=can_repair?"Enter valid values to add this record to the ledger.":"This record is excluded from the balance. Use Undo import to check whether you can remove this import.";
+                    result.questions.push_back({"repair:"+review_key(id),app::ReviewKind::correction,account.identity,account.name,std::move(reason),b.id,i,{},{},0,
+                        can_repair?app::ReviewIssueAction::repair:app::ReviewIssueAction::view_source});
+                    continue;
+                }
                 if(row.decision.disposition==imports::Disposition::unresolved || row.review_stale){
                     unresolved.insert(id);
                     // A duplicate is hidden from the ledger, so the question has to carry the transaction itself.
@@ -411,6 +425,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         const auto& first=members.front();
         const bool dates_differ=members.size()>1 && std::any_of(members.begin(),members.end(),[&](const auto& row){return row.draft.date!=first.draft.date;});
         result.questions.push_back({"same:"+review_key(first.identity),members.size()>1?app::ReviewKind::same:app::ReviewKind::correction,first.account,first.account_name,members.size()>1?(dates_differ?"Are these the same? Dates differ.":"Are these the same?"):duplicate_decision_warning,first.identity.batch,first.identity.ordinal,std::move(members)});
+        if(result.questions.back().kind==app::ReviewKind::correction)result.questions.back().issue_action=app::ReviewIssueAction::decide_duplicate;
     }
     std::set<imports::Occurrence> suppressed;
     std::size_t exclusion_comparisons=0,compiled_bytes=0,exclusion_steps=0;
@@ -534,7 +549,7 @@ ORDER BY answer.sequence DESC
         auto source=left;if(repair_origins.contains(id))source.note=repair_origins.at(id);
         std::vector<app::ReviewTransaction> candidates{source};
         const auto found=impl_->link_edges.find(id);
-        if(found!=impl_->link_edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 eligible counterparts; select this transfer manually",id.batch,id.ordinal,{left}});continue;}
+        if(found!=impl_->link_edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 transactions could match. Select the transfer manually in the ledger.",id.batch,id.ordinal,{left},{},0,app::ReviewIssueAction::inspect});continue;}
         if(found!=impl_->link_edges.end())for(const auto& [other,difference]:found->second){
             const auto target=rows.find(other);if(target==rows.end())continue;const auto& right=target->second;
             if(!rejected_pair.empty() && !rejected_pair.contains(other))continue;
@@ -595,7 +610,11 @@ ORDER BY answer.sequence DESC
         const auto account=account_by_id(warning.account);
         const auto key="issue:"+std::to_string(warning.account)+":"+warning.batch+":"+(warning.ordinal?std::to_string(*warning.ordinal):"opening");
         if(std::any_of(result.questions.begin(),result.questions.end(),[&](const auto& q){return q.key==key;}))continue;
-        result.questions.push_back({key,app::ReviewKind::correction,account.identity,account.name,warning.reason,warning.batch,warning.ordinal,{}});
+        auto action=app::ReviewIssueAction::none;
+        if(!warning.category_source.empty())action=app::ReviewIssueAction::choose_categories;
+        else if(warning.ordinal)action=warning.reason=="Invalid duplicate relationship" || warning.reason==duplicate_decision_warning
+            ?app::ReviewIssueAction::decide_duplicate:app::ReviewIssueAction::inspect;
+        result.questions.push_back({key,app::ReviewKind::correction,account.identity,account.name,warning.reason,warning.batch,warning.ordinal,{},{},0,action,0,warning.category_source});
     }
     std::stable_sort(result.questions.begin(),result.questions.end(),[](const auto& a,const auto& b){return a.account<b.account;});
     return result;
@@ -975,7 +994,7 @@ app::ReviewReceipt ImportStore::write_review_answer(std::string_view operation,c
         return {std::string(operation)};
     }
     const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[&](const auto& q){return q.key==answer.question;});if(question==sheet.questions.end())fail(SQLITE_CONSTRAINT,"This question has already changed");
-    if(question->kind==app::ReviewKind::correction)fail(SQLITE_CONSTRAINT,"Correct the record before resolving it");
+    if(question->kind!=app::ReviewKind::same && question->kind!=app::ReviewKind::link)fail(SQLITE_CONSTRAINT,"Use the action shown for this import problem.");
     const bool same=question->kind==app::ReviewKind::same;
     if(same!=(answer.action==app::ReviewAction::merge || answer.action==app::ReviewAction::separate))fail(SQLITE_CONSTRAINT,"Invalid Review answer");
     std::set<imports::Occurrence> selected(answer.selected.begin(),answer.selected.end());

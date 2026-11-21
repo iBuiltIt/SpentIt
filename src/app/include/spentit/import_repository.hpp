@@ -141,6 +141,7 @@ struct ImportBlocker {
     bool overridable=false;
     // A destination name that identifies no account. Shown beside Accept, not as a question.
     bool missing_destination=false;
+    std::string category_source={};
 };
 struct ImportGroup {
     std::string id;
@@ -199,6 +200,7 @@ struct LedgerRow {
     imports::DraftRow draft;
     bool committed;
     LedgerSourceOrder source_order = LedgerSourceOrder::none;
+    bool repeated_payee = false;
 };
 // One atomic portable-definition import. References are resolved before saving.
 struct DefinitionImport {

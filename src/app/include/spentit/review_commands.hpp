@@ -14,7 +14,8 @@ struct LinkExclusionPreview {
     std::int64_t generation=0;
     std::vector<std::string> comparisons;
 };
-enum class ReviewKind { same, link, correction };
+enum class ReviewKind { same, link, correction, notice };
+enum class ReviewIssueAction { none, inspect, repair, decide_duplicate, view_source, resume, choose_categories };
 struct ReviewTransaction {
     imports::Occurrence identity;
     std::int64_t account;
@@ -37,6 +38,9 @@ struct ReviewQuestion {
     std::vector<ReviewTransaction> rows;
     std::string waiting_link={};
     std::int64_t waiting_account=0;
+    ReviewIssueAction issue_action=ReviewIssueAction::none;
+    std::int64_t import_revision=0;
+    std::string category_source={};
 };
 struct ReviewSheet {
     std::int64_t generation=0;

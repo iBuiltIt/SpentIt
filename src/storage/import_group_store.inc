@@ -129,14 +129,14 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
     Statement group(impl_->db,"SELECT profile,state FROM import_groups WHERE id=?");group.text(1,id);if(!group.row())fail(SQLITE_NOTFOUND,"Import group does not exist");
     app::ImportGroup result{std::string(id),static_cast<app::GroupState>(group.integer(1)),static_cast<qif::DateOrder>(group.integer(0)),{}};
     Statement source(impl_->db,"SELECT bytes FROM sources WHERE id=?");source.text(1,id);if(!source.row())fail(SQLITE_CORRUPT);
-    const auto bytes=source.bytes(0);const auto document=indexed_source(impl_->db,id,bytes);
+    const auto bytes=source.bytes(0);auto document=indexed_source(impl_->db,id,bytes);
     GroupSelection selection(impl_->selected_account);
     const auto transfers=all_transfers();
     const auto resolved=resolved_transfers(transfers);
     struct Probe {app::ImportCounterpart item;std::string destination;bool eligible;};
     std::vector<Probe> probes;bool probe_limit=false;
     const auto blocker=[&](std::int64_t account,const std::string& batch,std::optional<std::size_t> ordinal,std::string allocation,std::string reason){if(result.blockers.size()<200)result.blockers.push_back({account,batch,ordinal,std::move(allocation),std::move(reason)});};
-    Statement members(impl_->db,"SELECT source_account,account_id,batch,created,balance_choice,balance_revision,opening,opening_date,balance_sequence,reviewed_change FROM import_group_accounts WHERE group_id=? ORDER BY source_account");members.text(1,id);
+    Statement members(impl_->db,"SELECT m.source_account,m.account_id,m.batch,created,balance_choice,balance_revision,opening,opening_date,balance_sequence,reviewed_change,b.parser FROM import_group_accounts m JOIN batches b ON b.id=m.batch WHERE group_id=? ORDER BY m.source_account");members.text(1,id);
     while(members.row()) {
         const auto source_account=static_cast<std::size_t>(members.integer(0));const auto account=account_by_id(members.integer(1));impl_->selected_account=account.identity;
         const auto batch_id=members.bytes(2);const auto b=batch(impl_->db,batch_id);
@@ -145,6 +145,7 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         const auto source_stamp=source_currency.definition_id()+":"+std::to_string(static_cast<int>(result.profile));
         auto cached_source=impl_->reviewed_sources.find(batch_id);
         if(impl_->verifying || cached_source==impl_->reviewed_sources.end() || cached_source->second.first!=source_stamp) {
+            document.parser=members.bytes(10);
             auto parsed=statements::parse_mapped(bytes,document,source_account,result.profile,source_currency);
             cached_source=impl_->reviewed_sources.insert_or_assign(batch_id,std::pair{source_stamp,std::move(parsed)}).first;
         }

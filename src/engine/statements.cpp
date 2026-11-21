@@ -613,10 +613,11 @@ Index inspect(std::string_view bytes, std::string_view requested, const std::fun
 }
 
 qif::Result parse_mapped(std::string_view bytes, const Index& index, std::size_t account, qif::DateOrder order, const Currency& currency, const std::function<void()>& checkpoint) {
-    if(index.format == "qif" || index.parser == qif::parser_version) {
+    if(index.format == "qif" || index.parser == qif::parser_version || index.parser == qif::strict_parser_version) {
         const auto document = qif::index_document(bytes, checkpoint);
-        if(!document.explicit_accounts && document.categories.empty()) return qif::parse(bytes, order, currency, checkpoint);
-        return qif::parse_account(bytes, document, account, order, currency, checkpoint);
+        const bool recover=index.parser!=qif::strict_parser_version;
+        if(!document.explicit_accounts && document.categories.empty()) return qif::parse(bytes, order, currency, checkpoint, {}, recover);
+        return qif::parse_account(bytes, document, account, order, currency, checkpoint, recover);
     }
     qif::Result rejected;
     if(!index.admissible || !index.refusal.empty() || index.diagnostic) {
@@ -635,7 +636,8 @@ qif::Result parse_mapped(std::string_view bytes, const Index& index, std::size_t
 }
 
 qif::Result parse_occurrence(std::string_view slice, std::string_view parser, const Currency& currency, qif::DateOrder order) {
-    if(parser == qif::parser_version || parser.empty()) return qif::parse(slice, order, currency);
+    if(parser == qif::parser_version || parser == qif::strict_parser_version || parser.empty())
+        return qif::parse(slice, order, currency, {}, {}, parser!=qif::strict_parser_version);
     const bool xml = parser == parser_xml;
     if(parser != parser_sgml && !xml) { qif::Result bad; bad.diagnostic = qif::Diagnostic{qif::Issue::header, 0}; return bad; }
     auto parsed = parse_ofx(slice, "ofx", xml, {}, true, currency.code());

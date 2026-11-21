@@ -23,12 +23,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-108. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-109. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-108 — Import problems and repeated payees (2026-11-21).** In
+[Import transactions](../manual/import-transactions.md) and
+[Review duplicates and transfers](../manual/review-duplicates-transfers.md),
+document the repeated-payee warning, ledger inspection and editing, and the
+actions for repairable and excluded records. Update Review pictures and
+captions that show the generic Correct button. See [Review](review-sheet.md#user-interaction).
 
 **MAN-104 — Date sort and statement balances (2026-11-20).** In
 [Find transactions](../manual/find-transactions.md), explain that Date flips the

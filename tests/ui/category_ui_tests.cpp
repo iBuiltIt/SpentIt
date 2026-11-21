@@ -125,11 +125,11 @@ private slots:
         run(model,"import",{{"path",file.fileName()},{"profile","DMY"}});
         const auto questions=model.state().value("reviewQuestions").toList();QVERIFY(!questions.empty());
         const auto question=questions.front().toMap();QCOMPARE(question.value("kind").toString(),"correction");
-        // Close the ledger editor, then Correct must explicitly reopen it.
+        // Inspect must open the relevant editor in the ledger.
         root->setProperty("editorClosed",true);
-        QVERIFY(click(root,"reviewNavigation"));wait(model);QTRY_VERIFY(object(root,"reviewCorrect"));
-        QVERIFY(click(root,"reviewCorrect"));wait(model);
-        QCOMPARE(root->property("currentPage").toString(),"review");QVERIFY(root->property("reviewInspecting").toBool());
+        QVERIFY(click(root,"reviewNavigation"));wait(model);QTRY_VERIFY(object(root,"reviewIssue_inspect"));
+        QVERIFY(click(root,"reviewIssue_inspect"));wait(model);
+        QCOMPARE(root->property("currentPage").toString(),"ledger");
         QVERIFY(!root->property("editorClosed").toBool());QTRY_VERIFY(object(root,"editorScroll")->property("visible").toBool());
         QCOMPARE(selected(model).value("ordinal"),question.value("ordinal"));QCOMPARE(selected(model).value("batch"),question.value("batch"));
         QVERIFY(QMetaObject::invokeMethod(root,"openCategoryPicker",Q_ARG(QVariant,0)));QVERIFY(click(root,"chooseUncategorized"));wait(model);

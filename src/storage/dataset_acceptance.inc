@@ -45,6 +45,7 @@ app::AcceptanceReview ImportStore::acceptance_review(const std::set<std::int64_t
         Statement member(impl_->db,"SELECT account_id,batch FROM import_group_accounts WHERE group_id=? ORDER BY source_account LIMIT 1");member.text(1,pending.source);
         if(!member.row())fail(SQLITE_CORRUPT,"Import category decision has no accounts");
         result.warnings.push_back({member.integer(0),member.bytes(1),{},"","Choose the imported categories before accepting transactions"});
+        result.warnings.back().category_source=pending.source;
     }
     Statement incomplete(impl_->db,"SELECT count(*) FROM batches WHERE state=3");if(incomplete.row())result.failed_records=static_cast<std::size_t>(incomplete.integer(0));
     const auto resolved=resolved_transfers(all_transfers());
@@ -111,7 +112,7 @@ app::AcceptanceReview ImportStore::acceptance_review(const std::set<std::int64_t
         if(side->state!=transfers::State::draft || !local_side(*side) || side->proposed_evidence)continue;
         ++result.transactions;
         if(value.link.unresolved && !side->accepted_unmatched)
-            result.warnings.push_back({side->endpoint.account,"",{},"","Resolve this transfer before accepting transactions"});
+            result.warnings.push_back({side->endpoint.account,side->endpoint.entry.batch,side->endpoint.entry.ordinal,"","Resolve this transfer before accepting transactions"});
         else if(!side->accepted_unmatched && (side!=&value.link.destination || !waiting_without_match.contains(value.link.identity))) {
             app::ImportBlocker warning{side->endpoint.account,"",{},"","This transfer has not been matched to an imported transaction."};warning.overridable=true;result.warnings.push_back(std::move(warning));
         }

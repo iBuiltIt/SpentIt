@@ -3,7 +3,7 @@
 Status: **active**
 Last updated: 2026-11-17
 
-Supported imports are the [QIF bank-v6 profile](009-qif-profile.md) and the
+Supported imports are the [QIF banking profile](009-qif-profile.md) and the
 [OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
 are not authorized. Investment and other non-banking QIF sections are not
 imported. An OFX transfer destination stays a visible blocker. There is no

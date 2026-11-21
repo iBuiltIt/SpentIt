@@ -32,11 +32,17 @@ A literal slash is allowed in editable category names. In QIF references the usu
 
 Catalog-only sources and catalogs followed by unnamed ordinary sections use one explicitly mapped target account. Named definitions and repeated account selections share the existing account workflow. Complete category staging, first-publication semantics, rollback and identity preservation are described in [the account-import contract](../doc/qif-account-imports.md#staged-category-catalog--2026-10-28).
 
-The parser identity is `bank-v6`. See [release schema](../doc/release-schema.md) for the file format.
+New imports use `bank-v7`. Retained `bank-v6` imports replay with their original parser behavior. See [release schema](../doc/release-schema.md).
+
+## Repeated payee lines — accepted 2026-11-21
+
+A run of lines immediately after `P` can repeat the exact bytes of the payee value. The banking parser uses the first payee line when the repeats start with an unknown field marker or resemble an amount field with an alphabetic value after a valid total has already been read. Supported fields, numeric amount lines, section headers and record terminators keep their ordinary interpretation. The record must otherwise validate, including exact totals and splits, before it can appear in the ledger.
+
+The original bytes are retained. A new transaction carries a payee warning in [Review](../doc/review-sheet.md#user-interaction) and the ledger. Accept clears the outstanding Review warning. The ledger and original source still show what happened.
 
 ## Embedded carriage returns — accepted 2026-10-28
 
-LF and CRLF remain field-line separators. A lone CR inside ordinary payee (`P`), memo (`M`), reference (`N`), split memo (`E`) or evidence-only address (`A`) values is an embedded text line break. Account descriptions (`D`) and category descriptions/tax-schedule text (`D`/`R`) accept the same convention. Both interpreted strings and original source bytes retain the CR exactly; no global line-ending replacement, text deduplication or skipped continuation occurs. Text after that CR remains in the same value even if it begins with `T`, `!` or `^`.
+LF and CRLF remain field-line separators. A lone CR inside ordinary payee (`P`), memo (`M`), reference (`N`), split memo (`E`) or evidence-only address (`A`) values is an embedded text line break. Account descriptions (`D`) and category descriptions/tax-schedule text (`D`/`R`) accept the same convention. Both interpreted strings and original source bytes retain the CR exactly. Text after that CR remains in the same value even if it begins with `T`, `!` or `^`.
 
 Lone CR is still rejected in amounts, dates, names, category/class references, cleared status, headers and terminators. CR-only record delimiters are not supported. A trailing CR is stripped as a line ending only when followed by LF, never merely because it is the final byte. Existing field/record/file limits still include embedded text. Draft and committed review validation permit CR in payees and memos while retaining strict category validation. This does not implement a multiline editor.
 

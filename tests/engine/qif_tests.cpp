@@ -187,6 +187,20 @@ void embedded_returns() {
     for(const auto bad:{"!Account\nNBad\rName\nTBank\n^\n","!Account\nNName\nTBank\nB1\r2\n^\n","!Type:Cat\nNBad\rName\n^\n"})check(index_document(bad).diagnostic->issue==Issue::encoding);
     invalid("D2026-01-01\nT1\nPText\x01More\n^\n",Issue::encoding);
     invalid("D2026-01-01\nT1\nPShop\nTEXT AGAIN\n^\n",Issue::repeated_field);
+    const std::string repeated="D2026-09-27\nT-10.38\nPTEST SHOP\nTEST SHOP\nTEST SHOP\nLFood\n^\n";
+    const auto recovered=parse_dmy(repeated);
+    check(recovered.valid() && recovered.records.size()==1);
+    const auto& recovered_row=recovered.records.front();
+    check(recovered_row.payee=="TEST SHOP" && recovered_row.uninterpreted==repeated_payee_evidence);
+    check(recovered_row.original_amount==Money(-1038,cad) && recovered_row.end==repeated.size());
+    check(recovered_row.transaction->allocations().front().category=="Food");
+    const auto strict=parse(repeated,DateOrder::dmy,cad,{}, {},false);
+    check(!strict.valid() && strict.records.front().diagnostic->issue==Issue::repeated_field);
+    invalid("D2026-09-27\nT-10.38\nPT20\nT20\n^\n",Issue::repeated_field);
+    invalid("D2026-09-27\nT-10.38\nPT92233720368547758.08\nT92233720368547758.08\n^\n",Issue::repeated_field);
+    invalid("D2026-09-27\nT-10.38\nPTEST SHOP\nTEST SHOP\nT11\n^\n",Issue::repeated_field);
+    const auto conflicting=parse_dmy("D2026-09-27\nT-10.38\nPTEST SHOP\nTEST SHOP\nSFood\n$-10\n^\n");
+    check(!conflicting.valid() && !conflicting.records.front().repairable && conflicting.records.front().uninterpreted.empty());
     const auto eof=parse_dmy("D2026-01-01\nT1\nPText\r");check(eof.records[0].payee=="Text\r" && eof.records[0].diagnostic->issue==Issue::unterminated);
 }
 void malformed() {
@@ -230,8 +244,9 @@ void limits() {
 }
 void mutations() {
     std::mt19937 gen(1701);
-    for (unsigned i=0;i<10000;++i) {
-        std::string s=wise;
+    const std::string repeated="D2026-09-27\nT-10.38\nPTEST SHOP\nTEST SHOP\nTEST SHOP\nLFood\n^\n";
+    for (unsigned i=0;i<20000;++i) {
+        std::string s=i<10000?wise:repeated;
         for (unsigned j=0;j<1+i%8;++j) s[gen()%s.size()]=static_cast<char>(gen()%256);
         auto r=parse_dmy(s);
         if (r.valid()) for (const auto& record:r.records) {

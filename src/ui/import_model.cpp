@@ -463,6 +463,7 @@ struct ImportModel::Worker {
     bool canOpen=false, welcomePassword=false, overwriteRequired=false;
     int sort=0; bool descending=true;
     QVariantMap selected,receipt,changePreview,changeReceipt,transferReceipt,transferMergePreview;
+    QString reviewSource;
     QVariantMap reviewLinkPreview, linkExclusionPreview;
     QVariantMap exchangePreview;
     QJsonObject exchangeDocument;
@@ -1132,6 +1133,8 @@ struct ImportModel::Worker {
         selected={{"batch",text(batch)},{"ordinal",static_cast<int>(ordinal)},{"editable",false},
             {"source",evidencePreview(raw)},{"manual",row.source.format=="manual"},{"hasImportedOriginal",original.has_value()}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(*source.diagnostic));
+        const bool repeatedPayee=source.format=="qif" && source.uninterpreted==qif::repeated_payee_evidence;
+        if(repeatedPayee)selected["importWarning"]=text(qif::repeated_payee_warning);
         QStringList classes;
         if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
         if(source.has_source_splits)for(std::size_t i=0;i<source.source_allocation_fields.size();++i)if(!source.source_allocation_fields[i].class_label.empty())classes<<QString("Split %1 class: ").arg(i+1)+text(source.source_allocation_fields[i].class_label);
@@ -1148,7 +1151,7 @@ struct ImportModel::Worker {
         if(!source.fitid.empty()) add("FITID","fitid",text(source.fitid));
         if(!source.time_evidence.empty()) add("Time from imported file","time",text(source.time_evidence));
         if(!source.trntype.empty()) add("Transaction type","trntype",text(source.trntype));
-        if(!source.uninterpreted.empty()) add("Other details from imported file","uninterpreted",text(source.uninterpreted));
+        if(!repeatedPayee && !source.uninterpreted.empty()) add("Other details from imported file","uninterpreted",text(source.uninterpreted));
         if(source.transaction || source.repairable) {
             if(!source.date.empty()) add(format=="qif"?"Date (using selected display format)":"Date (calendar date in the file)","date",dateText(source.date));
             add("Payee","payee",text(source.payee));
@@ -1277,7 +1280,14 @@ struct ImportModel::Worker {
             QVariantList archivedList;for(const auto& item:repo.archived_accounts()) archivedList.push_back(packAccount(item));
             state["archivedAccounts"]=archivedList;
             const auto acceptance=repo.acceptance_review(bankMatchOptionalActive);QVariantList acceptanceWarnings;bool canOverride=true;
-            for(const auto& warning:acceptance.warnings){acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?QVariant(static_cast<int>(*warning.ordinal)):QVariant()},{"reason",text(warning.reason)},{"overridable",warning.overridable},{"missingDestination",warning.missing_destination}});canOverride &= warning.overridable;}
+            for(const auto& warning:acceptance.warnings){
+                const bool categories=!warning.category_source.empty();
+                const bool duplicate=warning.reason=="Review possible duplicates before committing";
+                acceptanceWarnings.push_back(QVariantMap{{"account",QString::number(warning.account)},{"batch",text(warning.batch)},{"ordinal",warning.ordinal?static_cast<int>(*warning.ordinal):-1},{"reason",text(warning.reason)},{"overridable",warning.overridable},{"missingDestination",warning.missing_destination},{"categorySource",text(warning.category_source)},
+                    {"issueAction",categories?"categories":duplicate?"duplicate":warning.ordinal?"inspect":""},
+                    {"actionLabel",categories?"Choose categories…":duplicate?"Review duplicate":warning.ordinal?"Inspect":""}});
+                canOverride &= warning.overridable;
+            }
             const auto review=deferReview?app::ReviewSheet{}:repo.review_sheet();state["reviewReady"]=!deferReview;QVariantList questions;std::int64_t priorAccount=-1;
             for(const auto& q:review.questions){
                 if(bankMatchOptionalActive.contains(q.waiting_account))continue;
@@ -1290,7 +1300,19 @@ struct ImportModel::Worker {
                         value["amountsDiffer"]=left.currency()==right.currency() && magnitude(left.units())!=magnitude(right.units());
                     }
                     value["sameDate"]=!q.rows.empty() && !row.draft.date.empty() && row.draft.date==q.rows.front().draft.date;value["suggestedLeftAllocation"]=text(row.suggested_left_allocation);value["suggestedRightAllocation"]=text(row.suggested_right_allocation);value["manual"]=row.note=="Manually entered";value["transferLinked"]=row.transfer_linked;value["importOrder"]=QString::number(row.import_order);QVariantList peers;for(const auto& peer:row.duplicate_candidates)peers.push_back(text(peer.batch)+":"+QString::number(peer.ordinal));value["duplicateCandidates"]=peers;value["key"]=text(row.identity.batch)+":"+QString::number(row.identity.ordinal);rows.push_back(value);}
-                questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"waitingAccount",q.waiting_account?QString::number(q.waiting_account):QString()},{"key",text(q.key)},{"kind",q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":"correction"},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows}});priorAccount=q.account;
+                QString issueAction,actionLabel;
+                switch(q.issue_action){
+                    case app::ReviewIssueAction::none:break;
+                    case app::ReviewIssueAction::inspect:issueAction="inspect";actionLabel="Inspect";break;
+                    case app::ReviewIssueAction::repair:issueAction="repair";actionLabel="Repair record";break;
+                    case app::ReviewIssueAction::decide_duplicate:issueAction="duplicate";actionLabel="Review duplicate";break;
+                    case app::ReviewIssueAction::view_source:issueAction="source";actionLabel="View source";break;
+                    case app::ReviewIssueAction::resume:issueAction="resume";actionLabel="Resume import";break;
+                    case app::ReviewIssueAction::choose_categories:issueAction="categories";actionLabel="Choose categories…";break;
+                }
+                const auto kind=q.kind==app::ReviewKind::same?"same":q.kind==app::ReviewKind::link?"link":q.kind==app::ReviewKind::notice?"notice":"correction";
+                questions.push_back(QVariantMap{{"waitingLink",text(q.waiting_link)},{"waitingAccount",q.waiting_account?QString::number(q.waiting_account):QString()},{"key",text(q.key)},{"kind",kind},{"account",QString::number(q.account)},{"accountName",text(q.account_name)},{"separator",q.account!=priorAccount},{"reason",text(q.reason)},{"batch",text(q.batch)},{"ordinal",q.ordinal?static_cast<int>(*q.ordinal):-1},{"rows",rows},
+                    {"issueAction",issueAction},{"actionLabel",actionLabel},{"revision",QString::number(q.import_revision)},{"categorySource",text(q.category_source)}});priorAccount=q.account;
             }
             QVariantList exclusions;
             for(const auto& rule:repo.link_exclusions())if(!rule.removed)exclusions.push_back(QVariantMap{{"identity",text(rule.identity)},{"field",text(rule.field)},{"expression",text(rule.expression)},{"account",QString::number(rule.account)},{"regex",rule.regex}});
@@ -1490,7 +1512,7 @@ struct ImportModel::Worker {
         state["rulesSupported"]=repo.rules_supported();state["rules"]=rules;state["ruleTombstones"]=ruleTombstones;state["ruleRevision"]=QString::number(ruleRevision);
         state["ruleLimit"]=static_cast<int>(rules::EvaluationLimits::rules);
         state["canUndoRules"]=repo.can_undo_account_rules();state["rulePreview"]=rulePreview;state["ruleReceipt"]=ruleReceipt;state["rulePrefill"]=rulePrefill;
-        state["selected"]=selected;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
+        state["selected"]=selected;state["reviewSource"]=reviewSource;state["changePreview"]=changePreview;state["changeReceipt"]=changeReceipt;
         state["deletionPreview"]=deletionPreview;state["bulkSupported"]=repo.bulk_supported();state["bulkPreview"]=bulkPreview;state["bulkReceipt"]=bulkReceipt;
         state["reapplyPreview"]=reapplyPreview;state["reapplyReceipt"]=reapplyReceipt;
         state["history"]=history;state["entryHistory"]=entryHistory;state["historyTitle"]=historyTitle;state["historyMore"]=historyMore;state["historyCursor"]=historyCursor;state["historyFocus"]=historyFocus;state["historyFocusBatch"]=historyFocusBatch;state["historyFocusOrdinal"]=historyFocusOrdinal;state["historyNotice"]=historyNotice;
@@ -1608,6 +1630,7 @@ struct ImportModel::Worker {
     }
     void execute(const QString& action,const QVariantMap& input, app::OperationContext& context) {
         diagnosticSaved=false;diagnosticUnchanged=false;diagnosticPresentationFailed=false;passwordNotice.clear();
+        reviewSource.clear();
         auto a=input;
         if(action!="save" || !a.value("confirmManualTransfer").toBool())pendingManualTransferEdit.reset();
         if(active && a.contains("date"))a["date"]=text(parse_display_date(str(a.value("date")),dateFormat));
@@ -2270,8 +2293,14 @@ struct ImportModel::Worker {
                     }
                 }
             }
-            if(!a.value("reviewBatch").toString().isEmpty()){selectedBatch=str(a.value("reviewBatch"));selected={{"batch",a.value("reviewBatch")}};}
-            if(a.value("reveal").toBool()){filter.clear();projected=true;selection.clear();selectionAnchor.reset();selectionFocus.reset();inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);selection.insert({selectedBatch,selectedOrdinal});selectionFocus=imports::Occurrence{selectedBatch,selectedOrdinal};}
+            if(a.value("reveal").toBool()){
+                filter.clear();projected=true;selection.clear();selectionAnchor.reset();selectionFocus.reset();
+                inspect(str(a.value("batch")),a.value("ordinal").toUInt(),context);
+                if(!a.value("sourceOnly").toBool()){
+                    selection.insert({selectedBatch,selectedOrdinal});
+                    selectionFocus=imports::Occurrence{selectedBatch,selectedOrdinal};
+                }
+            }
         }
         else if(action=="category_list") {catalog();}
         else if(action=="category_select") {selectCategory(str(a.value("id")));}
@@ -2607,7 +2636,16 @@ struct ImportModel::Worker {
             projected=true;selected.clear();selectedBatch.clear();
             if(batch.count && !batch.processing_incomplete)inspect(batch.id,0,context);
         } else if(action=="evidence") {
-            selectedBatch.clear();selected={{"batch",a.value("batch")},{"editable",false},{"source",evidencePreview(repo.evidence(str(a.value("batch"))))}};
+            const auto id=str(a.value("batch"));
+            if(a.contains("account")){
+                AccountRestore account(repo);
+                account.select(a.value("account").toLongLong());
+                const auto ordinal=a.value("ordinal",-1).toInt();
+                reviewSource=evidencePreview(ordinal<0?repo.evidence(id):repo.record_evidence({id,static_cast<std::size_t>(ordinal)}));
+                account.restore();
+            } else {
+                selectedBatch.clear();selected={{"batch",a.value("batch")},{"editable",false},{"source",evidencePreview(repo.evidence(id))}};
+            }
         } else if(action=="select") {
             if(!cachedView)throw std::invalid_argument("No ledger is available for selection");
             if(a.contains("mode")) {
@@ -3266,6 +3304,7 @@ QVariant ImportModel::data(const QModelIndex& index,int role) const {
     row["batch"]=text(r.identity.batch);row["ordinal"]=static_cast<int>(r.identity.ordinal);
     row["manual"]=state_.value("manualBatches").toMap().contains(text(r.identity.batch));
     row["status"]=r.sequence==INT64_MAX?"New transaction":r.committed?"Committed":"Draft";
+    if(r.repeated_payee)row["importWarning"]=text(qif::repeated_payee_warning);
     row["category"]=t.allocations().size()==1?text(t.allocations()[0].category):"Split";
     row["withdrawal"]=amount.units()<0?money(amount,amountFormat).mid(1):"";
     row["deposit"]=amount.units()>=0?money(amount,amountFormat):"";

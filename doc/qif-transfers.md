@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-17
 
-The parser is bank-v6. See [release schema](release-schema.md) for the file format. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
+See the [QIF banking profile](../features/009-qif-profile.md) for parser behavior. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
 
 The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md).
 

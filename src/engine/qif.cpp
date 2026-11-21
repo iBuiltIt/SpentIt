@@ -171,7 +171,7 @@ bool Result::valid() const noexcept {
     for (const auto& r : records) if (r.diagnostic || !r.transaction) return false;
     return true;
 }
-Result parse(std::string_view bytes, DateOrder order, const Currency& currency,const std::function<void()>& checkpoint, const std::vector<CategoryDefinition>& categories) {
+Result parse(std::string_view bytes, DateOrder order, const Currency& currency,const std::function<void()>& checkpoint, const std::vector<CategoryDefinition>& categories, bool recover_repeated_payee) {
     if(checkpoint) checkpoint();
     if (order != DateOrder::dmy && order != DateOrder::mdy) throw std::invalid_argument("Invalid QIF profile");
     Result out;
@@ -190,6 +190,8 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
     unsigned addresses=0;
     std::size_t split_count=0;
     bool repair_allowed=true;
+    std::string_view preceding_payee;
+    bool repeated_payee=false;
     auto error = [&](Issue issue,std::size_t at,SplitProblem problem=SplitProblem::none) { if(issue!=Issue::date && issue!=Issue::split_total && issue!=Issue::amount && issue!=Issue::missing_field) repair_allowed=false; if (!r.diagnostic) r.diagnostic=Diagnostic{issue,at,problem}; };
     std::set<std::string,std::less<>> catalog_names;
     bool catalog_loaded=false;
@@ -252,15 +254,25 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
                 try { r.transaction=Transaction::imported(*total,std::move(allocations)); }
                 catch (const FinancialError&) { r.amount_repair=true;error(Issue::split_total,start); }
             }
-            r.repairable=r.diagnostic.has_value() && repair_allowed;
+            r.repairable=r.diagnostic.has_value() && repair_allowed && !repeated_payee;
             if(r.diagnostic) r.transaction.reset();
+            if(r.transaction && repeated_payee)r.uninterpreted=repeated_payee_evidence;
             r.end=pos; out.records.push_back(std::move(r)); r=Record{}; r.source_currency=currency; r.begin=pos;
             seen.fill(false); total.reset(); allocations.clear(); category.clear(); split_category.clear(); split_memo.clear(); source_class.clear(); split_class.clear(); allocation_classes.clear(); source_fields.clear();
-            split_started=has_s=has_e=any=false; repair_allowed=true; addresses=0; split_count=0; continue;
+            split_started=has_s=has_e=any=repeated_payee=false; preceding_payee={}; repair_allowed=true; addresses=0; split_count=0; continue;
         }
         any=true;
-        if (line.empty()) { error(Issue::empty_record,start); continue; }
+        if (line.empty()) { preceding_payee={}; error(Issue::empty_record,start); continue; }
         const auto key=static_cast<unsigned char>(line.front()); const auto value=line.substr(1);
+        if(!preceding_payee.empty() && line==preceding_payee) {
+            // Never consume a line that could be a valid QIF field. In particular,
+            // a second valid amount stays an error even when it spells the payee.
+            const bool text_after_total=key=='T' && total && !value.empty() &&
+                ((value.front()>='A' && value.front()<='Z') || (value.front()>='a' && value.front()<='z'));
+            const bool continuation=text_after_total || std::string_view("DTPMNLCASE$U%").find(line.front())==std::string_view::npos;
+            if(continuation){repeated_payee=true;continue;}
+        }
+        preceding_payee={};
         if (key=='S' || key=='E' || key=='$') {
             split_started=true;
             if (key=='S') { if (has_s) error(Issue::split_structure,start,SplitProblem::repeated_category); has_s=true; category_parts(decode_ampersand_entity(value),start,split_category,split_class); }
@@ -282,7 +294,10 @@ Result parse(std::string_view bytes, DateOrder order, const Currency& currency,c
         switch (key) {
         case 'D': try { r.date=date(value,order); } catch (const std::invalid_argument&) { error(Issue::date,start); } break;
         case 'T': try { total=amount(value,currency); } catch (const FinancialError&) { error(Issue::amount,start); } break;
-        case 'P': r.payee=decode_ampersand_entity(value); break;
+        case 'P':
+            r.payee=decode_ampersand_entity(value);
+            if(recover_repeated_payee && !split_started && !r.diagnostic)preceding_payee=value;
+            break;
         case 'M': r.memo=decode_ampersand_entity(value); break;
         case 'N': r.reference=decode_ampersand_entity(value); break;
         case 'L': category_parts(decode_ampersand_entity(value),start,category,source_class); break;
@@ -441,14 +456,15 @@ DateOrderInference infer_date_order(std::string_view bytes, const std::function<
     return result;
 }
 Result parse_account(std::string_view bytes,const Document& document,std::size_t account,
-                     DateOrder order,const Currency& currency,const std::function<void()>& checkpoint) {
+                     DateOrder order,const Currency& currency,const std::function<void()>& checkpoint,
+                     bool recover_repeated_payee) {
     Result result;
     if(document.diagnostic){result.diagnostic=document.diagnostic;result.admissible=document.admissible;return result;}
     if(account>=document.accounts.size())throw std::invalid_argument("Invalid QIF account index");
     for(const auto& section:document.sections) {
         if(section.account!=account)continue;
         if(section.begin>section.end || section.end>bytes.size())throw std::invalid_argument("Invalid QIF source range");
-        auto parsed=parse(bytes.substr(section.begin,section.end-section.begin),order,currency,checkpoint,document.categories);
+        auto parsed=parse(bytes.substr(section.begin,section.end-section.begin),order,currency,checkpoint,document.categories,recover_repeated_payee);
         if(!parsed.admissible)result.admissible=false;
         if(parsed.diagnostic && parsed.diagnostic->issue==Issue::empty_file && parsed.records.empty() && document.explicit_accounts)continue;
         if(parsed.diagnostic) {

@@ -589,10 +589,10 @@ private slots:
         QVERIFY(!root->findChild<QObject*>("includeSeparate")->property("visible").toBool());
         QVERIFY(!root->findChild<QObject*>("excludeDuplicate")->property("visible").toBool());
         run(model,"review_load");root->setProperty("currentPage","review");
-        QTRY_VERIFY(object(root,"reviewCorrect"));
-        QVERIFY(click(root,"reviewCorrect"));wait(model);
-        QCOMPARE(root->property("currentPage").toString(),"review");
-        QVERIFY(root->property("reviewInspecting").toBool());
+        QTRY_VERIFY(object(root,"reviewIssue_duplicate"));
+        QVERIFY(click(root,"reviewIssue_duplicate"));wait(model);
+        QCOMPARE(root->property("currentPage").toString(),"ledger");
+        QVERIFY(!root->property("editorClosed").toBool());
         QTRY_VERIFY(root->findChild<QObject*>("includeSeparate")->property("visible").toBool());
         auto* chooser=root->findChild<QObject*>("duplicateCandidate");QVERIFY(chooser);chooser->setProperty("currentIndex",0);
         QCOMPARE(root->findChild<QObject*>("excludeDuplicate")->property("text").toString(),"Keep removed");

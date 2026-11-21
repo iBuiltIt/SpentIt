@@ -11,7 +11,10 @@ inline constexpr std::size_t max_records = 200000;
 inline constexpr std::size_t max_record = 1024 * 1024;
 inline constexpr std::size_t max_field = 64 * 1024;
 inline constexpr std::size_t max_allocations = 1000;
-inline constexpr std::string_view parser_version = "bank-v6";
+inline constexpr std::string_view parser_version = "bank-v7";
+inline constexpr std::string_view strict_parser_version = "bank-v6";
+inline constexpr std::string_view repeated_payee_evidence = "repeated-payee-text";
+inline constexpr std::string_view repeated_payee_warning = "Repeated payee text. Used the first line.";
 enum class DateOrder { dmy, mdy };
 enum class Issue { encoding, resource_limit, empty_file, header, empty_record,
     unterminated, unknown_field, repeated_field, missing_field, date, amount,
@@ -81,7 +84,7 @@ struct CategoryDefinition {
     std::size_t begin=0, end=0;
 };
 Result parse(std::string_view bytes, DateOrder order, const Currency& currency, const std::function<void()>& checkpoint = {},
-             const std::vector<CategoryDefinition>& categories = {});
+             const std::vector<CategoryDefinition>& categories = {}, bool recover_repeated_payee = true);
 // Offsets always address the unchanged complete source, including account lists.
 struct AccountDefinition {
     std::string name, type;
@@ -107,5 +110,6 @@ struct DateOrderInference {
 DateOrderInference infer_date_order(std::string_view bytes, const std::function<void()>& checkpoint = {});
 Document index_document(std::string_view bytes,const std::function<void()>& checkpoint = {});
 Result parse_account(std::string_view bytes,const Document&,std::size_t account,
-                     DateOrder,const Currency&,const std::function<void()>& checkpoint = {});
+                     DateOrder,const Currency&,const std::function<void()>& checkpoint = {},
+                     bool recover_repeated_payee = true);
 } // namespace spentit::qif
