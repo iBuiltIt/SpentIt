@@ -2017,7 +2017,10 @@ struct ImportModel::Worker {
             }
             const auto op=identity();app::ReviewReceipt receipt;
             try{receipt=repo.merge_review_batch(op,answers,context);}catch(...){const auto failure=std::current_exception();std::optional<app::ReviewReceipt> outcome;try{outcome=repo.review_outcome(op);}catch(...){throw app::OperationOutcomeUnknown();}if(!outcome)std::rethrow_exception(failure);receipt=*outcome;}
-            if(std::any_of(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;}))
+            const auto merges=std::count_if(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::merge;});
+            if(merges>0 && static_cast<std::size_t>(merges)<answers.size())
+                reviewFeedback="Review decisions saved. Undo reverses them together.";
+            else if(std::any_of(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;}))
                 reviewFeedback="Transfer decisions saved. Undo reverses them together.";
             else if(receipt.linked_pairs>0)reviewFeedback=receipt.linked_pairs==1?QString("Linked 1 pair. Undo reverses it."):QString("Linked %1 pairs. Undo reverses them together.").arg(receipt.linked_pairs);
             diagnosticSaved=true;selected.clear();return;

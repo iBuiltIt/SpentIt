@@ -1831,15 +1831,40 @@ void decision_batch_faults(const std::filesystem::path& dir) {
     fault_vfs::install();const Currency cad("CAD");const auto base=dir/"decisions-base";std::vector<ReviewAnswer> answers;
     {auto s=ImportStore::create(base,"test","Checking",cad,"2026-01-01");mirror_transfer_fixture(s);
         s.ingest("waiting","!Type:Bank\nD15/02/2026\nT-40.00\nPSeparate payment\nL[Savings]\n^\n",qif::DateOrder::dmy);
+        s.ingest("purchase-old","!Type:Bank\nD01/03/2026\nT-15.00\nPOld purchase\n^\n",qif::DateOrder::dmy);
+        s.ingest("purchase-new","!Type:Bank\nD01/03/2026\nT-15.00\nPNew purchase\n^\n",qif::DateOrder::dmy);
         answers=disjoint_link_answers(s);answers.front().action=ReviewAction::not_linked;answers.front().selected.clear();
-        const auto waiting=waiting_transfer_answers(s);check(waiting.size()==1,"One waiting transfer for mixed decision fault test");answers.push_back(waiting.front());}
+        const auto waiting=waiting_transfer_answers(s);check(waiting.size()==1,"One waiting transfer for mixed decision fault test");answers.push_back(waiting.front());
+        auto merges=batch_answers(s);check(merges.size()==1,"One duplicate pair for mixed decision fault test");
+        merges.front().survivor=imports::Occurrence{"purchase-old",0};
+        answers.insert(answers.begin()+1,merges.front());}
     const auto saved=[](ImportStore& s){return s.review_outcome("follow").has_value();};
     const auto apply=[&](ImportStore& s){OperationContext context;s.merge_review_batch("follow",answers,context);};
-    const auto verify=[&](ImportStore& s){s.verify();const auto done=saved(s);check(active_links(s)==(done?2u:1u) && open_link_questions(s)==(done?0u:2u) && waiting_transfer_answers(s).size()==(done?0u:1u),"Rejection, link, and unmatched acceptance are atomic");s.select_account(1);check(s.balance().units()==-6000,"Money survives decision faults");check((s.action_head()->id=="follow")==done,"Undo publication is atomic with decisions");};
+    const auto verify=[&](ImportStore& s,bool done){s.verify();s.select_account(1);
+        check(active_links(s)==(done?2u:1u) && open_link_questions(s)==(done?0u:2u) &&
+              waiting_transfer_answers(s).size()==(done?0u:1u) && batch_answers(s).size()==(done?0u:1u),
+              "Merge, rejection, link and unmatched acceptance are atomic");
+        check(s.balance().units()==(done?-7500:-9000),"Checking balance agrees with the mixed batch");
+        s.select_account(2);check(s.balance().units()==6000,"Savings balance survives mixed decision faults");s.select_account(1);
+    };
+    {
+        const auto trial=dir/"decisions-cancel";std::filesystem::copy_file(base,trial);
+        auto s=ImportStore::open(trial,"test");const auto previous=s.action_head()->id;
+        auto invalid=answers;invalid.back().question="missing";
+        OperationContext context;bool rejected=false;
+        try{s.merge_review_batch("follow",invalid,context);}catch(const storage::ImportError&){rejected=true;}
+        check(rejected && !saved(s) && s.action_head()->id==previous,"An invalid final decision rolls back the whole mixed batch");
+        verify(s,false);
+        OperationContext cancelled;cancelled.progress=[&](auto phase){if(phase=="Saving Review decisions")cancelled.request();};
+        bool stopped=false;try{s.merge_review_batch("follow",answers,cancelled);}catch(const OperationCancelled&){stopped=true;}
+        check(stopped && !saved(s) && s.action_head()->id==previous,"Cancellation after all decisions were staged saves nothing");
+        verify(s,false);
+    }
+    const auto verify_saved=[&](ImportStore& s){const auto done=saved(s);verify(s,done);check((s.action_head()->id=="follow")==done,"Undo publication is atomic with decisions");};
     int positions=0;
     for(int nth=1;nth<2000;++nth){const auto trial=dir/"decisions-trial";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);bool fired;
         {auto s=ImportStore::open(trial,"test");fault_vfs::arm(nth,nth%2?SQLITE_FULL:SQLITE_IOERR_WRITE);try{apply(s);}catch(const std::exception&){}fired=fault_vfs::fired;fault_vfs::disarm();}
-        {auto s=ImportStore::open(trial,"test");verify(s);apply(s);check(saved(s),"Decision batch retry saves once");apply(s);verify(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();}
+        {auto s=ImportStore::open(trial,"test");verify_saved(s);apply(s);check(saved(s),"Decision batch retry saves once");apply(s);verify_saved(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));verify(s,false);}
         if(!fired)break;++positions;
     }
     check(positions>0 && positions<1999,"Decision batch fault sweep completed");
@@ -1847,9 +1872,9 @@ void decision_batch_faults(const std::filesystem::path& dir) {
         const auto trial=dir/"decisions-crash";std::filesystem::copy_file(base,trial,std::filesystem::copy_options::overwrite_existing);
         const auto child=fork();check(child>=0,"fork");if(child==0){try{auto s=ImportStore::open(trial,"test");s.observer([&](auto at){if(at==phase)_exit(71);});apply(s);_exit(72);}catch(...){_exit(73);}}
         int status=0;check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Decision batch commit interrupted");
-        auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Decision batch durable outcome");verify(s);apply(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));s.verify();
+        auto s=ImportStore::open(trial,"test");check(saved(s)==(phase==storage::ImportPhase::after_commit),"Decision batch durable outcome");verify_saved(s);apply(s);s.undo_action("undo",s.preview_undo("follow",s.action_token()));verify(s,false);
     }
-    std::cout<<"Decision batch Link fault positions: "<<positions<<"\n";
+    std::cout<<"Mixed Review decision fault positions: "<<positions<<"\n";
 }
 
 void rejected_merge_faults(const std::filesystem::path& dir) {

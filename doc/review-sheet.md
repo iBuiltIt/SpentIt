@@ -42,9 +42,8 @@ import-time missing-category decisions stay.
 - Group questions into possible duplicates, possible transfers and import
   problems, preserving account order within each kind. Merge/Link/Keep separate
   name the action. Select all merges includes only groups with enough selected
-  rows and an unambiguous survivor; it never invents ambiguous choices. Clear
-  merge selection affects batch intent only. Batch Merge remains atomic and
-  preserves the visible question anchor.
+  rows and an unambiguous survivor. Apply decisions saves the selected merges
+  and transfer decisions together and preserves the visible question anchor.
 - Acceptance is direct without concerns. Outstanding questions or acceptance
   warnings open a dialog; Accept anyway is available only when all warnings are
   overridable. Failed imports remain visible and may remain after acceptance.
@@ -315,22 +314,21 @@ its visible group anchor (or the next surviving group) when resolved groups leav
 
 **Include match** is shown only on a two-row duplicate question. It selects that
 question as pending UI intent. A question with more than two rows has no Include
-match control; check the transaction rows that pair. **Merge pairs** saves, in
-one step, every two-row question marked Include match and every larger question
-with exactly two checked rows whose obvious kept row is the single accepted,
-manual, or linked row. Any other checked count in a larger question is left
-unchanged. **Merge pairs** does not choose between two new rows or two
-accepted rows. That question's Merge button merges the checked rows, and asks
+match control. Check the rows to pair. **Apply decisions** includes every
+two-row question marked Include match and every larger question with exactly
+two checked rows whose obvious kept row is the single accepted, manual, or
+linked row. Use a larger question's Merge button for other selections. The
+button merges the checked rows and asks
 which row to keep when none is chosen automatically. Changing the
 checked rows clears that question's Include match staging. Zero or multiple
 committed selections on a two-row question require choosing a survivor; one
 committed selection keeps that row automatically. Numbered selected-group labels
 correspond to validation errors. Leaving Review clears selections. Inspect keeps Include match and checked rows
 until Review is shown again, or until that ledger visit is left for another
-workspace. A changed dataset generation clears them. No selections persist
-across restarts. Link is not batched and matching eligibility is unchanged.
+workspace. Selections that still match a refreshed question stay available.
+Selections are held for the current Review visit.
 
-Two rows left after **Merge pairs** come back as a two-row question, with
+Two rows left after applying a partial merge come back as a two-row question, with
 Include match. One row left leaves the question and stays in the ledger. That
 is not **Keep separate**.
 
@@ -788,13 +786,15 @@ choice permits inference again. Explicit choices, rejection, and Decide later ar
 never overwritten by this convenience; unrelated pending decisions stay intact.
 A transaction can have only one pending link.
 
-**Apply decisions** sits immediately left of Undo import in the Review header,
-with the pending link and rejection counts immediately left of Apply decisions. It saves
-exactly those decisions in one atomic operation and one Undo step. Untouched
-multiple-choice cards and Decide later cards are omitted. Split choices and
-amount differences still require the per-card Link workflow. Failure or
-cancellation saves none of the batch. Redo replays the saved decisions without
-finding new pairs. Database version 1 is unchanged.
+**Apply decisions** in the Review header saves selected duplicate merges,
+links, transfer rejections, and checked **Accept without bank match** decisions
+in one atomic operation and one Undo step. The header summarizes what will be
+saved. **Clear selection**, immediately to the right, clears the checked rows
+and staged choices, including preselected link suggestions. A refresh keeps
+those suggestions clear until a new partner choice permits inference. Use
+per-card Link for split choices or amount differences. Untouched multiple-choice
+cards and Decide later cards stay open. Failure or cancellation rolls back the
+whole batch. Redo replays the saved decisions.
 
 The per-card **Link** and **Not this transfer** still save immediately. Review
 card Link applies only that pair, even with Auto Link enabled, so other staged
@@ -820,12 +820,12 @@ matching and saving behavior are unchanged.
 On a waiting-only transfer card, **Accept without bank match** starts unchecked.
 In **Unmatched transfers in**, choose the account that holds the generated
 entry. **Select all** checks its waiting-only cards. Individual checkboxes and
-**Clear selection** let the user change that selection before saving.
+**Deselect all** let the user change that account's selection before saving.
 Transfers with candidate matches use their existing link controls and offer
 **Hide suggestions…**.
 
-**Apply decisions** saves checked unmatched transfers with the pending links
-and rejections in one atomic operation and one Undo step. It records the
+**Apply decisions** saves checked unmatched transfers with the other pending
+Review choices in one atomic operation and one Undo step. It records the
 decision without creating bank evidence or accepting a New transaction.
 **Accept transactions** remains a separate file-wide action. Redo replays the
 saved decisions. Cancellation, stale choices, and failure follow the same

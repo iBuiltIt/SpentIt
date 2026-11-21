@@ -4012,18 +4012,35 @@ ApplicationWindow {
         }
         return result
     }
-    function transferDecisionSummary() {
-        const groups=linkSelectedGroups(), links=groups.filter(g=>g.answer==="link").length
+    readonly property var stagedReviewGroups: mergePairGroups().concat(linkSelectedGroups())
+    readonly property bool hasReviewSelection: Object.keys(reviewBatch).length>0 ||
+        Object.values(reviewRowChoices).some(rows=>rows.length>0) ||
+        Object.values(reviewLinkChoices).some(choice=>["link","not_linked","accept_missing"].includes(choice.action))
+    function reviewDecisionSummary(groups) {
+        const merges=groups.filter(g=>g.answer==="merge").length
+        const links=groups.filter(g=>g.answer==="link").length
         const rejected=groups.filter(g=>g.answer==="not_linked").length
-        const unmatched=groups.length-links-rejected
-        const summary=links+" "+(links===1?"link":"links")+", "+rejected+" not "+(rejected===1?"a transfer":"transfers")
-        return unmatched?(links||rejected?summary+", ":"")+unmatched+" without bank match":summary
+        const unmatched=groups.length-merges-links-rejected
+        const parts=[]
+        if(merges)parts.push(merges+(merges===1?" merge":" merges"))
+        if(links || rejected)parts.push(links+(links===1?" link":" links")+", "+rejected+" not "+(rejected===1?"a transfer":"transfers"))
+        if(unmatched)parts.push(unmatched+" without bank match")
+        return parts.join(", ")
     }
-    function linkSelectedTransfers() {
-        const groups=linkSelectedGroups()
+    function applyReviewDecisions() {
+        const groups=stagedReviewGroups
         if(!groups.length || workflow.busy)return
         captureReviewView();reviewScrollPosition=reviewQuestions.contentY
         workflow.command("review_batch",{groups:groups})
+    }
+    function clearReviewSelection() {
+        reviewBatch=({});reviewRowChoices=({})
+        const choices={}
+        // A refresh must not recheck suggestions the user just cleared.
+        // A later partner choice can still infer links in that group.
+        for(const q of (s.reviewQuestions||[]))
+            if(q.kind==="link" && q.rows.length>1)choices[q.key]={action:"undecided",auto:true}
+        reviewLinkChoices=choices
     }
     function setReviewBatch(args) {
         let values=Object.assign({},reviewBatch);values[args.question]=args;reviewBatch=values
@@ -4421,11 +4438,14 @@ ApplicationWindow {
                 Label {text:reviewSheet.title;font.pixelSize:20;Layout.fillWidth:true;Accessible.name:reviewCountAccessibleName()}
                 Flow {Layout.fillWidth:true;Layout.minimumWidth:0;Layout.preferredHeight:childrenRect.height;spacing:6;layoutDirection:Qt.RightToLeft
                     Button {objectName:"chooseImportUndo";text:"Undo import…";visible:(s.undoableImports||[]).length>0;enabled:!workflow.busy;onClicked:guard(openImportUndoPicker)}
-                    RowLayout {spacing:6;visible:linkSelectedGroups().length>0
-                        Label {objectName:"transferDecisionSummary";text:transferDecisionSummary();textFormat:Text.PlainText}
-                        Button {objectName:"linkSelected";text:"Apply decisions";enabled:!workflow.busy;Accessible.name:"Apply pending transfer decisions. Undo reverses them together."
-                            onClicked:linkSelectedTransfers()}
+                    RowLayout {spacing:6;visible:hasReviewSelection
+                        Button {objectName:"applyReviewDecisions";text:"Apply decisions";visible:stagedReviewGroups.length>0;enabled:!workflow.busy
+                            Accessible.name:"Apply selected Review decisions. Undo reverses them together."
+                            onClicked:applyReviewDecisions()}
+                        Button {objectName:"clearReviewSelection";text:"Clear selection";enabled:!workflow.busy
+                            onClicked:clearReviewSelection()}
                     }
+                    Label {objectName:"reviewDecisionSummary";text:reviewDecisionSummary(stagedReviewGroups);visible:stagedReviewGroups.length>0;textFormat:Text.PlainText}
                 }
             }
         }
@@ -4455,12 +4475,9 @@ ApplicationWindow {
             }
         }
         GridLayout {
-            Layout.fillWidth:true;columns:width>800?4:2;visible:(s.reviewQuestions||[]).some(q=>q.kind==="same")
+            Layout.fillWidth:true;columns:2;visible:(s.reviewQuestions||[]).some(q=>q.kind==="same")
             Label {text:"Possible duplicates";font.bold:true;Layout.fillWidth:true}
             Button {objectName:"selectAllMerges";text:"Select all merges";visible:selectableMerges().length>0;enabled:!workflow.busy;onClicked:{for(let item of selectableMerges())selectReviewGroup(item.question,item.rows)}}
-            Button {objectName:"clearMergeSelection";text:"Clear merge selection";visible:Object.keys(reviewBatch).length>0;enabled:!workflow.busy;onClicked:reviewBatch=({})}
-            Button {objectName:"mergeSelectedMatches";text:"Merge pairs";visible:mergePairGroups().length>0;enabled:!workflow.busy
-                onClicked:{captureReviewView();workflow.command("review_batch",{groups:mergePairGroups()})}}
         }
         RowLayout {
             Layout.leftMargin:12;Layout.rightMargin:12;Layout.fillWidth:true
@@ -4475,7 +4492,7 @@ ApplicationWindow {
                 objectName:"selectWaitingTransfers"
                 readonly property var questions: (s.reviewQuestions||[]).filter(q=>q.waitingAccount && q.waitingAccount===waitingTransferAccount.currentValue)
                 readonly property bool allSelected: questions.length>0 && questions.every(q=>(reviewLinkChoices[q.key]||{}).action==="accept_missing")
-                text:allSelected?"Clear selection":"Select all"
+                text:allSelected?"Deselect all":"Select all"
                 enabled:!workflow.busy && questions.length>0
                 onClicked:selectWaitingTransfers(questions,!allSelected)
             }

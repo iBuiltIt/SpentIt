@@ -23,12 +23,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-111. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-112. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-111 — Apply Review decisions together (2026-11-21).** Update
+[Review duplicates and transfers](../manual/review-duplicates-transfers.md)
+to show **Apply decisions** and **Clear selection** in the header, the combined
+counts, and one Undo for the selected merges and transfer decisions. Update the
+unmatched-transfer section to call its account-specific action **Deselect all**.
+Refresh the affected Review pictures and captions with synthetic transactions.
+See [pending Review decisions](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
 
 **MAN-110 — Auto merge into an accepted transfer (2026-11-21).** In
 [Review duplicates and transfers](../manual/review-duplicates-transfers.md),

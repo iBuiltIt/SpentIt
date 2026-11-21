@@ -1721,20 +1721,23 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
     ScopedStatements statements(impl_->db);
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE);
     if(answers.empty())fail(SQLITE_CONSTRAINT,"Select at least one match group");
-    const bool linking=answers.front().action!=app::ReviewAction::merge;
     const bool replaying=impl_->redo_operation==operation;
+    bool merging=false,linking=false;
     std::string encoded="batch:";
     std::set<std::string> questions;std::set<imports::Occurrence> selected;
     for(const auto& answer:answers){
         context.checkpoint("Checking selected matches");
-        if(linking){
+        if(answer.action==app::ReviewAction::merge){
+            if(answer.question=="selected" || answer.automatic)
+                fail(SQLITE_CONSTRAINT,"Choose a duplicate match group");
+            merging=true;
+        }else{
             // Only Redo can supply automatic links from a saved follow-on batch.
             const bool valid=answer.action==app::ReviewAction::link?answer.selected.size()==2:
                 answer.action==app::ReviewAction::not_linked || answer.action==app::ReviewAction::accept_missing;
             if(!valid || answer.question=="selected" || (answer.automatic && (!replaying || answer.action!=app::ReviewAction::link)))
                 fail(SQLITE_CONSTRAINT,"Choose a valid transfer decision");
-        }else if(answer.action!=app::ReviewAction::merge || answer.question=="selected"){
-            fail(SQLITE_CONSTRAINT,"Batch Merge requires duplicate match groups");
+            linking=true;
         }
         if(!questions.insert(answer.question).second)fail(SQLITE_CONSTRAINT,"Select each match group only once");
         for(const auto& id:answer.selected)if(!selected.insert(id).second)fail(SQLITE_CONSTRAINT,"Select each transaction only once in a batch");
@@ -1759,16 +1762,16 @@ app::ReviewReceipt ImportStore::write_review_batch(std::string_view operation,co
         }
     }
     Atomic transaction(impl_->db);
-    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,'batch',?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(linking?app::ReviewAction::link:app::ReviewAction::merge));receipt.text(3,encoded);receipt.integer(4,sheet.generation);receipt.done();
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),?,'batch',?,?)");receipt.text(1,operation);receipt.integer(2,static_cast<int>(merging?app::ReviewAction::merge:app::ReviewAction::link));receipt.text(3,encoded);receipt.integer(4,sheet.generation);receipt.done();
     for(std::size_t i=0;i<answers.size();++i){
-        context.checkpoint(linking?"Applying transfer decisions, "+std::to_string(i+1)+" of "+std::to_string(answers.size()):"Merging selected matches");
+        context.checkpoint(linking?(merging?"Applying Review decisions, ":"Applying transfer decisions, ")+std::to_string(i+1)+" of "+std::to_string(answers.size()):"Merging selected matches");
         try{const auto child=std::string(operation)+"-group-"+std::to_string(i+1);
             if(answers[i].automatic)write_automatic_review(child,answers[i],operation);
             else write_review_answer(child,answers[i],sheet,operation);}
         catch(const storage::ImportError& error){fail(error.code(),("Selected match "+std::to_string(i+1)+": "+error.what()).c_str());}
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,sheet.generation+1);stack.done();impl_->pending_review_action=operation;
-    context.checkpoint(linking?"Saving transfer decisions":"Validating merged matches");
+    context.checkpoint(merging && linking?"Saving Review decisions":linking?"Saving transfer decisions":"Validating merged matches");
     finish([&]{context.seal();transaction.commit();});
     return {std::string(operation),static_cast<std::size_t>(std::count_if(answers.begin(),answers.end(),[](const auto& answer){return answer.action==app::ReviewAction::link;}))};
 }

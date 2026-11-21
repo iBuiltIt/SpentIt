@@ -2859,7 +2859,7 @@ private slots:
             QCOMPARE(rows.size(), 2);
             QVERIFY(QMetaObject::invokeMethod(session.root, "selectReviewLink",
                 Q_ARG(QVariant, rows.front().toMap().value("key")), Q_ARG(QVariant, QVariant(1))));
-            QTRY_COMPARE(object(session.root, "transferDecisionSummary")->property("text").toString(),
+            QTRY_COMPARE(object(session.root, "reviewDecisionSummary")->property("text").toString(),
                 QString("2 links, 0 not transfers"));
             const auto chapterSize = session.window->size();
             session.window->resize(chapterSize.width(), 1040);
@@ -2880,7 +2880,7 @@ private slots:
             QVERIFY(waitingAccount);
             QCOMPARE(waitingAccount->property("currentValue").toString(), QString("2"));
             mouse("selectWaitingTransfers");
-            QTRY_COMPARE(object(session.root, "transferDecisionSummary")->property("text").toString(),
+            QTRY_COMPARE(object(session.root, "reviewDecisionSummary")->property("text").toString(),
                 QString("2 without bank match"));
             session.window->resize(chapterSize.width(), 1040);
             capture("review-waiting");

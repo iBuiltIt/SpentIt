@@ -12,6 +12,23 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Apply Review decisions together — 2026-11-21
+
+**Apply decisions** saves staged duplicate merges and transfer decisions
+together as one Undo step. **Clear selection** is immediately to its right and
+clears staged choices without writing to the file. Review keeps its existing
+candidate groups. See [pending Review decisions](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17)
+and [MAN-111](manual-update-backlog.md#open-items).
+
+Seven macOS arm64 rules-enabled Release storage targets passed. The mixed
+decision fault sweep checked both account balances, exact retries, and
+atomicity through invalid input, cancellation, write failure, and interruptions
+before and after commit. The focused offscreen UI cases verified the button
+order at two widths, clearing selections, mixed Apply, Undo and Redo, and
+the waiting-transfer workflow. The Review Help walkthrough and Release
+offscreen startup passed. The full offscreen Import UI suite passed all 127
+cases. Native interactive use was unverified.
+
 ## Auto merge into accepted transfers — 2026-11-21
 
 Auto merge can keep an accepted transfer when it has a mutually unique
