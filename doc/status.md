@@ -12,6 +12,21 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Open from Browse — 2026-11-21
+
+Confirming a file in **Browse…** starts opening it from the welcome screen.
+If the file needs a password, the password field receives focus and Return
+submits it. See [the welcome contract](../features/001-documents-storage-security.md#creation-and-welcome)
+and [MAN-112](manual-update-backlog.md#open-items).
+
+On macOS arm64 with Qt 6.12.0, the rules-enabled Release picker regression
+passed using Qt's offscreen dialog. It covered picker cancellation, direct
+opening, password focus and Return, and the error for a locked file. The full
+offscreen Import UI suite passed with 131 passes. Eight additional Release
+targets passed for startup, diagnostics, recovery, cancellation, password
+changes, replacement and document locking. Native picker interaction was
+unverified.
+
 ## Date sort and QIF running balances — 2026-11-21
 
 Date sort reverses the full posting sequence, including same-day rows. Each

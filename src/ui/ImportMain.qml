@@ -2434,6 +2434,8 @@ ApplicationWindow {
                 if(success){Qt.callLater(beginQuit)}
             }
             if(["open","unlock","create","close","prepare_create"].indexOf(action)>=0) startupPending=false
+            if(action==="open" && success && s.unlockRequired)
+                Qt.callLater(function(){if(unlockPassword.visible && !workflow.busy)unlockPassword.forceActiveFocus()})
             if(action==="select_account" && pendingAccountMenu) {
                 const request=pendingAccountMenu;pendingAccountMenu=null
                 if(success && s.accountId===request.id) accountContext.popup(request.x,request.y)
@@ -2605,8 +2607,8 @@ ApplicationWindow {
         id:probeTimer;interval:startupPending?0:350
         onTriggered: {
             if(s.active || settingUp)return
-            if(workflow.busy){restart();return}
-            workflow.command(startupPending?"open":"probe",{path:location.text,startup:startupPending})
+            if(workflow.busy || openDialog.visible){restart();return}
+            workflow.command(startupPending?"open":"probe",{path:location.text,promptForPassword:startupPending})
         }
     }
     function openDataset() {
@@ -2636,8 +2638,15 @@ ApplicationWindow {
     }
     ListModel {id:splitModel}
     ListModel {id:ruleModel}
-    FileDialog { id:openDialog; title:"Choose your SpentIt dataset";currentFolder:workflow.documentsFolder
-        onAccepted:{settingUp=false;location.text=workflow.localPath(selectedFile);unlockPassword.clear();probeTimer.restart()}
+    FileDialog {
+        id:openDialog;objectName:"openDatasetDialog";title:"Open SpentIt file";currentFolder:workflow.documentsFolder
+        onAccepted: {
+            probeTimer.stop()
+            settingUp=false
+            location.text=workflow.localPath(selectedFile)
+            unlockPassword.clear()
+            workflow.command("open",{path:location.text,promptForPassword:true})
+        }
     }
     FileDialog { id:createDialog; fileMode:FileDialog.SaveFile; title:"New SpentIt dataset";currentFolder:workflow.documentsFolder;selectedFile:workflow.suggestedFile;defaultSuffix:"spentit";options:FileDialog.DontConfirmOverwrite
         onAccepted:location.text=workflow.datasetFilename(workflow.localPath(selectedFile))

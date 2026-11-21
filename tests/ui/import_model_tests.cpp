@@ -2429,6 +2429,90 @@ private slots:
         QTRY_VERIFY(m.state().value("active").toBool());
     }
 
+    void browseDataset_data() {
+        QTest::addColumn<QString>("kind");
+        for(const auto* kind:{"public","protected","locked"})QTest::newRow(kind)<<QString(kind);
+    }
+    void browseDataset() {
+        QFETCH(QString,kind);
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto path=dir.filePath("selected file.spentit");
+        const auto remembered=QSettings().value("datasetPath");
+        ImportModel owner(storage::document_gateway());
+        run(owner,"create",{{"path",path},{"name","Picked file"},{"currency","CAD"},{"protected",kind=="protected"},{"password","synthetic"},{"confirmation","synthetic"}});
+        if(kind!="locked")run(owner,"close");
+        QSettings().setValue("datasetPath",remembered);
+
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow",&model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        window->requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(window));
+        QTRY_VERIFY(!model.busy() && !window->property("startupPending").toBool());
+        auto* browse=window->findChild<QObject*>("browseDataset");
+        auto* picker=window->findChild<QObject*>("openDatasetDialog");
+        auto* location=window->findChild<QObject*>("datasetPath");
+        QVERIFY(browse && picker && location);
+        QVERIFY(picker->setProperty("options",8)); // QFileDialogOptions::DontUseNativeDialog
+        QVERIFY(picker->setProperty("popupType",0)); // Popup.Item keeps focus in the offscreen test window.
+        QSignalSpy commands(&model,&ImportModel::completed);
+
+        QVERIFY(QMetaObject::invokeMethod(browse,"clicked"));
+        QTRY_VERIFY(picker->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(picker,"reject"));
+        QTRY_VERIFY(!picker->property("visible").toBool());
+        QCOMPARE(location->property("text"),remembered);
+        QVERIFY(commands.isEmpty());
+
+        QVERIFY(QMetaObject::invokeMethod(location,"textEdited"));
+        QVERIFY(QMetaObject::invokeMethod(browse,"clicked"));
+        QTRY_VERIFY(picker->property("visible").toBool());
+        auto* dialog=window->findChild<QObject*>("fileNameTextField");
+        while(dialog && !dialog->inherits("QQuickFileDialogImpl"))dialog=dialog->parent();
+        QVERIFY(dialog);
+        QVERIFY(dialog->setProperty("currentFolder",QUrl::fromLocalFile(dir.path())));
+        QVERIFY(dialog->setProperty("selectedFile",QUrl::fromLocalFile(path)));
+        QVERIFY(QMetaObject::invokeMethod(dialog,"accept"));
+        QTRY_VERIFY_WITH_TIMEOUT(!commands.isEmpty() && !model.busy(),30000);
+        QCOMPARE(commands.size(),1);
+        QCOMPARE(commands.first().at(0).toString(),QString("open"));
+        QCOMPARE(location->property("text").toString(),path);
+        QCOMPARE(model.state().value("path").toString(),path);
+
+        if(kind=="locked") {
+            QVERIFY(!commands.first().at(1).toBool());
+            QVERIFY(!model.state().value("active").toBool());
+            QVERIFY(!model.error().isEmpty());
+            QCOMPARE(QSettings().value("datasetPath"),remembered);
+            run(owner,"close");
+            return;
+        }
+        if(kind=="protected") {
+            QVERIFY(commands.first().at(1).toBool());
+            QVERIFY(!model.state().value("active").toBool());
+            QVERIFY(model.state().value("unlockRequired").toBool());
+            QVERIFY(model.error().isEmpty());
+            QCOMPARE(QSettings().value("datasetPath"),remembered);
+            auto* password=window->findChild<QQuickItem*>("unlockPassword");
+            QVERIFY(password);
+            QTRY_VERIFY(password->hasActiveFocus());
+            password->setProperty("text","synthetic");
+            QTest::keyClick(window,Qt::Key_Return);
+            QTRY_VERIFY_WITH_TIMEOUT(model.state().value("active").toBool() && !model.busy(),30000);
+            QCOMPARE(commands.size(),2);
+            QCOMPARE(commands.last().at(0).toString(),QString("unlock"));
+        }
+        QVERIFY2(model.state().value("active").toBool(),qPrintable(model.error()));
+        QCOMPARE(model.state().value("name").toString(),QString("Picked file"));
+        QCOMPARE(QSettings().value("datasetPath").toString(),path);
+        run(model,"close");
+    }
+
     void launchDocumentArgument() {
         QString error;
         QCOMPARE(ImportModel::launchDocumentPath({"SpentIt.exe","--smoke-create"},&error),QString());

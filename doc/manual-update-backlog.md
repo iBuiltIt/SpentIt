@@ -23,12 +23,20 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-112. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-113. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-112 — Open from Browse (2026-11-21).** Update
+[Create or open your file](../manual/create-open-file.md#open-your-file)
+to show that confirming a file in **Browse…** starts opening it. If asked for
+a password, type it and press Return or choose **Open file**. Keep the separate
+instructions for a path already shown on the welcome screen. The password
+field and button shown in the existing picture still apply. See
+[the welcome contract](../features/001-documents-storage-security.md#creation-and-welcome).
 
 **MAN-111 — Apply Review decisions together (2026-11-21).** Update
 [Review duplicates and transfers](../manual/review-duplicates-transfers.md)

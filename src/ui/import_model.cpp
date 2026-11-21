@@ -1676,7 +1676,7 @@ struct ImportModel::Worker {
                 canOpen=false;welcomePassword=false;
                 try {gateway->open_controlled(path.toStdString(),action=="unlock"?std::optional(str(a.value("password"))):std::nullopt,context);}
                 catch(const app::UnlockRequired&) {
-                    if(action!="open" || !a.value("startup").toBool())throw;
+                    if(action!="open" || !a.value("promptForPassword").toBool())throw;
                     welcomePassword=true;return;
                 }
                 catch(const std::invalid_argument&) {

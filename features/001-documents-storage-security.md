@@ -1,7 +1,7 @@
 # 001 — Documents, storage, and security
 
 Status: **active**
-Last updated: 2026-11-19
+Last updated: 2026-11-21
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -52,10 +52,12 @@ replacement; say so and allow another explicit overwrite.
 
 Startup tries the last-used no-password file once. Success skips the welcome
 screen. Otherwise the welcome screen offers Open, New, Browse, and a password
-when needed. Choosing Open file for a password-protected file with an empty
-password leaves that password box in place and says “Enter a password.” The
-file is not opened. File → Close returns to that screen and does not reopen the
-file just closed.
+when needed. Confirming a file in Browse starts opening it. If a password is
+needed, the password field receives focus. Press Return or choose Open file to
+submit the password. Cancelling Browse leaves the welcome screen as it was.
+Choosing Open file with an empty password leaves the password box in place and
+says “Enter a password.” File → Close returns to the welcome screen with the
+file closed.
 
 The welcome screen shows SpentIt, “Where did my money go?”, the file prompt,
 and errors. The logo follows system appearance.
