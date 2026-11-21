@@ -132,6 +132,12 @@ ImportStore::ImportUndoPlan ImportStore::plan_import_undo(std::string_view sourc
     auto restored=current;
     plan_import_links(source,plan,restored);
     if(!plan.link_answers.empty()){
+        for(std::size_t i=0;i<current.size();++i)if(current[i].sequence!=restored[i].sequence){
+            for(const auto* view:{&current[i],&std::as_const(restored[i])}){
+                affected.insert(view->link.origin.endpoint.account);
+                affected.insert(view->link.destination.endpoint.account);
+            }
+        }
         Statement shared(impl_->db,"SELECT 1 FROM source_associations a JOIN batches b ON b.id=a.ledger_batch JOIN batches owner ON owner.id=a.source_batch WHERE b.source_id=?1 AND owner.source_id!=?1 LIMIT 1");
         shared.text(1,source);
         if(shared.row())fail(SQLITE_CONSTRAINT,"Another import now uses these linked transactions. Undo that import first.");
@@ -402,6 +408,7 @@ app::RollbackReceipt ImportStore::rollback_scope(std::string_view operation,std:
 // Include import-time automatic links even after Undo of acceptance makes both
 // postings New. Their prior images can own an earlier generated counterpart.
 void ImportStore::plan_import_links(std::string_view source,ImportUndoPlan& plan,std::vector<app::TransferView>& values) const {
+    GroupSelection selection(impl_->selected_account);
     std::set<std::string> answers;
     Statement automatic(impl_->db,R"SQL(
 SELECT DISTINCT a.id FROM batches b JOIN review_choices c ON c.batch=b.id AND c.kind=1
@@ -413,6 +420,14 @@ WHERE b.source_id=? AND a.action=2 AND a.question LIKE 'link:%' AND substr(a.req
     automatic.text(1,source);
     while(automatic.row())answers.insert(automatic.bytes(0));
     const auto automatic_answers=answers;
+    std::set<std::string> reopen_answers;
+    Statement reopened(impl_->db,R"SQL(
+SELECT a.id FROM review_answers a WHERE a.question='import-reopen-link' AND a.request=?
+AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+)SQL");
+    reopened.text(1,source);
+    while(reopened.row())reopen_answers.insert(reopened.bytes(0));
+    answers.insert(reopen_answers.begin(),reopen_answers.end());
     for(const auto& value:values) {
         const auto& l=value.link;
         if(l.origin.state==transfers::State::removed && l.destination.state==transfers::State::removed)continue;
@@ -446,6 +461,19 @@ WHERE b.source_id=? AND a.action=2 AND a.question LIKE 'link:%' AND substr(a.req
             if(links.null(2))undo_new_relationship(*current);
             else *current=transfer_codec::view(links.bytes(2));
             current->sequence=links.integer(4);
+            if(reopen_answers.contains(answer))for(const auto* side:{&current->link.origin,&current->link.destination}){
+                if(side->state!=transfers::State::draft || (!side->independent_evidence && !side->ledger_entry))continue;
+                const auto& endpoint=side->endpoint;
+                impl_->selected_account=endpoint.account;
+                const auto row=load_row(endpoint.entry,false);
+                const auto other=side==&current->link.origin?current->link.destination.endpoint.account:current->link.origin.endpoint.account;
+                if(!row.draft || row.review_stale || row.excluded_by_clear || row.matched_generated ||
+                   row.decision.disposition!=imports::Disposition::include || pending_removed(impl_->db,endpoint.entry) ||
+                   transaction_accepted(endpoint.entry) || row.draft->date!=side->date ||
+                   std::none_of(row.draft->transaction.allocations().begin(),row.draft->transaction.allocations().end(),[&](const auto& part){
+                       return part.identity==endpoint.allocation && part.amount==side->amount && review_link_category(part.category,other);
+                   }))fail(SQLITE_CONSTRAINT,"A transaction in the previous transfer changed. Undo that change before undoing this import.");
+            }
         }
         Statement members(impl_->db,"SELECT batch,ordinal,committed,result FROM review_members WHERE answer=?");members.text(1,answer);
         while(members.row()) {
@@ -467,6 +495,10 @@ WHERE b.source_id=? AND a.action=2 AND a.question LIKE 'link:%' AND substr(a.req
             plan.baseline_unmerges.emplace(answer,std::move(*unmerge));
         }
         plan.link_answers.push_back(answer);
+    }
+    if(!reopen_answers.empty()){
+        try{validate_transfer_set(values);}
+        catch(const transfers::TransferError&){fail(SQLITE_CONSTRAINT,"Undo the later transfer change before undoing this import.");}
     }
 }
 app::RollbackReceipt ImportStore::undo_linked_import(std::string_view operation,std::string_view source,const ImportUndoPlan& plan) {

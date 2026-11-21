@@ -818,7 +818,7 @@ struct ImportModel::Worker {
         auto& repo=gateway->repository();
         const bool merges=automaticReviewPreference("AutoMerge");
         const bool links=automaticReviewPreference("AutoLink");
-        if(!merges && !links)return;
+        if(!merges && !links && repo.pending_review_links().empty())return;
         // The import is already saved. These pairs share its Undo step, so they
         // commit together. Cancel rolls the pairs back and leaves the import.
         auto sealed=app::OperationContext::sealed;
@@ -826,12 +826,13 @@ struct ImportModel::Worker {
         auto note=[&](const QString& sentence){if(!importFeedback.isEmpty() && !importFeedback.endsWith('.'))importFeedback+='.';importFeedback+=sentence;};
         try {
             context.checkpoint("Checking duplicate and transfer suggestions");
-            const auto plan=repo.automatic_review_plan(batches,merges,links);
-            if(plan.empty())return;
-            repo.save_automatic_import_review(identity(),plan,context);
-            std::size_t merged=0,linked=0;
-            for(const auto& planned:plan){if(planned.action==app::ReviewAction::merge)++merged;else ++linked;}
-            note(QString(" Automatically merged %1 %2 and linked %3 %4.").arg(merged).arg(merged==1?"pair":"pairs").arg(linked).arg(linked==1?"transfer":"transfers"));
+            const auto result=repo.review_completed_import(identity(),batches,merges,links,context);
+            if(result.merged || result.linked)
+                note(QString(" Automatically merged %1 %2 and linked %3 %4.").arg(result.merged).arg(result.merged==1?"pair":"pairs").arg(result.linked).arg(result.linked==1?"transfer":"transfers"));
+            if(result.reopened)
+                note(result.reopened==1
+                    ?QString(" A new transaction could match an automatically linked transfer. Choose the match in Review.")
+                    :QString(" New transactions could match %1 automatically linked transfers. Choose the matches in Review.").arg(result.reopened));
         }catch(const app::OperationCancelled&){
             context.state.store(app::OperationContext::sealed);context.observeState();
             note(" The import was saved. Automatic matching was not saved. Review the remaining matches.");

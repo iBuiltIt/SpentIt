@@ -12,6 +12,28 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Reopen provisional transfer links — 2026-11-21
+
+A later import can reopen an automatic link between two New postings when it
+adds another eligible match. Review offers the choices and keeps each bank
+posting. Undo the later import to restore the previous link. See [Review](review-sheet.md#reopen-an-automatic-link-after-a-later-import)
+and [MAN-113](manual-update-backlog.md#open-items).
+
+The macOS arm64 rules-enabled Release storage regression passed all six
+synthetic import orders, with Undo in the current session and after closing
+and reopening. It checked exact balances, explicit and accepted links,
+allocation eligibility, cancellation, disk-full and I/O failures,
+interruption on both sides of commit, and exact retries. The rebuilt
+`./build/SpentIt` passed offscreen startup. The same storage target passed
+under AddressSanitizer and UndefinedBehaviorSanitizer with leak detection
+disabled.
+
+All eight selected Release targets passed on the final build. The full
+offscreen Import UI suite had 132 passes, including choosing the new
+counterpart in Review and undoing back to the previous link. An earlier
+concurrent run timed out in a selection-shortcut case. Native interaction was
+unverified.
+
 ## Open from Browse — 2026-11-21
 
 Confirming a file in **Browse…** starts opening it from the welcome screen.

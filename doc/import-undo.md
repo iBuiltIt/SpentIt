@@ -28,6 +28,9 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
 - When an automatic duplicate Merge keeps an accepted transfer posting, Undo
   removes the later bank source and preserves the accepted posting and its
   existing link.
+- When a later import [reopens a provisional link](review-sheet.md#reopen-an-automatic-link-after-a-later-import),
+  Undo removes the later source and restores the exact link from before the
+  import, subject to the same checks for conflicting changes.
 - Preview checks the saved results of the match against the current postings and
   links. A conflicting edit to any pair blocks the whole Undo. The file-wide
   Undo control becomes unavailable and Change history explains the refusal. After

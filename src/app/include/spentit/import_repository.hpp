@@ -359,6 +359,18 @@ public:
     virtual ReviewReceipt answer_automatic_review(std::string_view operation,const ReviewAnswer& answer) {return answer_review(operation,answer);}
     // One save for every automatic pair from an import. It is not its own Undo step.
     virtual void save_automatic_import_review(std::string_view,const std::vector<ReviewAnswer>&,const OperationContext&) {throw std::logic_error("Automatic import review is unavailable");}
+    virtual AutomaticImportReview review_completed_import(std::string_view operation,const std::vector<std::string>& batches,
+                                                           bool merges,bool links,const OperationContext& context) {
+        AutomaticImportReview result;
+        const auto plan=automatic_review_plan(batches,merges,links);
+        if(plan.empty())return result;
+        save_automatic_import_review(operation,plan,context);
+        for(const auto& pair:plan) {
+            if(pair.action==ReviewAction::merge)++result.merged;
+            else ++result.linked;
+        }
+        return result;
+    }
     virtual void local_preferences_changed() {}
     // Opaque file identity for local settings that must not follow a replacement file.
     virtual std::string local_preferences_identity() const {return {};}

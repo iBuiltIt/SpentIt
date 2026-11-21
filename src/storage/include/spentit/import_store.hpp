@@ -195,6 +195,7 @@ public:
     app::ReviewReceipt link_review_group(std::string_view,const app::ReviewAnswer&,const app::OperationContext&) override;
     app::ReviewReceipt answer_automatic_review(std::string_view,const app::ReviewAnswer&) override;
     void save_automatic_import_review(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&) override;
+    app::AutomaticImportReview review_completed_import(std::string_view,const std::vector<std::string>&,bool,bool,const app::OperationContext&) override;
     void local_preferences_changed() override;
     std::string local_preferences_identity() const override;
     std::vector<std::string> pending_review_links() const override;
@@ -312,7 +313,7 @@ private:
     bool transfer_linked(const imports::Occurrence&) const;
     std::optional<std::string> active_unmerge(const std::vector<imports::Occurrence>&) const;
     std::optional<LinkUnmergePlan> link_unmerge_plan(const std::vector<imports::Occurrence>&,std::string_view identity={}) const;
-    std::set<imports::Occurrence> write_unmerge_links(std::string_view,const LinkUnmergePlan&);
+    std::set<imports::Occurrence> write_unmerge_links(std::string_view,const LinkUnmergePlan&,std::string_view source={});
     app::ReviewReceipt unmerge_link(std::string_view,const LinkUnmergePlan&);
     struct DeletionPlan;
     DeletionPlan plan_deletion(const app::LedgerSelectionEdit&,const app::OperationContext&) const;
@@ -350,7 +351,15 @@ private:
     imports::DraftRow review_draft(const imports::Occurrence&,std::int64_t,bool historical_currency=false) const;
     void generate_explicit_transfers(app::OperationContext* context=nullptr);
     app::ReviewSheet build_review_sheet(const std::vector<app::LinkExclusion>&,
-                                       const std::set<imports::Occurrence>& rejected_pair={}) const;
+                                       const std::set<imports::Occurrence>& rejected_pair={},
+                                       const std::vector<app::TransferView>* projected_links=nullptr) const;
+    struct ImportLinkReopen {
+        LinkUnmergePlan unmerge;
+        std::set<imports::Occurrence> participants;
+    };
+    std::vector<ImportLinkReopen> import_links_to_reopen(const std::vector<std::string>&,const app::OperationContext&) const;
+    std::set<imports::Occurrence> reopened_link_participants() const;
+    app::AutomaticImportReview write_automatic_import_review(std::string_view,const std::vector<app::ReviewAnswer>&,const app::OperationContext&);
     app::ReviewSheet rejected_transfer_merge(const std::set<imports::Occurrence>&,
                                             const imports::Occurrence* extra=nullptr) const;
     void verify_link_exclusions() const;

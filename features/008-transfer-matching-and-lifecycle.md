@@ -62,7 +62,10 @@ counterparts save together in one Undo step. See
   may link even when other splits exist; those splits stay unchanged. Multiple eligible allocation pairs and amount
   differences stay manual. Other suggestions require
   an explicit choice. The links are one save inside the import. Cancel saves none
-  of them. Unmerge still breaks one link.
+  of them. Unmerge still breaks one link. A later import with another
+  eligible match [reopens a provisional link](../doc/review-sheet.md#reopen-an-automatic-link-after-a-later-import)
+  between two New postings for a decision in Review. Undo of that import
+  restores the earlier link.
   With Auto Link enabled, a manual Review Link also links remaining mutually
   unique pairs in its original connected suggestion group. The manual choice
   and follow-ons are one atomic save and one Undo step; unresolved choices stay

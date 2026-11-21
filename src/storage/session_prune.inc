@@ -73,6 +73,14 @@ AND (EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=h.answer)
         if(!value.link.origin.proposed_evidence && !value.link.destination.proposed_evidence)continue;
         Statement prior(impl_->db,"INSERT OR IGNORE INTO session_transfer_restore SELECT identity,max(sequence) FROM transfer_versions WHERE identity=? AND sequence<? HAVING max(sequence) IS NOT NULL");prior.text(1,heads.bytes(0));prior.integer(2,heads.integer(1));prior.done();}}
     exec(impl_->db,R"SQL(
+-- An eligible import Undo restores the exact link that the import reopened.
+INSERT OR IGNORE INTO session_transfer_restore
+SELECT h.identity,h.prior_sequence FROM review_link_history h
+JOIN review_answers a ON a.id=h.answer JOIN sources s ON s.id=a.request
+WHERE a.question='import-reopen-link' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+AND EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND b.state IN(0,4))
+AND NOT EXISTS(SELECT 1 FROM batches b WHERE b.source_id=s.id AND (b.state NOT IN(0,4)
+    OR EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=b.id)));
 DELETE FROM transfer_versions AS v WHERE NOT EXISTS(SELECT 1 FROM session_transfer_restore r WHERE r.identity=v.identity AND r.sequence=v.sequence)
 AND NOT EXISTS(SELECT 1 FROM transfer_heads h WHERE h.identity=v.identity AND h.sequence=v.sequence)
 AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.link=v.identity AND g.sequence=v.sequence)

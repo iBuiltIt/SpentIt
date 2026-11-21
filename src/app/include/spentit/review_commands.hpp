@@ -69,6 +69,9 @@ struct ReviewReceipt {
     std::string confirmation={};
     std::int64_t generation=-1;
 };
+struct AutomaticImportReview {
+    std::size_t merged=0, linked=0, reopened=0;
+};
 struct ManualTransferEdit {
     std::map<std::size_t,std::int64_t> destinations;
     std::optional<std::int64_t> confirmed_generation;

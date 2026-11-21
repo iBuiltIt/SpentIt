@@ -23,12 +23,19 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-113. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-114. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-113 — Reopened transfer matches (2026-11-21).** In
+[Review duplicates and transfers](../manual/review-duplicates-transfers.md),
+show how a later import can return an automatic link to Review, and how
+Undoing that import restores the earlier link. Use a synthetic example with
+one outgoing posting and two equal incoming postings. See
+[reopened automatic links](review-sheet.md#reopen-an-automatic-link-after-a-later-import).
 
 **MAN-112 — Open from Browse (2026-11-21).** Update
 [Create or open your file](../manual/create-open-file.md#open-your-file)

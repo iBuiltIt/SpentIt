@@ -4356,6 +4356,42 @@ private slots:
         QCOMPARE(m.state().value("balance").toString(),QString("25.00"));QCOMPARE(m.state().value("linkedRows").toMap().size(),2);
         QVERIFY(m.state().value("newTransactions").toLongLong()>0);
     }
+    void laterImportReopensProvisionalLink() {
+        QTemporaryDir dir;
+        ImportModel model(storage::document_gateway());
+        create(model,dir.path()+"/doc");
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"automatic_review_settings",{{"kind","link"},{"enabled",true}});
+        run(model,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPPayment\n^\n")}});
+        run(model,"create_account",{{"id","2"},{"name","B"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10\nPUnrelated deposit\n^\n")}});
+        const auto originalLink=model.state().value("linkedRows").toMap();
+        QCOMPARE(originalLink.size(),2);
+        run(model,"create_account",{{"id","3"},{"name","C"},{"currency","CAD"},{"date","2026-01-01"}});
+        run(model,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        run(model,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT10\nPTransfer receipt\n^\n")}});
+        QVERIFY(model.state().value("importFeedback").toString().contains("Choose the match in Review."));
+        QVERIFY(model.state().value("linkedRows").toMap().isEmpty());
+        const auto questions=model.state().value("reviewQuestions").toList();
+        QCOMPARE(questions.size(),1);
+        const auto question=questions.front().toMap();
+        const auto rows=question.value("rows").toList();
+        QCOMPARE(rows.size(),3);
+        const auto account=[](const auto& row){return row.toMap().value("account").toString();};
+        QCOMPARE(account(rows.front()),QString("1"));
+        QVERIFY(account(rows[1])=="3" || account(rows[2])=="3");
+        const auto chosen=account(rows[1])=="3"?rows[1]:rows[2];
+        run(model,"review_link_preview",{{"question",question.value("key")},{"generation",model.state().value("reviewGeneration")},
+            {"answer","link"},{"onlyThisPair",true},{"selected",QVariantList{rows.front(),chosen}}});
+        QCOMPARE(model.state().value("reviewCount").toInt(),0);
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        QCOMPARE(model.state().value("reviewCount").toInt(),1);
+        run(model,"undo_action",model.state().value("actionUndo").toMap());
+        run(model,"select_account",{{"id","2"}});
+        QCOMPARE(model.state().value("linkedRows").toMap(),originalLink);
+        QCOMPARE(model.state().value("reviewCount").toInt(),0);
+    }
     void automaticReviewCancelStopsBeforeNextPair() {
         QTemporaryDir dir;ImportModel m(storage::document_gateway());
         QQmlApplicationEngine engine;engine.rootContext()->setContextProperty("workflow",&m);engine.load(QUrl("qrc:/spentit/ImportMain.qml"));

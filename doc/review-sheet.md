@@ -722,6 +722,27 @@ in the existing request payload, which still identifies automatic links.
 Close retains the latest non-reversed Accept request as the mark boundary,
 without keeping its ordinary Undo stack or changing the schema.
 
+### Reopen an automatic link after a later import
+
+A later import can add a competing match for an allocation that Auto Link
+previously paired. Before applying new automatic decisions, check eligible
+automatic links made since the last Accept. If both linked postings are New
+and the previous relationship can safely be restored, reopen the link and
+show the choices in Review. Existing date, amount, currency, category,
+destination and hidden-match rules still apply. All independent postings
+remain available. The import summary directs the user to Review.
+
+For example, an outgoing posting can link to the only equal incoming posting
+seen so far. If another eligible incoming posting arrives, Review offers both
+bank postings. The next automatic matching pass leaves the reopened choices
+for the user. Accepted links and links chosen by the user stay in place.
+
+Reopening shares the import's automatic matching save and Undo. Cancelling
+that save leaves the imported rows and the earlier link. Undoing the import
+that reopened the match restores the earlier link, including after closing
+and reopening if the import is still eligible for Undo. A conflicting later
+edit or relationship prevents restoration. See [import Undo](import-undo.md).
+
 ## Automatic follow-on links after a manual Link — owner Go, 2026-11-16
 
 When Automatically link one-to-one transfer suggestions is enabled, manually

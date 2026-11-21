@@ -218,7 +218,8 @@ app::ReviewSheet ImportStore::review_sheet() const {
     impl_->sheet_cache=result;impl_->sheet_changes=sqlite3_total_changes64(impl_->db);return result;
 }
 app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExclusion>& exclusions,
-                                                const std::set<imports::Occurrence>& rejected_pair) const {
+                                                const std::set<imports::Occurrence>& rejected_pair,
+                                                const std::vector<app::TransferView>* projected_links) const {
     ScopedStatements plans(impl_->db);
     struct Scope{Impl& state;std::int64_t selected;~Scope(){state.selected_account=selected;}} scope{*impl_,impl_->selected_account};
     app::ReviewSheet result;result.generation=review_generation(impl_->db);
@@ -446,7 +447,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::map<imports::Occurrence,std::set<std::string>> occupied;
     std::map<imports::Occurrence,std::string> repair_origins;
     const auto occupy=[&](const transfers::Endpoint& endpoint){occupied[endpoint.entry].insert(endpoint.allocation);};
-    const auto relationships=all_transfers();
+    const auto relationships=projected_links?*projected_links:all_transfers();
     std::map<std::string,const transfers::Link*> live_review_links;
     for(const auto& v:relationships)if(!v.link.unresolved && !v.link.destination_released && v.link.origin.state!=transfers::State::removed && v.link.destination.state!=transfers::State::removed){
         if((v.link.origin.independent_evidence || v.link.origin.ledger_entry) &&
@@ -816,6 +817,7 @@ std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const app::Rev
     std::map<Id,qif::Record> originals;
     std::vector<Edge> edges;
     std::set<Id> blocked=excluded;
+    const auto reopened=links?reopened_link_participants():std::set<Id>{};
     for(const auto& q:sheet.questions)for(const auto& r:q.rows)rows.emplace(r.identity,r);
     const auto previous=impl_->selected_account;
     struct Restore {std::int64_t& target;std::int64_t value;~Restore(){target=value;}} restore{impl_->selected_account,previous};
@@ -858,6 +860,7 @@ std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const app::Rev
         }
         for(const auto& edge:edges){
             if((pass==0 && edge.distance!=0) || (edge.kind==app::ReviewKind::same?!merges:!links))continue;
+            if(edge.kind==app::ReviewKind::link && (reopened.contains(edge.left) || reopened.contains(edge.right)))continue;
             const auto& a=rows.at(edge.left);const auto& b=rows.at(edge.right);
             if(std::find(batches.begin(),batches.end(),a.identity.batch)==batches.end() && std::find(batches.begin(),batches.end(),b.identity.batch)==batches.end())continue;
             if(blocked.contains(a.identity) || blocked.contains(b.identity) || peers[a.identity].size()!=1 || peers[b.identity].size()!=1 || used.contains(a.identity) || used.contains(b.identity))continue;
@@ -883,6 +886,117 @@ std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const app::Rev
         }
     }
     return result;
+}
+
+std::set<imports::Occurrence> ImportStore::reopened_link_participants() const {
+    std::set<imports::Occurrence> rows;
+    Statement reopened(impl_->db,R"SQL(
+SELECT c.batch,c.ordinal FROM review_choices c JOIN review_answers a ON a.id=c.answer
+WHERE a.question='import-reopen-link' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+AND a.sequence>(SELECT coalesce(max(r.sequence),0) FROM review_answers r JOIN acceptance_states s ON s.id=r.id WHERE s.undo_id IS NULL)
+)SQL");
+    while(reopened.row())rows.insert({reopened.bytes(0),static_cast<std::size_t>(reopened.integer(1))});
+    return rows;
+}
+
+std::vector<ImportStore::ImportLinkReopen> ImportStore::import_links_to_reopen(
+    const std::vector<std::string>& batches,const app::OperationContext& context) const {
+    const auto pending=pending_review_links();
+    if(pending.empty())return {};
+    const std::set<std::string> imported(batches.begin(),batches.end());
+    struct ImportDates {std::int64_t account; std::string first,last;};
+    std::vector<ImportDates> dates;
+    for(const auto& batch:batches){
+        Statement range(impl_->db,R"SQL(
+SELECT b.account_id,min(v.date),max(v.date) FROM batches b JOIN versions v ON v.batch=b.id
+WHERE b.id=? AND v.decision=1 AND v.revision=(SELECT max(p.revision) FROM versions p WHERE (p.batch,p.ordinal)=(v.batch,v.ordinal))
+GROUP BY b.account_id
+)SQL");
+        range.text(1,batch);
+        if(range.row())dates.push_back({range.integer(0),range.bytes(1),range.bytes(2)});
+    }
+    const auto nearby=[&](const transfers::Side& side){
+        return std::any_of(dates.begin(),dates.end(),[&](const auto& range){
+            return side.endpoint.account!=range.account &&
+                   ((range.first<=side.date && side.date<=range.last) ||
+                    imports::posting_distance(side.date,range.first)<=7 || imports::posting_distance(side.date,range.last)<=7);
+        });
+    };
+    auto projected=all_transfers();
+    struct ProvisionalLink {
+        transfers::Endpoint origin,destination;
+        ImportLinkReopen reopen;
+    };
+    std::vector<ProvisionalLink> candidates;
+    std::map<std::string,std::size_t> positions;
+    for(std::size_t i=0;i<projected.size();++i)positions.emplace(projected[i].link.identity,i);
+    std::set<std::string> projected_ids;
+    for(const auto& identity:pending){
+        context.checkpoint();
+        const auto& link=projected.at(positions.at(identity)).link;
+        const auto& left=link.origin.endpoint.entry;
+        const auto& right=link.destination.endpoint.entry;
+        if(link.origin.state!=transfers::State::draft || link.destination.state!=transfers::State::draft ||
+           imported.contains(left.batch) || imported.contains(right.batch) ||
+           (!nearby(link.origin) && !nearby(link.destination)))continue;
+        auto plan=link_unmerge_plan({left},identity);
+        if(!plan || plan->source_answer.empty())continue;
+        Statement automatic(impl_->db,"SELECT 1 FROM review_answers WHERE id=? AND question LIKE 'link:%' AND substr(request,-5)='|auto'");
+        automatic.text(1,plan->source_answer);
+        if(!automatic.row())continue;
+        const auto committed=[](const auto& view){
+            return view.link.origin.state==transfers::State::committed || view.link.destination.state==transfers::State::committed;
+        };
+        if(std::any_of(plan->steps.begin(),plan->steps.end(),[&](const auto& step){
+            return projected_ids.contains(step.current.link.identity) || committed(step.current) || committed(step.next);
+        }))continue;
+        candidates.push_back({link.origin.endpoint,link.destination.endpoint,{std::move(*plan),{left,right}}});
+        for(const auto& step:candidates.back().reopen.unmerge.steps){
+            projected_ids.insert(step.next.link.identity);
+            projected.at(positions.at(step.next.link.identity))=step.next;
+        }
+    }
+    if(candidates.empty())return {};
+
+    // The ordinary Review predicates still apply when the provisional allocation
+    // is made available. Only a candidate for that allocation can reopen a link.
+    const auto sheet=build_review_sheet(link_exclusions(),{},&projected);
+    std::map<imports::Occurrence,std::vector<const app::ReviewTransaction*>> peers;
+    std::map<imports::Occurrence,const app::ReviewTransaction*> rows;
+    for(const auto& question:sheet.questions)if(question.kind==app::ReviewKind::link && question.rows.size()>1){
+        const auto& first=question.rows.front();
+        rows.try_emplace(first.identity,&first);
+        for(auto other=question.rows.begin()+1;other!=question.rows.end();++other){
+            rows.try_emplace(other->identity,&*other);
+            peers[first.identity].push_back(&*other);
+            peers[other->identity].push_back(&first);
+        }
+    }
+    const auto eligible=[&](const transfers::Endpoint& endpoint,const app::ReviewTransaction& other){
+        const auto& row=*rows.at(endpoint.entry);
+        const auto& parts=row.draft.transaction.allocations();
+        const auto part=std::find_if(parts.begin(),parts.end(),[&](const auto& p){return p.identity==endpoint.allocation;});
+        if(part==parts.end() || impl_->link_occupied[endpoint.entry].contains(endpoint.allocation) ||
+           !review_link_category(part->category,other.account))return false;
+        return std::any_of(other.draft.transaction.allocations().begin(),other.draft.transaction.allocations().end(),[&](const auto& p){
+            if(impl_->link_occupied[other.identity].contains(p.identity) || !review_link_category(p.category,row.account))return false;
+            const auto name=transfer_name(part->amount.units()<0?part->category:p.category);
+            const auto account=part->amount.units()<0?other.account:row.account;
+            return imports::link_amount_candidate(part->amount,p.amount,name && resolve_account_name(*name)==account);
+        });
+    };
+    std::vector<ImportLinkReopen> reopened;
+    for(auto& candidate:candidates){
+        context.checkpoint();
+        bool new_match=false;
+        for(const auto* endpoint:{&candidate.origin,&candidate.destination})for(const auto* other:peers[endpoint->entry]){
+            if(!imported.contains(other->identity.batch) || !eligible(*endpoint,*other))continue;
+            candidate.reopen.participants.insert(other->identity);
+            new_match=true;
+        }
+        if(new_match)reopened.push_back(std::move(candidate.reopen));
+    }
+    return reopened;
 }
 
 app::ReviewReceipt ImportStore::answer_automatic_review(std::string_view operation,const app::ReviewAnswer& answer) {
@@ -939,9 +1053,16 @@ app::ReviewReceipt ImportStore::write_automatic_review(std::string_view operatio
 void ImportStore::save_automatic_import_review(std::string_view operation,const std::vector<app::ReviewAnswer>& plan,const app::OperationContext& context) {
     identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE,"Automatic import review identity is too long");
     if(plan.empty() || !sqlite3_get_autocommit(impl_->db))fail(SQLITE_MISUSE,"Automatic import review requires its own transaction");
+    Atomic transaction(impl_->db);
+    write_automatic_import_review(operation,plan,context);
+    context.checkpoint("Saving the import matches");
+    finish([&]{transaction.commit();},true);
+    impl_->redo.clear();impl_->redo_names.clear();
+}
+
+app::AutomaticImportReview ImportStore::write_automatic_import_review(std::string_view operation,const std::vector<app::ReviewAnswer>& plan,const app::OperationContext& context) {
     std::size_t mergeTotal=0,linkTotal=0;
     for(const auto& planned:plan){if(planned.action==app::ReviewAction::merge)++mergeTotal;else if(planned.action==app::ReviewAction::link)++linkTotal;else fail(SQLITE_CONSTRAINT,"Automatic import review accepts only Merge and Link");}
-    Atomic transaction(impl_->db);
     struct Enclosed {bool& flag;~Enclosed(){flag=false;}} enclosed{impl_->enclosing_automatic_review};impl_->enclosing_automatic_review=true;
     std::size_t mergeIndex=0,linkIndex=0,serial=0;
     for(const auto& planned:plan){
@@ -953,10 +1074,77 @@ void ImportStore::save_automatic_import_review(std::string_view operation,const 
         auto answer=planned;answer.generation=review_generation(impl_->db);
         answer_automatic_review(std::string(operation)+"-"+std::to_string(++serial),answer);
     }
-    context.checkpoint("Saving the import matches");
-    enclosed.flag=false;impl_->enclosing_automatic_review=false;
-    finish([&]{transaction.commit();},true);
+    return {mergeTotal,linkTotal,0};
+}
+
+app::AutomaticImportReview ImportStore::review_completed_import(std::string_view operation,const std::vector<std::string>& batches,
+                                                               bool merges,bool links,const app::OperationContext& context) {
+    if(batches.empty())return {};
+    identifier(operation);if(operation.size()>64)fail(SQLITE_MISUSE,"Automatic import review identity is too long");
+    if(!sqlite3_get_autocommit(impl_->db))fail(SQLITE_MISUSE,"Automatic import review requires its own transaction");
+    transfer_codec::Writer request;
+    request.number(merges);request.number(links);
+    for(const auto& batch:batches)request.text(batch);
+    const auto outcome=[&]() -> std::optional<app::AutomaticImportReview> {
+        Statement saved(impl_->db,"SELECT question,request FROM review_answers WHERE id=?");
+        saved.text(1,operation);
+        if(!saved.row())return {};
+        if(saved.bytes(0)!="import-automatic-review")fail(SQLITE_CONSTRAINT,"Operation identity belongs to another Review command");
+        const auto payload=saved.bytes(1);
+        transfer_codec::Reader receipt{payload};
+        const auto merged=receipt.number(),linked=receipt.number(),reopened=receipt.number();
+        if(merged<0 || linked<0 || reopened<0)fail(SQLITE_CORRUPT,"Invalid automatic Review receipt");
+        if(receipt.bytes!=request.bytes)fail(SQLITE_CONSTRAINT,"Automatic Review retry changed its import or settings.");
+        return app::AutomaticImportReview{static_cast<std::size_t>(merged),static_cast<std::size_t>(linked),static_cast<std::size_t>(reopened)};
+    };
+    if(const auto saved=outcome())return *saved;
+    if(ActionChain(impl_->db).preparing())return {};
+    const auto reopen=import_links_to_reopen(batches,context);
+    auto plan=reopen.empty()?automatic_review_plan(batches,merges,links):std::vector<app::ReviewAnswer>{};
+    if(reopen.empty() && plan.empty())return {};
+    std::string source;
+    if(!reopen.empty())for(const auto& batch:batches){
+        Statement owner(impl_->db,"SELECT source_id FROM batches WHERE id=?");
+        owner.text(1,batch);
+        if(!owner.row() || (!source.empty() && source!=owner.bytes(0)))
+            fail(SQLITE_CONSTRAINT,"Review requires batches from the same import.");
+        source=owner.bytes(0);
+    }
+    struct Selection {std::int64_t& account;std::int64_t prior;~Selection(){account=prior;}} selection{impl_->selected_account,impl_->selected_account};
+    app::AutomaticImportReview result;
+    bool committing=false;
+    try {
+        Atomic transaction(impl_->db);
+        std::size_t index=0;
+        for(const auto& item:reopen){
+            context.checkpoint("Reopening transfer suggestions");
+            const auto child=std::string(operation)+"-reopen-"+std::to_string(++index);
+            write_unmerge_links(child,item.unmerge,source);
+            for(const auto& row:item.participants){
+                Statement choice(impl_->db,"INSERT INTO review_choices VALUES(?,1,?,?,0)");
+                choice.text(1,child);choice.text(2,row.batch);choice.integer(3,integer(row.ordinal));choice.done();
+            }
+        }
+        if(!reopen.empty() && (merges || links))plan=automatic_review_plan(batches,merges,links);
+        if(!plan.empty())result=write_automatic_import_review(operation,plan,context);
+        result.reopened=reopen.size();
+        transfer_codec::Writer receipt;
+        receipt.number(integer(result.merged));receipt.number(integer(result.linked));receipt.number(integer(result.reopened));
+        Statement saved(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),0,'import-automatic-review',?,?)");
+        saved.text(1,operation);saved.text(2,receipt.bytes+request.bytes);saved.integer(3,review_generation(impl_->db));saved.done();
+        context.checkpoint("Saving the import matches");
+        finish([&]{context.seal();committing=true;transaction.commit();},true);
+    }catch(...){
+        if(!committing)throw;
+        bool saved=false;
+        try {
+            if(!sqlite3_get_autocommit(impl_->db))throw app::OperationOutcomeUnknown();
+            saved=outcome().has_value();
+        }catch(...){throw app::OperationOutcomeUnknown();}
+        if(!saved)throw;
+    }
     impl_->redo.clear();impl_->redo_names.clear();
+    return result;
 }
 
 app::ReviewReceipt ImportStore::answer_review(std::string_view operation,const app::ReviewAnswer& answer) {
@@ -1271,9 +1459,10 @@ app::UnmergePreview ImportStore::preview_unmerge(const std::vector<imports::Occu
 }
 bool ImportStore::can_unmerge(const std::vector<imports::Occurrence>& selected) const {return preview_unmerge(selected).available;}
 std::string ImportStore::unmerge_notice(const std::vector<imports::Occurrence>& selected) const {return preview_unmerge(selected).notice;}
-std::set<imports::Occurrence> ImportStore::write_unmerge_links(std::string_view operation,const LinkUnmergePlan& plan) {
-    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),0,'unmerge-link',?,?)");
-    receipt.text(1,operation);receipt.text(2,plan.selection_request);receipt.integer(3,ledger_edit_generation());receipt.done();
+std::set<imports::Occurrence> ImportStore::write_unmerge_links(std::string_view operation,const LinkUnmergePlan& plan,std::string_view source) {
+    Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),0,?,?,?)");
+    receipt.text(1,operation);receipt.text(2,source.empty()?"unmerge-link":"import-reopen-link");
+    receipt.text(3,source.empty()?std::string_view(plan.selection_request):source);receipt.integer(4,ledger_edit_generation());receipt.done();
     auto working=all_transfers();
     std::set<imports::Occurrence> touched;
     std::size_t serial=0;
@@ -1517,7 +1706,7 @@ void ImportStore::restore_review_answer(std::string_view operation,std::string_v
         Statement link_question(impl_->db,"SELECT question FROM review_answers WHERE id=?");link_question.text(1,answer);
         if(!link_question.row())fail(SQLITE_CORRUPT);
         const auto question=link_question.bytes(0);
-        const bool is_unmerge=question=="unmerge-link";
+        const bool is_unmerge=question=="unmerge-link" || question=="import-reopen-link";
         const bool is_acceptance=question=="acceptance";
         if(is_acceptance) {
             // Sibling splits change state together at commit. Take each

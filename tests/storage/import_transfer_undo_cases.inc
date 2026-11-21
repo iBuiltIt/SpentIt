@@ -65,10 +65,12 @@ void save_one_import_link(ImportStore& store,const std::vector<std::string>& bat
     OperationContext context;store.save_automatic_import_review("matches",plan,context);
 }
 void verify_import_transfer_undo(const std::filesystem::path& path,ImportStore& store,
-                                 const std::string& source,const TransferFileSnapshot& before,std::int64_t removed) {
+                                 const std::string& source,const TransferFileSnapshot& before,std::int64_t removed,
+                                 std::size_t affected=0) {
     const auto joined=transfer_snapshot(store);
     const auto preview=store.preview_undo(source,store.action_token());
-    check(preview.refusal.empty() && preview.accounts.size()==before.size() && preview.action.count==removed,"Preview must include all transfer accounts");
+    if(!preview.refusal.empty() || preview.accounts.size()!=(affected?affected:before.size()) || preview.action.count!=removed)
+        throw std::runtime_error("Preview must include all affected accounts: "+source+" "+preview.refusal);
     store.observer([](storage::ImportPhase phase){if(phase==storage::ImportPhase::before_commit)throw std::runtime_error("before transfer Undo commit");});
     bool refused=false;
     try{store.undo_action("undo-import",preview);}catch(const std::runtime_error& e){check(std::string_view(e.what())=="before transfer Undo commit",e.what());refused=true;}
@@ -87,8 +89,196 @@ void verify_import_transfer_undo(const std::filesystem::path& path,ImportStore& 
     store=ImportStore::open(path,"synthetic");check_transfer_snapshot(store,before);store.verify();
     test_session::close_reopen(store,path,"synthetic");check_transfer_snapshot(store,before);store.verify();
 }
+void provisional_import_link_orders(const std::filesystem::path& dir) {
+    const Currency cad("CAD");
+    const std::array<std::string,3> batches{"a","b","c"};
+    const std::array<std::string,3> postings{
+        "!Type:Bank\nD01/01/2026\nT-10\nPPayment\n^\n",
+        "!Type:Bank\nD01/01/2026\nT10\nPUnrelated deposit\n^\n",
+        "!Type:Bank\nD01/01/2026\nT10\nPTransfer receipt\n^\n"};
+    const auto create=[&](const auto& path){
+        auto store=ImportStore::create(path,"synthetic","A",cad,"2026-01-01");
+        store.opening(0,"2026-01-01",Money(0,cad));
+        add_transfer_account(store,2,"B");
+        add_transfer_account(store,3,"C");
+        return store;
+    };
+    const auto ingest=[&](ImportStore& store,std::size_t index){
+        store.select_account(static_cast<std::int64_t>(index)+1);
+        store.ingest(batches[index],postings[index],qif::DateOrder::dmy);
+    };
+    const auto match=[&](ImportStore& store,std::size_t index){
+        OperationContext context;
+        return store.review_completed_import("match-"+batches[index],{batches[index]},true,true,context);
+    };
+    const auto review=[&](ImportStore& store){
+        const auto sheet=store.review_sheet();
+        check(sheet.questions.size()==1,"All orders show one Review question");
+        const auto& question=sheet.questions.front();
+        check(question.kind==ReviewKind::link && question.rows.size()==3 &&
+              question.rows.front().identity==imports::Occurrence{"a",0},"Review starts with A's payment");
+        std::set<imports::Occurrence> alternatives;
+        for(std::size_t i=1;i<question.rows.size();++i)alternatives.insert(question.rows[i].identity);
+        check(alternatives==std::set<imports::Occurrence>{{"b",0},{"c",0}},"Review offers both B and C");
+        check(store.pending_review_links().empty(),"The provisional link no longer appears as matched");
+        for(const auto& [account,amount]:store.balances())
+            check(amount==Money(account==1?-1000:1000,cad),"Reopening preserves each bank posting and balance");
+        return sheet;
+    };
+    std::array<std::size_t,3> order{0,1,2};
+    int serial=0;
+    do {
+        for(bool close:{false,true}){
+            const auto path=dir/("provisional-"+std::to_string(++serial));
+            auto store=create(path);
+            ingest(store,order[0]);
+            check(match(store,order[0]).linked==0,"First import has no partner");
+            ingest(store,order[1]);
+            const bool linked=order[2]!=0;
+            check(match(store,order[1]).linked==std::size_t(linked),"First two imports link only when A is present");
+            const auto before=transfer_snapshot(store);
+            ingest(store,order[2]);
+            const auto result=match(store,order[2]);
+            check(result.reopened==std::size_t(linked) && result.linked==0,"Third import restores the choice in every order");
+            review(store);
+            store.verify();
+            if(close){
+                test_session::close_reopen(store,path,"synthetic");
+                review(store);
+                const auto preview=store.review_import_undo(batches[order[2]]);
+                check(preview.affected_accounts.size()==(linked?3u:1u),"Import Undo previews all affected accounts");
+                store.undo_import("undo-third",batches[order[2]],preview.token);
+                check_transfer_snapshot(store,before);
+                check(store.pending_review_links().size()==std::size_t(linked),"Import Undo restores the original link mark");
+                store.verify();
+            }else{
+                verify_import_transfer_undo(path,store,batches[order[2]],before,1,linked?3u:1u);
+            }
+        }
+    }while(std::next_permutation(order.begin(),order.end()));
+
+    for(bool accept:{false,true}){
+        auto store=create(dir/(accept?"accepted-link":"explicit-link"));
+        ingest(store,0);ingest(store,1);
+        if(accept){
+            check(match(store,1).linked==1,"Auto Link creates the link to accept");
+            store.accept_all("accept-link");
+        }else{
+            const auto sheet=store.review_sheet();
+            app::ReviewAnswer answer;
+            answer.generation=sheet.generation;
+            answer.question=sheet.questions.front().key;
+            answer.action=ReviewAction::link;
+            answer.selected={{"a",0},{"b",0}};
+            store.answer_review("choose-b",answer);
+        }
+        const auto before=store.transfers();
+        ingest(store,2);
+        const auto result=match(store,2);
+        check(result.reopened==0 && result.linked==0,"A later candidate preserves accepted and explicitly chosen links");
+        store.select_account(2);
+        check(store.transfers().size()==before.size(),"The chosen link still connects to B");
+        store.verify();
+    }
+
+    {
+        auto store=create(dir/"provisional-retry");
+        ingest(store,0);ingest(store,1);
+        check(match(store,1).linked==1,"Fault fixture starts with an automatic link");
+        ingest(store,2);
+        const auto before=transfer_snapshot(store);
+        OperationContext cancel;
+        cancel.progress=[&](std::string_view phase){if(phase=="Saving the import matches")cancel.request();};
+        bool cancelled=false;
+        try{store.review_completed_import("match-c",{"c"},true,true,cancel);}
+        catch(const OperationCancelled&){cancelled=true;}
+        check(cancelled && !store.review_outcome("match-c-reopen-1"),"Cancel leaves the earlier link and no reopening receipt");
+        check_transfer_snapshot(store,before);
+        for(const int error:{SQLITE_FULL,SQLITE_IOERR_WRITE}){
+            fault_vfs::arm(1,error,false);
+            bool failed=false;
+            try{match(store,2);}catch(const storage::ImportError&){failed=true;}
+            fault_vfs::disarm();
+            check(failed && fault_vfs::fired && !store.review_outcome("match-c-reopen-1"),"Write failure leaves no reopening receipt");
+            check_transfer_snapshot(store,before);
+            store.verify();
+        }
+        store.observer([](storage::ImportPhase phase){
+            if(phase==storage::ImportPhase::after_commit)throw std::runtime_error("lost matching acknowledgement");
+        });
+        check(match(store,2).reopened==1,"A lost acknowledgement returns the durable result");
+        store.observer({});
+        const auto token=store.action_token();
+        check(match(store,2).reopened==1 && store.action_token()==token,"Exact retry returns the original result without another decision");
+        OperationContext changed;
+        bool rejected=false;
+        try{store.review_completed_import("match-c",{"c"},false,true,changed);}
+        catch(const storage::ImportError& e){rejected=e.code()==SQLITE_CONSTRAINT;}
+        check(rejected && store.action_token()==token,"Retry refuses a changed request");
+        review(store);
+        store.verify();
+    }
+    {
+        auto store=create(dir/"provisional-adjacent-date");
+        ingest(store,0);ingest(store,1);
+        check(match(store,1).linked==1,"Adjacent-date fixture has a same-day first match");
+        store.select_account(3);
+        store.ingest("c","!Type:Bank\nD02/01/2026\nT10\nPTransfer receipt\n^\n",qif::DateOrder::dmy);
+        check(match(store,2).reopened==1,"A later eligible date can reopen a same-day link");
+        review(store);
+        add_transfer_account(store,4,"D");
+        store.ingest("d","!Type:Bank\nD01/01/2026\nT10\nPAnother deposit\n^\n",qif::DateOrder::dmy);
+        OperationContext context;
+        const auto next=store.review_completed_import("match-d",{"d"},true,true,context);
+        check(next.linked==0 && store.review_sheet().questions.front().rows.size()==4,
+              "A future import keeps the reopened choice in Review");
+        store.verify();
+    }
+    for(const auto phase:{storage::ImportPhase::before_commit,storage::ImportPhase::after_commit}){
+        const bool committed=phase==storage::ImportPhase::after_commit;
+        const auto path=dir/(committed?"provisional-crash-after":"provisional-crash-before");
+        {
+            auto store=create(path);
+            ingest(store,0);ingest(store,1);
+            check(match(store,1).linked==1,"Crash fixture starts with an automatic link");
+            ingest(store,2);
+        }
+        const auto child=fork();
+        check(child>=0,"fork failed");
+        if(child==0){
+            try{
+                auto store=ImportStore::open(path,"synthetic");
+                store.observer([&](auto at){if(at==phase)_exit(71);});
+                match(store,2);
+                _exit(72);
+            }catch(...){_exit(73);}
+        }
+        int status=0;
+        check(waitpid(child,&status,0)==child && WIFEXITED(status) && WEXITSTATUS(status)==71,"Crash reached the matching commit boundary");
+        auto store=ImportStore::open(path,"synthetic");
+        check(store.review_outcome("match-c-reopen-1").has_value()==committed &&
+              store.pending_review_links().size()==(committed?0u:1u),"Recovered link and receipt agree with the matching commit boundary");
+        if(!committed)check(match(store,2).reopened==1,"Reopening can be retried after recovery");
+        review(store);
+        store.verify();
+    }
+    {
+        auto store=create(dir/"provisional-other-split");
+        store.ingest("a","!Type:Bank\nD01/01/2026\nT-15\nPPayment\nSUncategorized\n$-10\nSUncategorized\n$-5\n^\n",qif::DateOrder::dmy);
+        ingest(store,1);
+        check(match(store,1).linked==1,"Only A's first split matches B");
+        store.select_account(3);
+        store.ingest("c","!Type:Bank\nD01/01/2026\nT5\nPOther receipt\n^\n",qif::DateOrder::dmy);
+        OperationContext context;
+        const auto result=store.review_completed_import("match-c",{"c"},false,false,context);
+        check(result.reopened==0 && store.pending_review_links().size()==1,"A candidate for another split leaves the first link in place");
+        store.verify();
+    }
+}
+
 void import_transfer_undo_cases(const std::filesystem::path& dir){
     fault_vfs::install();
+    provisional_import_link_orders(dir);
     const Currency cad("CAD");
     const auto input=[](bool outgoing,bool generated){
         return std::string("!Type:Bank\nD01/01/2026\nT")+(outgoing?"-10":"10")+"\nP"+(outgoing?"Payment":"Receipt")+
