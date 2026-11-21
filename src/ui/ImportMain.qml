@@ -5162,11 +5162,12 @@ ApplicationWindow {
                                 }
                             }
                             RowLayout {
+                                Layout.fillWidth:true
                                 visible:bankMatchAccount.count>0
                                 UsableComboBox {
                                     id:bankMatchAccount;objectName:"bankMatchAccount"
                                     model:bankMatchSettings.availableAccounts;textRole:"name";valueRole:"id"
-                                    Layout.maximumWidth:300;Accessible.name:"Account to add"
+                                    Layout.fillWidth:true;Accessible.name:"Account to add"
                                 }
                                 Button {
                                     objectName:"addBankMatchOptional";text:"Add account";enabled:bankMatchAccount.currentIndex>=0

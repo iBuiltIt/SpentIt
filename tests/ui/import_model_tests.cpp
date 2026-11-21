@@ -18,6 +18,7 @@
 #include "controls_style.hpp"
 #include "manual_review_preferences.h"
 #include <QFont>
+#include <QFontMetricsF>
 #include <QRegularExpression>
 #include <QAccessible>
 #include <functional>
@@ -815,9 +816,14 @@ private slots:
         const auto path=dir.path()+"/doc";
         create(m,path);run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"create_account",{{"id","2"},{"name","Savings"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
-        run(m,"create_account",{{"id","3"},{"name","Cash"},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
+        const QString cashName="Household Cash Reserve for Travel and Shared Expenses";
+        run(m,"create_account",{{"id","3"},{"name",cashName},{"currency","CAD"},{"date","2026-01-01"}});run(m,"opening",{{"date","2026-01-01"},{"amount","0.00"}});
         run(m,"select_account",{{"id","1"}});
-        run(m,"import",{{"path",fixture(dir.path(),"!Type:Bank\nD2026-02-01\nT-10.00\nPPayment\nL[Savings]\n^\nD2026-02-10\nT20.00\nPWithdrawal\nL[Savings]\n^\nD2026-02-11\nT-30.00\nPCash withdrawal\nL[Cash]\n^\n")}});
+        const auto statement="!Type:Bank\n"
+                             "D2026-02-01\nT-10.00\nPPayment\nL[Savings]\n^\n"
+                             "D2026-02-10\nT20.00\nPWithdrawal\nL[Savings]\n^\n"
+                             "D2026-02-11\nT-30.00\nPCash withdrawal\nL["+cashName.toUtf8()+"]\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),statement)}});
         const auto count=[&]{return m.state().value("reviewCount").toInt();};
         const auto warnings=[&]{return m.state().value("acceptanceWarnings").toList();};
         QCOMPARE(count(),3);QCOMPARE(warnings().size(),3);
@@ -825,8 +831,13 @@ private slots:
         const auto undo=m.state().value("actionUndo");
         QVERIFY(QMetaObject::invokeMethod(item("sidebarSettings"),"clicked"));
         QTRY_VERIFY(item("bankMatchAccount") && item("bankMatchAccount")->isVisible());
-        item("bankMatchAccount")->setProperty("currentIndex",1);
-        QCOMPARE(item("bankMatchAccount")->property("currentValue").toString(),QString("2"));
+        auto* picker=item("bankMatchAccount");
+        picker->setProperty("currentIndex",2);
+        QCOMPARE(picker->property("currentText").toString(),cashName);
+        const QFontMetricsF metrics(picker->property("font").value<QFont>());
+        QTRY_VERIFY(picker->property("availableWidth").toReal()>=metrics.horizontalAdvance(cashName));
+        picker->setProperty("currentIndex",1);
+        QCOMPARE(picker->property("currentValue").toString(),QString("2"));
         QVERIFY(QMetaObject::invokeMethod(item("addBankMatchOptional"),"clicked"));
         QTRY_COMPARE(count(),1);QCOMPARE(warnings().size(),1);
         QCOMPARE(warnings().front().toMap().value("account").toString(),QString("3"));

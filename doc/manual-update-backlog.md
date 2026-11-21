@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-20
+Last updated: 2026-11-21
 
 The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
 2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
@@ -23,12 +23,18 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-109. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-110. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
+
+**MAN-109 — Wider bank-match account picker (2026-11-21).** Refresh the
+[Current file settings picture](../manual/backup-recovery.md#choose-how-dates-look)
+referenced by [Review duplicates and transfers](../manual/review-duplicates-transfers.md).
+Show a longer synthetic name in the wider account picker beside **Add account**.
+See [the account setting](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
 
 **MAN-108 — Import problems and repeated payees (2026-11-21).** In
 [Import transactions](../manual/import-transactions.md) and
