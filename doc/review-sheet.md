@@ -577,7 +577,7 @@ The ledger shows result marks:
 - A created entry that is still waiting for a bank transaction has no green edge. Choosing an account as the category, which creates the other side, has no green edge. A transfer paired from the imported files has the green edge until accept.
 - A row can show both result marks. The marks remain after close and reopen. Undo removes the merge or the link, and the mark goes with it. **Accept transactions** clears the marks. A linked payment still shows the other account on its category.
 - Change history lists the action until the file is closed. A keep-one merge and a same-payment merge are **Merge**. A link that leaves both transactions in place is **Link**. Undo on that row reverses it. Command+Z still reverses only the newest action.
-- The ledger menu **Unmerge** is available on one joined row, including after the file is closed. On the kept row of a single keep-one merge, it puts the transaction that left back on the ledger as it was at the merge, and leaves a later edit of the kept row in place. On one green linked row, it asks before separating that link. If the join removed an extra entry, the message names every account that gets a row back. The blue edges come back on those rows while they are still new. Merge joins that payment again, and Review shows both lines with Link and Not this transfer. After Accept, Unmerge stays available on that payment. The accepted payments stay accepted, the extra entries come back and are not accepted, and those accepted rows have no blue edge. Review still shows both lines. If both transactions stayed, the message says both stay and they will no longer be one transfer. It stays unavailable when the selection is anything else, or when that row is part of more than one join. **Unmerge** is its own Change history row. Undo of that row puts the join back.
+- The ledger menu **Unmerge** is available on one joined row, including after the file is closed. On the kept row of a single keep-one merge, it puts the transaction that left back on the ledger as it was at the merge, and leaves a later edit of the kept row in place. If that row is also linked, the keep-one merge is reversed first and the link stays. On one green linked row with no keep-one merge to undo, it asks before separating that link. If the join removed an extra entry, the message names every account that gets a row back. The blue edges come back on those rows while they are still new. Merge joins that payment again, and Review shows both lines with Link and Not this transfer. After Accept, Unmerge stays available on that payment. The accepted payments stay accepted, the extra entries come back and are not accepted, and those accepted rows have no blue edge. Review still shows both lines. If both transactions stayed, the message says both stay and they will no longer be one transfer. Ambiguous merge or link histories stay unavailable. **Unmerge** is its own Change history row. Undo of that row puts the join back.
 
 Review's duplicate questions and transfer questions stay as they are.
 
@@ -669,7 +669,14 @@ must satisfy the engine's existing adjacent-day suggestion predicate, including
 bank-ID and manual-row restrictions; both current dates must still equal their
 own original dates. Duplicate suggestion discovery and its accepted-date frontier
 are unchanged. The survivor keeps its date; no date is invented or corrected.
-Rows already in a keep-one merge, or with transfer relationships, stay manual for duplicate Merge.
+Rows already in a keep-one merge stay manual for duplicate Merge. An accepted
+posting in an active transfer can be kept in an automatic Merge with an
+unaccepted, unlinked posting from the current import. The original payees must
+match exactly and be nonempty, and both postings must pass the same duplicate
+checks above. The full payee is compared as text. Account numbers in the payee
+are never interpreted as transfer destinations. The accepted posting keeps its
+date, splits, and transfer link. Other transfer-related duplicate choices stay
+manual.
 Links require exactly one eligible allocation pair with exact opposite, nonzero
 amounts in the same currency. Either transaction may have other splits; their
 amounts, categories, memos and identities stay unchanged. The plan records the
@@ -684,7 +691,8 @@ saved.
 All of these pairs are one save inside the import. They are not separate Undo
 steps. Undo of the import removes the import and these pairs together. Unmerge
 still breaks one link or one merge on its own, and that Unmerge is an ordinary
-Undo step.
+Undo step. When the kept posting also has a transfer link, Unmerge restores the
+duplicate posting first and preserves the transfer.
 
 While this step runs, the progress text says **Checking duplicate and transfer
 suggestions**, then **Merging duplicate suggestions, N of M** or **Linking

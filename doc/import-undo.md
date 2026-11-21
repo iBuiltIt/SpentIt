@@ -25,6 +25,9 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
   This applies in either transfer direction, including after Undo of acceptance.
   If the import also linked postings between its own accounts, the source is
   removed as one operation in either account order.
+- When an automatic duplicate Merge keeps an accepted transfer posting, Undo
+  removes the later bank source and preserves the accepted posting and its
+  existing link.
 - Preview checks the saved results of the match against the current postings and
   links. A conflicting edit to any pair blocks the whole Undo. The file-wide
   Undo control becomes unavailable and Change history explains the refusal. After

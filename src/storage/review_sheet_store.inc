@@ -739,6 +739,36 @@ static bool automatic_duplicate_dates(const app::ReviewTransaction& a,const app:
     return a.draft.date==x.date && b.draft.date==y.date && imports::adjacent_day_basis(x,y).has_value();
 }
 
+static std::optional<imports::Occurrence> automatic_merge_survivor(
+    const app::ReviewTransaction& a,const app::ReviewTransaction& b,
+    const qif::Record& x,const qif::Record& y,const std::vector<app::TransferView>& relationships) {
+    if(a.account!=b.account || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total() ||
+       !automatic_duplicate_dates(a,b,x,y))return {};
+    const auto protected_row=[](const auto& row){return row.committed || row.note=="Manually entered";};
+    if(a.transfer_linked || b.transfer_linked){
+        const auto& kept=a.transfer_linked?a:b;
+        const auto& incoming=a.transfer_linked?b:a;
+        const auto& original=a.transfer_linked?y:x;
+        if(!kept.committed || incoming.transfer_linked || protected_row(incoming) || original.format=="manual" ||
+           x.payee.empty() || x.payee!=y.payee || (x.date==y.date && !imports::candidate_basis(x,y)))return {};
+        const auto endpoint=[&](const auto& side){
+            return side.state==transfers::State::committed && side.endpoint.entry==kept.identity;
+        };
+        const auto linked=std::any_of(relationships.begin(),relationships.end(),[&](const auto& value){
+            const auto& link=value.link;
+            return !link.unresolved && !link.destination_released && link.origin.state!=transfers::State::removed &&
+                link.destination.state!=transfers::State::removed && (endpoint(link.origin) || endpoint(link.destination));
+        });
+        if(linked)return kept.identity;
+        return {};
+    }
+    if(protected_row(a) && protected_row(b))return {};
+    if(protected_row(a))return a.identity;
+    if(protected_row(b))return b.identity;
+    if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)return a.import_order<b.import_order?a.identity:b.identity;
+    return {};
+}
+
 // Select stable allocation identities, never a transaction-total approximation.
 // Occupied allocations are excluded exactly as in Review discovery; disposable
 // generated counterparts remain eligible for the existing replacement command.
@@ -835,15 +865,13 @@ std::vector<app::ReviewAnswer> ImportStore::automatic_review_plan(const app::Rev
             if(joined.contains(a.identity) || joined.contains(b.identity))continue;
             app::ReviewAnswer answer;answer.automatic=true;answer.generation=sheet.generation;answer.question=edge.question;answer.selected={a.identity,b.identity};
             if(edge.kind==app::ReviewKind::same){
-                if(a.transfer_linked || b.transfer_linked || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())continue;
                 const auto& x=originals.at(a.identity);const auto& y=originals.at(b.identity);
-                if(!automatic_duplicate_dates(a,b,x,y))continue;
-                const auto protected_row=[](const auto& r){return r.committed || r.note=="Manually entered";};
-                if(protected_row(a) && protected_row(b))continue;
-                if(protected_row(a))answer.survivor=a.identity;
-                else if(protected_row(b))answer.survivor=b.identity;
-                else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)answer.survivor=a.import_order<b.import_order?a.identity:b.identity;
-                else continue;
+                answer.survivor=automatic_merge_survivor(a,b,x,y,relationships);
+                if(!answer.survivor)continue;
+                if(a.transfer_linked || b.transfer_linked){
+                    const auto& incoming=a.transfer_linked?b:a;
+                    if(std::find(batches.begin(),batches.end(),incoming.identity.batch)==batches.end())continue;
+                }
                 answer.action=app::ReviewAction::merge;
             }else{
                 const auto allocations=automatic_link_allocations(a,b,relationships);
@@ -891,15 +919,8 @@ app::ReviewReceipt ImportStore::write_automatic_review(std::string_view operatio
     const bool merge=answer.action==app::ReviewAction::merge;
     if(merge){
         const auto& a=left.first;const auto& b=right.first;
-        if(a.transfer_linked || b.transfer_linked || a.account!=b.account || a.draft.transaction.effective_total()!=b.draft.transaction.effective_total())refuse();
-        const auto& x=left.second;const auto& y=right.second;
-        if(!automatic_duplicate_dates(a,b,x,y))refuse();
-        const auto protected_row=[](const app::ReviewTransaction& row){return row.committed || row.note=="Manually entered";};
-        std::optional<imports::Occurrence> survivor;
-        if(protected_row(a) && protected_row(b))refuse();
-        if(protected_row(a))survivor=a.identity;
-        else if(protected_row(b))survivor=b.identity;
-        else if(a.import_order>0 && b.import_order>0 && a.import_order!=b.import_order)survivor=a.import_order<b.import_order?a.identity:b.identity;
+        const auto relationships=a.transfer_linked || b.transfer_linked?all_transfers():std::vector<app::TransferView>{};
+        const auto survivor=automatic_merge_survivor(a,b,left.second,right.second,relationships);
         if(!survivor || answer.survivor!=survivor)refuse();
     }else{
         const auto allocations=automatic_link_allocations(left.first,right.first,all_transfers());
@@ -1238,9 +1259,10 @@ std::optional<ImportStore::LinkUnmergePlan> ImportStore::link_unmerge_plan(const
     return plan;
 }
 app::UnmergePreview ImportStore::preview_unmerge(const std::vector<imports::Occurrence>& selected) const {
-    const auto keep=active_unmerge(selected);const auto plan=link_unmerge_plan(selected);
-    if(bool(keep)==bool(plan))return {};
-    if(keep)return {true,{}};
+    // Restore the duplicate posting before offering to separate its survivor's link.
+    if(active_unmerge(selected))return {true,{}};
+    const auto plan=link_unmerge_plan(selected);
+    if(!plan)return {};
     if(!plan->restores_generated)return {true,"Unmerge this link? Both transactions stay, and they will no longer be one transfer."};
     const auto several=plan->restored_where.find(" and ")!=std::string::npos;
     auto notice=std::string("Unmerge this payment? The removed ")+(several?"rows come":"row comes")+" back in "+plan->restored_where+", so the merge is split again.";
@@ -1322,10 +1344,11 @@ app::ReviewReceipt ImportStore::unmerge(std::string_view operation,const std::ve
         if(!matches)fail(SQLITE_CONSTRAINT,"Operation identity was reused with different content");
         return *prior;
     }
-    const auto keep=active_unmerge(selected);const auto link=link_unmerge_plan(selected);
-    if(keep && link)fail(SQLITE_CONSTRAINT,"Choose one merged or linked transaction.");
-    if(link)return unmerge_link(operation,*link);
-    const auto original=keep;if(!original)fail(SQLITE_CONSTRAINT,"Choose one merged or linked transaction.");
+    const auto original=active_unmerge(selected);
+    if(!original){
+        if(const auto link=link_unmerge_plan(selected))return unmerge_link(operation,*link);
+        fail(SQLITE_CONSTRAINT,"Choose one merged or linked transaction.");
+    }
     struct Loser {imports::Occurrence id;};
     std::vector<Loser> losers;
     Statement listed(impl_->db,"SELECT batch,ordinal FROM review_merges WHERE answer=? ORDER BY batch,ordinal");listed.text(1,*original);

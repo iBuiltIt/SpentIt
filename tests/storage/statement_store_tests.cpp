@@ -86,6 +86,102 @@ app::ImportGroup materialize(ImportStore& store, std::string_view id) {
     app::OperationContext context;
     return store.resume_import_group(id, context);
 }
+void automatic_merge_into_transfer() {
+    const imports::Occurrence kept{"old",0};
+    const imports::Occurrence incoming{"download-account-0",0};
+    const imports::Occurrence counterpart{"other",0};
+    const std::string payee="Synthetic transfer reference 5550000";
+    fault_vfs::install();
+    for(const auto scenario:{"unique","different-payee","ambiguous"}){
+        Directory d;
+        const auto path=d.path/"doc";
+        auto store=create(path);
+        store.opening(0,"2026-01-01",Money(0,cad));
+        store.create_account(2,"Savings",cad,"2026-01-01");
+        store.select_account(2);
+        store.opening(0,"2026-01-01",Money(0,cad));
+        store.ingest("other","!Type:Bank\nD01/02/2026\nT10.00\nPExisting counterpart\n^\n",qif::DateOrder::dmy);
+        store.select_account(1);
+        std::string old="!Type:Bank\nD01/02/2026\nT-10.00\nP"+payee+"\n^\nD04/02/2026\nT-1.00\nPLater posting\n^\n";
+        if(std::string_view(scenario)=="ambiguous")old+="D01/02/2026\nT-10.00\nPAnother transfer\n^\n";
+        store.ingest("old",old,qif::DateOrder::dmy);
+        const auto links=store.automatic_review_plan({"old"},false,true);
+        if(std::string_view(scenario)=="ambiguous"){
+            app::ReviewAnswer answer;
+            const auto sheet=store.review_sheet();
+            const auto question=std::find_if(sheet.questions.begin(),sheet.questions.end(),[](const auto& q){return q.kind==app::ReviewKind::link;});
+            check(question!=sheet.questions.end());
+            answer.generation=sheet.generation;
+            answer.question=question->key;
+            answer.action=app::ReviewAction::link;
+            answer.selected={kept,counterpart};
+            store.answer_review("link",answer);
+        }else{
+            check(links.size()==1);
+            store.answer_automatic_review("link",links.front());
+        }
+        store.accept_all("accept",true);
+        const auto original_link=store.transfers().at(0);
+        const auto original_balance=store.balance();
+        const auto bank_payee=std::string_view(scenario)=="different-payee"?"Different original payee":payee;
+        const auto statement=sgml(bank(txn("bank-id","20260202020000[-5:EST]","-10.00",bank_payee)));
+        capture(store,"download",statement,{{0,1,{}}});
+        materialize(store,"download");
+        const auto review=store.review_sheet();
+        const auto question=std::find_if(review.questions.begin(),review.questions.end(),[](const auto& q){return q.kind==app::ReviewKind::same;});
+        check(question!=review.questions.end());
+        const auto plan=store.automatic_review_plan({incoming.batch},true,false);
+        if(std::string_view(scenario)!="unique"){
+            check(plan.empty());
+            store.verify();
+            continue;
+        }
+        check(question->rows.size()==2 && plan.size()==1 && plan.front().survivor==kept);
+        const auto verify_link=[&] {
+            const auto current=store.transfers();
+            check(current.size()==1 && current.front().sequence==original_link.sequence &&
+                  current.front().link.origin.endpoint==original_link.link.origin.endpoint &&
+                  current.front().link.destination.endpoint==original_link.link.destination.endpoint);
+            check(store.transaction_accepted(kept) && store.transaction_accepted(counterpart));
+            store.select_account(2);
+            check(store.balance()==Money(1000,cad) && store.committed_balance()==Money(1000,cad));
+            store.select_account(1);
+            check(store.committed_balance()==original_balance);
+            store.verify();
+        };
+        app::OperationContext context;
+        fault_vfs::arm(1,SQLITE_FULL);
+        bool disk_full=false;
+        try{store.save_automatic_import_review("merge",plan,context);}catch(const ImportError&){disk_full=fault_vfs::fired;}
+        fault_vfs::disarm();
+        check(disk_full && !store.review_outcome("merge-1") && store.balance()==original_balance+Money(-1000,cad));
+        verify_link();
+        app::OperationContext cancelled;
+        cancelled.progress=[&](auto phase){if(phase=="Saving the import matches")cancelled.request();};
+        bool stopped=false;
+        try{store.save_automatic_import_review("merge",plan,cancelled);}catch(const app::OperationCancelled&){stopped=true;}
+        check(stopped && !store.review_outcome("merge-1") && store.balance()==original_balance+Money(-1000,cad));
+        verify_link();
+        store.save_automatic_import_review("merge",plan,context);
+        check(store.merge_survivors()==std::vector<imports::Occurrence>{kept} && store.balance()==original_balance &&
+              store.row(incoming).decision.duplicate_of==kept);
+        const auto survivor=store.row(kept);
+        check(survivor.draft->date=="2026-02-01" && survivor.source.associated_fitid=="bank-id");
+        verify_link();
+        test_session::close_reopen(store,path,password);
+        check(store.preview_unmerge({kept}).available && store.preview_unmerge({kept}).notice.empty());
+        store.unmerge("unmerge",{kept});
+        check(store.balance()==original_balance+Money(-1000,cad) && store.merge_survivors().empty());
+        check(store.row(kept).source.associated_fitid.empty());
+        verify_link();
+        store.undo_action("undo-unmerge",store.preview_undo(store.action_head()->id,store.action_token()));
+        check(store.balance()==original_balance && store.merge_survivors()==std::vector<imports::Occurrence>{kept});
+        store.undo_import("undo-download","download",store.ledger_edit_generation());
+        check(store.balance()==original_balance && store.merge_survivors().empty());
+        check(store.row(kept).source.associated_fitid.empty());
+        verify_link();
+    }
+}
 void ledger_order() {
     const std::string same_day="20260417120000[-5:EST]";
     const auto latest=txn("last","20260418","-10.00","Last day");
@@ -1136,7 +1232,7 @@ int main(int argc, char** argv) {
         else if(name == "rollback") {rollback();partial_transfer_guards();rollback_stale_reopen();generated_ownership();}
         else if(name == "acceptance_faults") acceptance_faults();
         else if(name == "overlap_faults") overlap_faults();
-        else if(name == "common_matching") common_matching();
+        else if(name == "common_matching") {common_matching();automatic_merge_into_transfer();}
         else if(name == "faults") faults();
         else return 2;
         std::cout << "Statement store " << name << " passed\n";

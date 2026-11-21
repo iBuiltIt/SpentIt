@@ -87,6 +87,8 @@ Two Settings preferences automatically Merge or Link
 mutually one-to-one Review pairs after import and rules. They start on when
 this file path has no saved choice. A saved off choice stays off. They leave transaction
 acceptance explicit. Same-day pairs take priority, followed by mutually unique adjacent-day pairs.
+An eligible bank posting can merge into an accepted transfer when their
+nonempty original payees match exactly. The accepted posting keeps its link.
 Ambiguous relationships, survivor choices,
 multiple eligible split pairs, and amount differences stay manual. A unique
 matching split can link without changing the other allocations. Those pairs are

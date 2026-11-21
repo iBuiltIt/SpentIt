@@ -12,6 +12,24 @@ macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
 have development notes and are not release-ready. Do not describe a check as
 passed unless you ran it.
 
+## Auto merge into accepted transfers — 2026-11-21
+
+Auto merge can keep an accepted transfer when it has a mutually unique
+duplicate from the current import, both original payees match exactly, and the
+existing duplicate checks pass. The accepted posting and link stay in place.
+Unmerge restores the extra posting, and import Undo removes the later source.
+See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14)
+and [MAN-110](manual-update-backlog.md#open-items).
+
+The macOS arm64 rules-enabled Release statement matching regression used a
+synthetic next-day OFX posting against an accepted linked QIF posting. It
+verified the original date, bank-source association, both account balances,
+disk-full and cancellation recovery, reopening, Unmerge, and import Undo.
+Different original payees and competing matches stayed in Review.
+All 11 selected Release targets passed, including the automatic Review fault
+sweep and the full offscreen Import UI suite with 126 passing cases. Native
+interactive use was unverified.
+
 ## Repeated payee lines and Review actions — 2026-11-21
 
 New QIF imports use the first payee line when the following lines exactly
