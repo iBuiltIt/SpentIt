@@ -3539,6 +3539,11 @@ ApplicationWindow {
     readonly property var duplicateCandidate: duplicateCandidates.find(row=>row.key===duplicateCandidateKey)||(duplicateCandidates.length===1?duplicateCandidates[0]:null)
     readonly property var duplicatePair: duplicateOrigin && duplicateCandidate?[duplicateOrigin,duplicateCandidate]:[]
     readonly property var duplicateSurvivor: automaticSurvivor(duplicatePair)
+    readonly property var duplicateBalances: s.duplicateBalances||({})
+    function duplicatePostingStatus(row) {
+        const balance=duplicateBalances[row.key]
+        return (row.committed?"Accepted":"New")+(balance?" · Balance "+balance:"")
+    }
     readonly property var transferOrigin: {
         const row=transferDoubleRows[duplicateFocusKey]
         return row && String(row.account)===String(s.accountId)?row:null
@@ -5259,18 +5264,29 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth:true
                     Label {objectName:"ledgerDuplicateSummary";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
-                        text:transferOrigin?("Same payment · "+((transferPeer||(transferOrigin.peers||[])[0]||{}).bankPayee||"")+" ↔ "+((transferPeer||(transferOrigin.peers||[])[0]||{}).createdPayee||"extra entry")+(transferPeer?"":" · Select the other marked row")):duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · "+(duplicateOrigin.committed?"Accepted":"New")+" — "+duplicateOrigin.payee+(duplicateCandidate?" ↔ "+(duplicateCandidate.committed?"Accepted":"New")+" — "+duplicateCandidate.payee: " · Select a marked transaction to compare"):(s.reviewReady===false?"Checking for possible duplicates…":(transferDoublesInAccount&&Object.values(duplicateRows).some(row=>row.account===s.accountId)?"Review possible duplicates and payments shown twice in this account.":transferDoublesInAccount?"Review payments shown twice in this account.":"Review possible duplicates in this account."))}
+                        text:transferOrigin?("Same payment · "+((transferPeer||(transferOrigin.peers||[])[0]||{}).bankPayee||"")+" ↔ "+((transferPeer||(transferOrigin.peers||[])[0]||{}).createdPayee||"extra entry")+(transferPeer?"":" · Select the other marked row")):duplicateOrigin?"Possible duplicate · "+duplicateCandidates.length+" possible "+(duplicateCandidates.length===1?"match":"matches")+" · Selected — "+duplicateOrigin.payee+" · "+duplicatePostingStatus(duplicateOrigin)+(duplicateCandidate?" · Match — "+duplicateCandidate.payee+" · "+duplicatePostingStatus(duplicateCandidate):" · Choose a possible match"):(s.reviewReady===false?"Checking for possible duplicates…":(transferDoublesInAccount&&Object.values(duplicateRows).some(row=>row.account===s.accountId)?"Review possible duplicates and payments shown twice in this account.":transferDoublesInAccount?"Review payments shown twice in this account.":"Review possible duplicates in this account."))}
                     Button {objectName:"ledgerDuplicateNext";text:"Next possible duplicate";visible:Object.values(duplicateRows).some(row=>row.account===s.accountId);onClicked:nextLedgerDuplicate()}
                     Button {objectName:"ledgerSamePaymentNext";text:"Next same payment";visible:transferDoublesInAccount;onClicked:nextTransferDouble()}
                 }
                 RowLayout {
                     visible:!!duplicateOrigin && !transferOrigin;Layout.fillWidth:true
-                    UsableComboBox {objectName:"ledgerDuplicateCandidates";visible:duplicateCandidates.length>1;Layout.preferredWidth:280;model:duplicateCandidates.map(row=>({key:row.key,label:row.date+" · "+row.payee+" · "+(row.committed?"Accepted":"New")}));textRole:"label";currentIndex:duplicateCandidates.findIndex(row=>duplicateCandidate && row.key===duplicateCandidate.key);displayText:currentIndex<0?"Choose a possible match":currentText;onActivated:duplicateCandidateKey=model[currentIndex].key}
+                    UsableComboBox {
+                        objectName:"ledgerDuplicateCandidates";visible:duplicateCandidates.length>1
+                        Layout.preferredWidth:280;popupPreferredWidth:510
+                        model:duplicateCandidates.map(row=>({key:row.key,label:duplicatePostingStatus(row)+" · "+row.date+" · "+row.payee}))
+                        textRole:"label";currentIndex:duplicateCandidates.findIndex(row=>duplicateCandidate && row.key===duplicateCandidate.key)
+                        displayText:duplicateCandidate?duplicatePostingStatus(duplicateCandidate):"Choose a possible match"
+                        Accessible.name:"Possible duplicate matches"
+                        onActivated:function(choice){duplicateCandidateKey=model[choice].key}
+                    }
                     Button {objectName:"ledgerDuplicateMerge";text:"Merge";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("merge",false)}
                     Button {objectName:"ledgerDuplicateSeparate";text:"Keep this pair separate";enabled:!!duplicateCandidate && !s.readOnly;onClicked:resolveLedgerDuplicate("separate",false)}
                     Button {objectName:"ledgerDuplicateNone";text:"None of these match";visible:duplicateCandidates.length>1;enabled:!s.readOnly;onClicked:resolveLedgerDuplicate("separate",true)}
                     Button {objectName:"ledgerDuplicateShow";text:duplicateCandidate && workflow.occurrenceIndex(duplicateCandidate.batch,duplicateCandidate.ordinal)<0?"Reveal hidden match (clear filter)":"Show match";enabled:!!duplicateCandidate;onClicked:showDuplicateInLedger(duplicateCandidate,duplicateOrigin)}
-                    Label {Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap;text:duplicateSurvivor?"Keeps “"+duplicateSurvivor.payee+"”"+(duplicateSurvivor.transferLinked?" and its account link.":"."):(duplicateCandidate?"Choose which transaction to keep when merging.":"")}
+                    Label {
+                        objectName:"ledgerDuplicateSurvivor";Layout.fillWidth:true;textFormat:Text.PlainText;wrapMode:Text.Wrap
+                        text:duplicateSurvivor?"Keeps the "+(duplicateSurvivor.key===duplicateOrigin.key?"Selected":"Match")+" row"+(duplicateSurvivor.transferLinked?" and its account link.":"."):(duplicateCandidate?"Choose which row to keep when merging.":"")
+                    }
                 }
                 RowLayout {
                     visible:!!transferOrigin;Layout.fillWidth:true
@@ -5403,7 +5419,7 @@ ApplicationWindow {
                     objectName:"ledgerRow_"+index
                     Accessible.role:Accessible.ListItem
                     Accessible.name:record.date+", "+record.payee+", "+record.category+", withdrawal "+record.withdrawal+", deposit "+record.deposit+", balance "+record.balance+" "+(s.currency||"")+", "+record.status
-                    Accessible.description:(possibleDuplicate?"Possible duplicate. ":"")+(samePayment?"Same payment. ":"")+(mergedMark?"Merged. ":"")+(linkedMark?linkedRows[duplicateKey]+". ":"")+(record.importWarning||"")
+                    Accessible.description:(duplicateRole?duplicateRole+" for duplicate comparison. ":possibleDuplicate?"Possible duplicate. ":"")+(samePayment?"Same payment. ":"")+(mergedMark?"Merged. ":"")+(linkedMark?linkedRows[duplicateKey]+". ":"")+(record.importWarning||"")
                     Accessible.selectable:true
                     Accessible.selected:!!(s.selectionKeys||{})[record.batch+":"+record.ordinal]
                     Accessible.focusable:true
@@ -5432,10 +5448,16 @@ ApplicationWindow {
                     readonly property bool samePayment:!window.reportLedger && !!transferDoubleRows[duplicateKey]
                     readonly property bool mergedMark:!window.reportLedger && !!mergedRows[duplicateKey]
                     readonly property bool linkedMark:!window.reportLedger && !!linkedRows[duplicateKey]
-                    readonly property bool comparingDuplicate:possibleDuplicate && (duplicateKey===duplicateOriginKey || duplicateCandidates.some(row=>row.key===duplicateKey))
+                    readonly property string duplicateRole:!possibleDuplicate || !duplicateCandidate || transferOrigin?"":duplicateKey===duplicateOriginKey?"Selected":duplicateKey===duplicateCandidate.key?"Match":""
                     readonly property bool comparingPayment:samePayment && !!transferOrigin && (duplicateKey===transferOrigin.key || (transferOrigin.peers||[]).some(peer=>peer.key===duplicateKey))
                     readonly property string attentionTip:(record.importWarning?record.importWarning+" ":"")+(possibleDuplicate?"Possible duplicate":"")+(samePayment?(possibleDuplicate?" · ":"")+"Same payment":"")+(mergedMark?((possibleDuplicate||samePayment)?" · ":"")+"Merged":"")+(linkedMark?((possibleDuplicate||samePayment||mergedMark)?" · ":"")+linkedRows[duplicateKey]:"")
-                    border.width:(comparingPayment||comparingDuplicate)?2:(s.selectionKeys||{})[duplicateKey]?1:0;border.color:comparingPayment?theme.transferDuplicate:comparingDuplicate?theme.duplicate:theme.focus
+                    border.width:comparingPayment?2:!duplicateRole && (s.selectionKeys||{})[duplicateKey]?1:0
+                    border.color:comparingPayment?theme.transferDuplicate:theme.focus
+                    Rectangle {
+                        visible:!!ledgerRow.duplicateRole
+                        width:parent.width;height:ledgerRow.rowHeight
+                        color:"transparent";border.width:2;border.color:theme.duplicate
+                    }
                     Row {
                         Rectangle {width:possibleDuplicate?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.possibleDuplicate;color:theme.duplicate}
                         Rectangle {width:samePayment?4:0;height:ledgerRow.rowHeight;visible:ledgerRow.samePayment;color:theme.transferDuplicate}
@@ -5463,9 +5485,18 @@ ApplicationWindow {
                                 }
                                 TransferArrow {id:rowTransfer;anchors.verticalCenter:parent.verticalCenter;objectName:index===window.ledgerCategoryColumn?"ledgerTransferArrow_"+ledgerRow.index:"";destination:index===window.ledgerCategoryColumn?window.firstLedgerTransfer(record):null}
                                 Label {
+                                    id:duplicateRowRole
+                                    visible:index===1 && !!ledgerRow.duplicateRole
+                                    anchors.left:parent.left;anchors.verticalCenter:parent.verticalCenter
+                                    width:Math.min(implicitWidth,parent.width)
+                                    leftPadding:6;rightPadding:6;topPadding:2;bottomPadding:2
+                                    text:visible?ledgerRow.duplicateRole:"";elide:Text.ElideRight
+                                    font.bold:true;color:theme.duplicate
+                                }
+                                Label {
                                     id:ledgerCellText
                                     objectName:"ledgerCellText_"+ledgerRow.index+"_"+index
-                                    anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:0;textFormat:Text.PlainText;text:window.ledgerColumnText(record, index);elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2
+                                    anchors.fill:parent;anchors.leftMargin:index===window.ledgerCategoryColumn?32:index===0?8:duplicateRowRole.visible?duplicateRowRole.width:0;textFormat:Text.PlainText;text:window.ledgerColumnText(record, index);elide:Text.ElideRight;verticalAlignment:Text.AlignVCenter;horizontalAlignment:index>window.ledgerCategoryColumn?Text.AlignRight:Text.AlignLeft;visible:index!==window.ledgerCategoryColumn || record.splits.length<2
                                 }
                                 PlainTip {
                                     objectName:"ledgerCellTip_"+ledgerRow.index+"_"+index

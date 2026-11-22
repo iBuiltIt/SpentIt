@@ -1598,7 +1598,24 @@ struct ImportModel::Worker {
             }
         }
         std::set<imports::Occurrence> retained;
-        for(const auto& row:cachedView->rows)if(selection.contains(row.identity))retained.insert(row.identity);
+        std::map<imports::Occurrence,QString> duplicateKeys;
+        if(!reportLedgerActive)for(const auto& questionValue:state.value("reviewQuestions").toList()){
+            const auto question=questionValue.toMap();
+            if(question.value("kind")!="same" || question.value("account")!=state.value("accountId"))continue;
+            for(const auto& rowValue:question.value("rows").toList()){
+                const auto row=rowValue.toMap();
+                duplicateKeys.emplace(imports::Occurrence{str(row.value("batch")),row.value("ordinal").toULongLong()},row.value("key").toString());
+            }
+        }
+        QVariantMap duplicateBalances;
+        // The view stores every posting's balance even when a filter hides the row.
+        for(std::size_t i=0;i<cachedView->rows.size();++i){
+            const auto& id=cachedView->rows[i].identity;
+            if(selection.contains(id))retained.insert(id);
+            if(const auto key=duplicateKeys.find(id);key!=duplicateKeys.end())
+                duplicateBalances.insert(key->second,money(cachedView->balances[i],amountFormat));
+        }
+        state["duplicateBalances"]=duplicateBalances;
         selection=std::move(retained);
         cachedLinkedRows.clear();
         if(repo.transfers_supported())for(const auto& value:repo.transfers())if(!value.link.unresolved && value.link.origin.state!=transfers::State::removed){cachedLinkedRows.insert(value.link.origin.endpoint.entry);if(value.link.destination.state!=transfers::State::removed)cachedLinkedRows.insert(value.link.destination.endpoint.entry);}

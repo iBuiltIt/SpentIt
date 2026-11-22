@@ -377,7 +377,7 @@ private slots:
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPOlder A\n^\nD2026-02-01\nT-10\nPOlder B\n^\nD2026-02-01\nT-2\nPNeighbour\n^\n")}});
         run(m,"import",{{"path",fixture(dir.path(),"D2026-02-01\nT-10\nPNew download\n^\n")}});
         const auto questions=m.state().value("reviewQuestions").toList();QCOMPARE(questions.size(),1);
-        QVariantMap fresh,old;for(const auto& v:questions[0].toMap().value("rows").toList()){const auto r=v.toMap();if(r.value("payee")=="New download")fresh=r;else if(r.value("payee")=="Older A")old=r;}
+        QVariantMap fresh,old,other;for(const auto& v:questions[0].toMap().value("rows").toList()){const auto r=v.toMap();if(r.value("payee")=="New download")fresh=r;else if(r.value("payee")=="Older A")old=r;else if(r.value("payee")=="Older B")other=r;}
         QVERIFY(!fresh.isEmpty());QCOMPARE(fresh.value("duplicateCandidates").toList().size(),2);
         run(m,"select",{{"row",m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt())}});
         QTRY_COMPARE(window->property("duplicateOriginKey").toString(),fresh.value("key").toString());
@@ -387,11 +387,43 @@ private slots:
         run(m,"select",{{"row",m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt())}});
         auto click=[&](const char* name){auto* item=visualItem(window->contentItem(),QString::fromUtf8(name));if(!item)return false;return QMetaObject::invokeMethod(item,"clicked");};
         QTRY_VERIFY(visualItem(window->contentItem(),"ledgerDuplicateMerge"));QVERIFY(!visualItem(window->contentItem(),"ledgerDuplicateMerge")->isEnabled());
+        const auto indexOf=[&](const QVariantMap& row){return m.occurrenceIndex(row.value("batch").toString(),row.value("ordinal").toInt());};
+        const auto rowItem=[&](const QVariantMap& row){return visualItem(window->contentItem(),QString("ledgerRow_%1").arg(indexOf(row)));};
+        const auto role=[&](const QVariantMap& row){const auto item=rowItem(row);return item?item->property("duplicateRole").toString():QString();};
+        QTRY_VERIFY(rowItem(fresh) && rowItem(old) && rowItem(other));
+        QVERIFY(role(fresh).isEmpty() && role(old).isEmpty() && role(other).isEmpty());
+        QVERIFY(rowItem(other)->property("possibleDuplicate").toBool());
+        auto* picker=visualItem(window->contentItem(),"ledgerDuplicateCandidates");QVERIFY(picker);
+        const auto pickerModel=picker->property("model");
+        const auto options=pickerModel.metaType()==QMetaType::fromType<QJSValue>()
+            ?pickerModel.value<QJSValue>().toVariant().toList():pickerModel.toList();
+        QCOMPARE(options.size(),2);
+        int otherOption=-1;
+        for(int i=0;i<2;++i){
+            const auto option=options[i].toMap();
+            const bool isOther=option.value("key")==other.value("key");
+            const auto& posting=isOther?other:old;
+            const auto balance=m.rowRecord(indexOf(posting)).value("balance").toString();
+            QCOMPARE(option.value("key"),posting.value("key"));
+            QCOMPARE(m.state().value("duplicateBalances").toMap().value(posting.value("key").toString()).toString(),balance);
+            const auto label=option.value("label").toString();
+            QVERIFY2(label.contains("Balance "+balance),qPrintable(label));
+            if(isOther)otherOption=i;
+        }
+        QVERIFY(otherOption>=0);
+        QVERIFY(QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,otherOption)));
+        QTRY_COMPARE(role(fresh),"Selected");QTRY_COMPARE(role(other),"Match");QVERIFY(role(old).isEmpty());
         run(m,"select",{{"row",m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())}});
         QTRY_COMPARE(window->property("duplicateCandidateKey").toString(),old.value("key").toString());
+        QTRY_COMPARE(role(old),"Match");QVERIFY(role(other).isEmpty());
+        auto* survivor=visualItem(window->contentItem(),"ledgerDuplicateSurvivor");QVERIFY(survivor);
+        QCOMPARE(survivor->property("text").toString(),"Keeps the Match row.");
+        const auto oldBalance=m.rowRecord(indexOf(old)).value("balance").toString();
         if(!qEnvironmentVariableIsEmpty("SPENTIT_LEDGER_PREVIEW")){QTest::qWait(100);QVERIFY(window->grabWindow().save(qEnvironmentVariable("SPENTIT_LEDGER_PREVIEW")));}
         // Revealing a filtered-out candidate is explicit and clears that filter.
         run(m,"query",{{"filter","payee:New"}});
+        QCOMPARE(indexOf(old),-1);
+        QCOMPARE(m.state().value("duplicateBalances").toMap().value(old.value("key").toString()).toString(),oldBalance);
         QVERIFY(click("ledgerDuplicateShow"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY(m.state().value("filter").toString().isEmpty());
         QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);
         QVERIFY(click("ledgerDuplicateSeparate"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
@@ -404,6 +436,7 @@ private slots:
         QVERIFY(click("ledgerDuplicateMerge"));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QVERIFY(!window->findChild<QObject*>("reviewSurvivor")->property("visible").toBool());QCOMPARE(m.rowCount(),4);QCOMPARE(m.state().value("balance").toString(),"-22.00");QVERIFY(m.occurrenceIndex(old.value("batch").toString(),old.value("ordinal").toInt())>=0);QCOMPARE(m.occurrenceIndex(fresh.value("batch").toString(),fresh.value("ordinal").toInt()),-1);
         QVERIFY(m.state().value("mergedRows").toMap().contains(old.value("key").toString()));
+        QVERIFY(indexOf(other)>=0);
         QVERIFY(undoShortcut());QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);QCOMPARE(m.rowCount(),5);
         QVERIFY(!m.state().value("mergedRows").toMap().contains(old.value("key").toString()));
         QVERIFY(QMetaObject::invokeMethod(window,"showDuplicateInLedger",Q_ARG(QVariant,fresh),Q_ARG(QVariant,fresh)));QTRY_VERIFY_WITH_TIMEOUT(!m.busy(),30000);

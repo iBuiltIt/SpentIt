@@ -176,15 +176,22 @@ Accepted: keep the existing matching policy and Merge source-association storage
 The losing posting's imported representations continue to attach to the survivor;
 this work does not change retention, formats, clean-open verification or close policy.
 
-The ordinary ledger marks suspected duplicates with a rose edge and comparison
-outline, preserving new/accepted striping and selection. Selecting a marked row
-exposes its direct candidates, not every transitive member of the Review group.
-The comparison bar labels New/Accepted, identifies the selected match and survivor,
-and offers Merge, Keep this pair separate, Show match and Next possible duplicate.
-Several candidates require choosing one by clicking its ledger row or using the
-candidate picker. None of these match rejects only the selected origin's candidate
-comparisons. Right-click Resolve duplicate exposes the same actions. Read-only files
-cannot resolve questions. Review discovery runs automatically in the document worker after open and import.
+The ledger gives possible duplicates a thin rose edge. Once a match is chosen,
+the two rows in the active pair get a rose outline and the labels **Selected**
+and **Match**. Selecting a marked row offers its direct candidates. When there
+are several, choose one by clicking its ledger row or using the candidate
+picker. The picker shows **New** or **Accepted** and the balance after each
+posting, including when the ledger filter hides that row. The balance helps
+locate a row. Compare the original records to decide whether the entries are
+duplicates.
+
+The comparison bar identifies the active pair and shows which row Merge will
+keep when the survivor is determined. It offers **Merge**, **Keep this pair
+separate**, **Show match**, and **Next possible duplicate**. **None of these
+match** rejects the selected row's direct candidate comparisons. Right-click
+**Resolve duplicate** exposes the same actions. Read-only files cannot resolve
+questions. Review discovery runs automatically in the document worker after
+open and import.
 
 Rows remain in ledger order with surrounding transactions visible. Show match
 scrolls to an available row; revealing a hidden match explicitly clears the filter.
