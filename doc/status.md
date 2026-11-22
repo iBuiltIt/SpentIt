@@ -209,6 +209,15 @@ acceptance, and after reopening. The updated ledger also passed both Date
 directions and per-row balance checks on a synthetic file created and closed
 by the previous Release build.
 
+## macOS statement file associations — 2026-11-20
+
+SpentIt 1.0.3 uses shared content type identifiers for QFX, QIF, and OFX so
+Finder can offer it alongside Banktivity. On macOS arm64 with Qt 6.12.0,
+Launch Services listed the rebuilt Release bundle for synthetic QFX, QIF,
+OFX, QBO, ASO, and SpentIt files. Banktivity remained the default for QFX,
+QIF, and OFX. The packaged launch and file creation smoke test passed with
+desktop access. See [packaging](../packaging/README.md).
+
 ## Import Undo restores matched transfers — 2026-11-19
 
 Undoing an import that automatically matched a transfer restores the surviving

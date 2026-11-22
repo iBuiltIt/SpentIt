@@ -452,51 +452,15 @@ def highest_minos(app: Path) -> tuple[int, ...]:
     return best
 
 
-STATEMENT_EXTENSIONS = ("qif", "ofx", "qfx", "qbo", "aso")
-
-
-def statement_type_id(extension: str) -> str:
-    return f"com.stefanwessels.spentit.import.{extension}"
-
-
-def register_spentit_document(info: dict) -> None:
-    """Finder association for .spentit and statement files.
-
-    packaging/macos/Info.plist.in has the same keys. SpentIt owns .spentit.
-    Statement types are alternate handlers, not owned types.
-    """
-    documents = [{
-        "CFBundleTypeName": "SpentIt file",
-        "CFBundleTypeRole": "Editor",
-        "LSHandlerRank": "Owner",
-        "LSItemContentTypes": ["com.stefanwessels.spentit.file"],
-        "CFBundleTypeExtensions": ["spentit"],
-    }]
-    imported = []
-    for extension in STATEMENT_EXTENSIONS:
-        description = f"{extension.upper()} statement"
-        type_id = statement_type_id(extension)
-        documents.append({
-            "CFBundleTypeName": description,
-            "CFBundleTypeRole": "Editor",
-            "LSHandlerRank": "Alternate",
-            "LSItemContentTypes": [type_id],
-            "CFBundleTypeExtensions": [extension],
-        })
-        imported.append({
-            "UTTypeIdentifier": type_id,
-            "UTTypeDescription": description,
-            "UTTypeConformsTo": ["public.data"],
-            "UTTypeTagSpecification": {"public.filename-extension": [extension]},
-        })
-    info["CFBundleDocumentTypes"] = documents
-    info["UTExportedTypeDeclarations"] = [{
-        "UTTypeIdentifier": "com.stefanwessels.spentit.file",
-        "UTTypeDescription": "SpentIt file",
-        "UTTypeConformsTo": ["public.data"],
-        "UTTypeTagSpecification": {"public.filename-extension": ["spentit"]},
-    }]
-    info["UTImportedTypeDeclarations"] = imported
+# Expected Finder registration in packaging/macos/Info.plist.in. The first
+# identifier is the imported type that maps the filename extension.
+STATEMENT_CONTENT_TYPES = {
+    "qif": ("com.intuit.qif", "com.quicken.qif"),
+    "ofx": ("public.ofx",),
+    "qfx": ("com.intuit.qfx", "com.quicken.qfx"),
+    "qbo": ("com.stefanwessels.spentit.import.qbo",),
+    "aso": ("com.stefanwessels.spentit.import.aso",),
+}
 
 
 def assert_spentit_document(info: dict) -> None:
@@ -512,20 +476,22 @@ def assert_spentit_document(info: dict) -> None:
         and item.get("LSHandlerRank") == "Owner"
         for item in types
     )
-    imported_extensions: list[str] = []
-    for item in imported:
-        tags = item.get("UTTypeTagSpecification") or {}
-        imported_extensions.extend(tags.get("public.filename-extension") or [])
+    imported_types = {
+        extension: item["UTTypeIdentifier"]
+        for item in imported
+        for extension in item.get("UTTypeTagSpecification", {}).get("public.filename-extension", [])
+    }
     alternate = {
-        extension
+        extension: tuple(item.get("LSItemContentTypes", []))
         for item in types
         if item.get("LSHandlerRank") == "Alternate"
-        for extension in (item.get("CFBundleTypeExtensions") or [])
+        for extension in item.get("CFBundleTypeExtensions", [])
     }
     if extensions != ["spentit"] or not owns:
         raise SystemExit("the app did not register .spentit")
-    if set(imported_extensions) != set(STATEMENT_EXTENSIONS) or alternate != set(STATEMENT_EXTENSIONS):
-        raise SystemExit("the app did not register statement files as alternate types")
+    expected_imported = {extension: identifiers[0] for extension, identifiers in STATEMENT_CONTENT_TYPES.items()}
+    if imported_types != expected_imported or alternate != STATEMENT_CONTENT_TYPES:
+        raise SystemExit("the app did not register the expected statement content types as alternate handlers")
 
 
 def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:
@@ -539,7 +505,6 @@ def patch_info_plist(app: Path, version: str, minimum: tuple[int, ...]) -> None:
     info["LSMinimumSystemVersion"] = format_version(minimum)
     info["NSHighResolutionCapable"] = True
     info["LSApplicationCategoryType"] = "public.app-category.finance"
-    register_spentit_document(info)
     assert_spentit_document(info)
     with path.open("wb") as handle:
         plistlib.dump(info, handle)

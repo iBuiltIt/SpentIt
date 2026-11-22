@@ -66,7 +66,8 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.stefanwessels.spentit.import.qif</string>
+				<string>com.intuit.qif</string>
+				<string>com.quicken.qif</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
@@ -82,7 +83,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.stefanwessels.spentit.import.ofx</string>
+				<string>public.ofx</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
@@ -98,7 +99,8 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.stefanwessels.spentit.import.qfx</string>
+				<string>com.intuit.qfx</string>
+				<string>com.quicken.qfx</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
@@ -162,12 +164,12 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.stefanwessels.spentit.import.qif</string>
+			<string>com.intuit.qif</string>
 			<key>UTTypeDescription</key>
 			<string>QIF statement</string>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.plain-text</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
@@ -179,12 +181,12 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.stefanwessels.spentit.import.ofx</string>
+			<string>public.ofx</string>
 			<key>UTTypeDescription</key>
 			<string>OFX statement</string>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.plain-text</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
@@ -196,12 +198,12 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.stefanwessels.spentit.import.qfx</string>
+			<string>com.intuit.qfx</string>
 			<key>UTTypeDescription</key>
 			<string>QFX statement</string>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>public.data</string>
+				<string>public.plain-text</string>
 			</array>
 			<key>UTTypeTagSpecification</key>
 			<dict>
