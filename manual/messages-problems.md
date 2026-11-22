@@ -91,7 +91,7 @@ Keep the original and use the version of SpentIt that last opened it.
 
 **“The transaction date or amount is missing.”**
 
-Check the bank export or statement. In **Review**, use **Correct** where
+Check the bank export or statement. In **Review**, use **Repair record** where
 available to enter the missing value.
 [Repair an imported record](import-transactions.md#when-something-needs-attention).
 

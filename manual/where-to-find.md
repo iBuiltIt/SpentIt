@@ -72,8 +72,8 @@ Most controls appear after you open a file.
 - **Create or rename a category:** choose **Categories** in the sidebar.
   [Create a category](categories.md#create-a-category) or
   [manage the list](categories.md#keep-your-category-list-useful).
-- **Rename a payee, set a memo, or delete entries:** select the rows, then
-  right-click for **Rename payee…**, **Set memo…** or **Delete selected…**.
+- **Set a payee or memo, or delete entries:** select the rows, then
+  right-click for **Set payee…**, **Set memo…** or **Delete selected…**.
   [Change a selection or delete entries](add-correct-transactions.md#change-a-selection-or-delete-entries).
 
 ## Review, rules and reports
@@ -84,7 +84,9 @@ Most controls appear after you open a file.
   **Accept transactions** at the bottom. This covers all accounts.
   [Accept the transactions you’ve checked](accept-transactions.md#accept-the-transactions-you-ve-checked).
 - **Set up repeated categorization:** select an account, choose **Rules**
-  in the sidebar, then **New rule**. [Make a rule](rules.md#make-a-market-rule).
+  in the sidebar, then **New rule**. To start from one imported entry,
+  select it and right-click. **Create rule…** is first in the menu,
+  followed by **Change category…**. [Make a rule](rules.md#make-a-market-rule).
 - **Explore spending:** choose **Reports** in the sidebar, then
   **New report**. [Make your first report](reports.md#make-your-first-report).
 - **See what makes up a report amount:** double-click a category

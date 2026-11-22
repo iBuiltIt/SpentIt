@@ -116,9 +116,14 @@ That is why a purchase shown as a withdrawal in the ledger becomes a positive
 report amount. A refund greater than the spending can make a category negative.
 
 The table shows the main period first, followed by comparisons. Categories
-are ordered by their main-period amount, largest first. Scroll sideways for more periods,
-and down for more categories. Accounts in different currencies get separate
-tables and charts; there is no combined or converted total.
+are ordered by their main-period amount, largest first. When the window
+can’t show all the periods at once, drag the scrollbar just below the
+period headings. The headings and amounts move together, and **Category**
+stays on the left. Scroll down for more categories. Accounts in different
+currencies get separate tables and charts.
+
+![Monthly report with a horizontal scrollbar below the dates and Category fixed on the left.](images/reports-period-scroll.png)
+*Drag the bar beneath the dates to see the rest of the months.*
 
 A category is left out of the table and charts when its total is zero in
 every shown period. If it has an amount in any period, it stays, with 0.00
@@ -192,7 +197,7 @@ work here too.
 Search here only narrows the transactions you opened. Click the
 **Account** heading to sort by account.
 
-**Change category…**, **Rename payee…**, and **Set memo…** can update
+**Change category…**, **Set payee…**, and **Set memo…** can update
 entries from several accounts together, with one save and one Undo.
 You can also choose an account destination for that selection. Each
 entry gets its own opposite posting. If an entry is already in the
@@ -205,12 +210,13 @@ return to an ordinary account ledger. Those commands, and Unmerge, appear
 in grey here.
 
 To make a rule from one eligible imported transaction, select it and
-right-click **Create rule…**. Check the pattern, category and account scope,
+right-click. **Create rule…** is first in the menu, followed by
+**Change category…**. Check the pattern, category and account scope,
 then choose **Save, apply and back** to return to these transactions with
 the report refreshed. The rule starts with All accounts selected, so narrow
 that choice if you intend to change only one account.
 
-![Report transaction list with top-bar Back and an open menu showing Change category… and Create rule.](images/reports-menu.png)
+![Report transaction list with an open menu starting with Create rule and Change category, with Set payee farther down.](images/reports-menu.png)
 *Create a rule from a report transaction without opening its editor.*
 
 You can drag the right edge of a column heading to make more room, just as

@@ -46,8 +46,8 @@ Dates use the new format as soon as you save, including dates you type
 in the ledger or in reports. Existing period searches still cover the
 same days. Saving clears any changes waiting to be redone.
 
-![Current file settings with DD.MM.YYYY in the Custom date format field, an example, and Save date format.](images/settings.png)
-*Check the example to see how your dates will look.*
+![Current file settings with a custom date format and Holiday and Household Savings in the bank-match account picker beside Add account.](images/settings.png)
+*Check the date example before saving. The account picker below is for accounts where you don’t import bank transactions.*
 
 ### Choose how amounts look
 
@@ -123,8 +123,12 @@ already have. The imported rules are not applied. Categories merge by name.
 If the Income setting differs, choose **Keep existing** or **Use imported**.
 A missing category must be selected so SpentIt can create it, or mapped to
 a category you already have. A missing account must be mapped to an account
-with the same currency. Choose **Import** when the choices are complete.
-**Cancel** stops the step while that is still possible.
+with the same currency.
+
+The file you’re importing into can hold **4,096 saved rules**, including
+disabled ones. If your selection would exceed that limit, select fewer
+rules or delete rules from this file to make room. Choose **Import** when
+you’re ready. **Cancel** stops the step while that is still possible.
 
 ## When a file or change needs attention
 

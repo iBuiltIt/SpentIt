@@ -729,7 +729,7 @@ private slots:
             << QString("find-a-purchase") << QString("Find a purchase");
         QTest::newRow("review") << QString("review-duplicates-transfers")
             << QStringList{"review-keep.png", "review-accept-marks.png", "review-link.png", "review-choices.png", "review-linked.png", "review-waiting.png", "review-merge-rejected.png",
-                           "review-differing-amounts.png", "review-difference.png", "review-automatic.png"}
+                           "review-differing-amounts.png", "review-difference.png", "review-import-problems.png", "review-automatic.png"}
             << QString("when-the-amounts-differ") << QString("When the amounts differ");
         QTest::newRow("editing") << QString("add-correct-transactions")
             << QStringList{"editing-new.png", "editing-new-transfer.png", "editing-calendar.png", "editing-splits.png",
@@ -746,7 +746,8 @@ private slots:
             << QStringList{"accept-ready.png", "accept-review.png", "accept-quit.png"}
             << QString("leave-them-new-and-return-later") << QString("Leave them new and return later");
         QTest::newRow("reports") << QString("answer-with-reports")
-            << QStringList{"reports-editor.png", "reports-periods.png", "reports-comparison.png", "reports-pie.png", "reports-transactions.png", "reports-menu.png", "reports-pdf.png"}
+            << QStringList{"reports-editor.png", "reports-periods.png", "reports-comparison.png", "reports-period-scroll.png", "reports-pie.png",
+                           "reports-transactions.png", "reports-menu.png", "reports-pdf.png"}
             << QString("open-the-transactions-behind-an-amount") << QString("Open the transactions behind an amount");
         QTest::newRow("recovery") << QString("look-after-your-work")
             << QStringList{"settings.png"}
@@ -1929,6 +1930,8 @@ private slots:
         QCOMPARE(totals.front().toMap().value("totals").toList(), (QVariantList{"36.18"}));
         run(session.model, "create_account", {{"id", "3"}, {"name", "Cash"}, {"currency", "CAD"}, {"date", "2026-01-01"}});
         run(session.model, "bank_match_account_settings", {{"account", "3"}, {"optional", true}});
+        run(session.model, "create_account", {{"id", "4"}, {"name", "Holiday and Household Savings"},
+            {"currency", "CAD"}, {"date", "2026-01-01"}});
         mouse("sidebarSettings");
         {
             for (const auto* name : {"autoMergeReview", "autoLinkReview"}) {
@@ -1942,6 +1945,10 @@ private slots:
             QVERIFY(passwordField);
             QVERIFY(passwordField->isVisible());
             QTRY_VERIFY(object(session.root, "removeBankMatchOptional_3"));
+            auto* bankMatchAccount = object(session.root, "bankMatchAccount");
+            QVERIFY(bankMatchAccount);
+            QVERIFY(bankMatchAccount->setProperty("currentIndex", 2));
+            QCOMPARE(bankMatchAccount->property("currentText").toString(), QString("Holiday and Household Savings"));
             auto* changePassword = qobject_cast<QQuickItem*>(object(session.root, "changePassword"));
             QVERIFY(changePassword);
             QVERIFY(changePassword->isVisible());
@@ -1951,10 +1958,20 @@ private slots:
             QVERIFY(format->setProperty("currentIndex", 6));
             QVERIFY(edit(session.root, "fileCustomDateFormat", "DD.MM.YYYY"));
             QVERIFY(object(session.root, "saveDateFormat")->property("enabled").toBool());
-            QTest::qWait(200);
             const auto output = qEnvironmentVariable("SPENTIT_GUIDE_CAPTURE");
-            if (!output.isEmpty())
+            if (!output.isEmpty()) {
+                auto* scroll = settingsView->property("contentItem").value<QQuickItem*>();
+                QVERIFY(scroll);
+                const auto chapterSize = session.window->size();
+                session.window->resize(chapterSize.width(), 1400);
+                QTest::qWait(150);
+                const auto overflow = qMax(0.0, scroll->property("contentHeight").toDouble() - scroll->height());
+                QVERIFY(scroll->setProperty("contentY", qMin(140.0, overflow)));
+                QTest::qWait(150);
                 QVERIFY(session.window->grabWindow().save(QDir(output).filePath("settings.png")));
+                session.window->resize(chapterSize);
+                QVERIFY(scroll->setProperty("contentY", 0));
+            }
             QVERIFY(click(session.root, "saveDateFormat"));
             wait(session.model);
             QCOMPARE(session.model.state().value("dateFormat").toString(), QString("DD.MM.YYYY"));
@@ -2171,6 +2188,7 @@ private slots:
         const auto detail = session.model.state().value("reportDetails").toMap();
         mouse("navigationBack");
         QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
+        QTRY_VERIFY(forward->property("enabled").toBool());
         mouse("navigationForward");
         QTRY_COMPARE(workspace->property("mode").toString(), QString("detail"));
         const auto reopened = session.model.state().value("reportDetails").toMap();
@@ -2242,6 +2260,36 @@ private slots:
         mouse("accountNavigation");
         QVERIFY(click(leave, "reportsGuardDiscard"));
         QTRY_COMPARE(session.root->property("currentPage").toString(), QString("ledger"));
+
+        // Extend the same household report so the period table needs to scroll.
+        QVariantList periods;
+        for (const auto& range : {qMakePair("2026-01-01", "2026-01-31"), qMakePair("2026-02-01", "2026-02-28"),
+                 qMakePair("2026-03-01", "2026-03-31"), qMakePair("2026-04-01", "2026-04-30"),
+                 qMakePair("2026-05-01", "2026-05-31")}) {
+            periods.push_back(QVariantMap{{"preset", "custom"}, {"start", range.first}, {"end", range.second}});
+        }
+        auto reports = session.model.state().value("reports").toList();
+        QCOMPARE(reports.size(), 1);
+        auto monthly = reports.front().toMap();
+        monthly["id"] = "five-months";
+        monthly["name"] = "Household spending by month";
+        monthly["graph"] = "none";
+        monthly["periods"] = periods;
+        reports.push_back(monthly);
+        QTRY_VERIFY(!leave->isVisible());
+        QVERIFY(click(session.root, "reportsNavigation"));
+        wait(session.model);
+        QTRY_COMPARE(session.root->property("currentPage").toString(), QString("reports"));
+        run(session.model, "report_save", {{"revision", session.model.state().value("reportRevision")}, {"reports", reports}});
+        QVERIFY(QMetaObject::invokeMethod(workspace, "load"));
+        session.window->resize(1050, 780);
+        QTRY_COMPARE(session.window->width(), 1050);
+        run(session.model, "report_show", {{"id", "five-months"}});
+        QTRY_COMPARE(workspace->property("mode").toString(), QString("result"));
+        QCOMPARE(currency().value("totals").toList(), (QVariantList{"56.18", "70.00", "0.00", "0.00", "0.00"}));
+        QTRY_VERIFY(object(session.root, "reportPeriodScrollBar") &&
+            object(session.root, "reportPeriodScrollBar")->property("visible").toBool());
+        capture("reports-period-scroll");
     }
     void acceptanceChapterWalkthrough() {
         HelpCatalog catalog;
@@ -2873,6 +2921,9 @@ private slots:
                 {"currency", "CAD"}, {"date", "2026-01-01"}});
             import("!Type:Bank\nD2026-02-01\nT-10.00\nPWeekly savings\nL[Savings]\n^\n"
                    "D2026-02-08\nT-10.00\nPWeekly savings\nL[Savings]\n^\n", "1");
+            run(session.model, "automatic_review_settings", {{"kind", "merge"}, {"enabled", false}});
+            import("!Type:Bank\nD2026-02-10\nT-18.50\nPGarden shop\n^\n", "1");
+            import("!Type:Bank\nD2026-02-10\nT-18.50\nPGarden supplies\n^\n", "1");
             mouse("reviewNavigation");
             QTRY_VERIFY(object(session.root, "acceptMissingMatch"));
             QVERIFY(!object(session.root, "acceptMissingMatch")->property("checked").toBool());
@@ -2880,8 +2931,10 @@ private slots:
             QVERIFY(waitingAccount);
             QCOMPARE(waitingAccount->property("currentValue").toString(), QString("2"));
             mouse("selectWaitingTransfers");
+            QCOMPARE(object(session.root, "selectWaitingTransfers")->property("text").toString(), QString("Deselect all"));
+            mouse("selectAllMerges");
             QTRY_COMPARE(object(session.root, "reviewDecisionSummary")->property("text").toString(),
-                QString("2 without bank match"));
+                QString("1 merge, 2 without bank match"));
             session.window->resize(chapterSize.width(), 1040);
             capture("review-waiting");
             session.window->resize(chapterSize);
@@ -2910,6 +2963,18 @@ private slots:
             mouse("reviewNavigation");
             QTRY_VERIFY(object(session.root, "commitImport")->property("visible").toBool());
             capture("review-accept-marks");
+
+            run(session.model, "close");
+            run(session.model, "create", {{"path", session.path("import-problems.spentit")}, {"protected", false},
+                {"name", "Chequing"}, {"currency", "CAD"}, {"defaultCategories", false}});
+            import("!Type:Bank\nD2026-02-01\nT-18.50\nPGarden shop\nGarden shop\n^\n"
+                   "D2026-02-30\nT-12.00\nPCoffee shop\n^\n"
+                   "D2026-02-12\nT-14.20\nPMarket\nDifferent payee text\n^\n", "1");
+            mouse("reviewNavigation");
+            QTRY_VERIFY(object(session.root, "reviewPayeeInspect"));
+            QTRY_VERIFY(object(session.root, "reviewIssue_repair"));
+            QTRY_VERIFY(object(session.root, "reviewIssue_source"));
+            capture("review-import-problems");
         } else {
             import("!Type:Bank\nD2026-01-28\nT-37.18\nPCredit card payment\nL[Credit card]\n^\n", "1");
             run(session.model, "create_account", {{"id", "2"}, {"name", "Credit card"}, {"currency", "CAD"}, {"date", "2026-01-01"}});

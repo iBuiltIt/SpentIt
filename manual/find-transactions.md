@@ -103,7 +103,12 @@ A matching split brings in its whole transaction; the totals below
 the list include the whole amount, not just that split.
 
 Choose the search box’s **× (Clear search)** button to show all entries
-again. If you did not select a search result, clearing restores the
+again. On a Mac, **Option+F** moves between Search and the transaction
+list, and **Option+Shift+F** clears Search from either place. On Windows
+and Linux, use **Alt+F** and **Alt+Shift+F**. These keys also work in a
+report’s transaction list.
+
+If you did not select a search result, clearing restores the
 selection from before the search. If you did, your result selection stays.
 
 If a search reports an error, the previous results stay on screen.
@@ -113,7 +118,9 @@ were no matches.
 ## Sort, scroll and come back
 
 Click a column heading to sort by it. Click it again to reverse the
-order; the heading’s arrow shows the direction. 
+order. The heading’s arrow shows the direction. **Date** reverses the
+full posting order, including transactions on the same day. Each row
+keeps the balance the account had just after that transaction.
 
 If a column feels too narrow, drag the right edge of its heading. The other
 columns keep their widths; use the horizontal scrollbar if the list no
@@ -168,8 +175,8 @@ both remain.
 
 Read the question and compare the entries before choosing **Merge** or
 **Keep separate**. **Show in ledger** opens a duplicate in its account.
-**Correct** opens a repairable record. Duplicate and transfer decisions
-come next in the guide.
+**Repair record** opens an entry that needs a correction.
+[See what each Review action does](review-duplicates-transfers.md#look-at-import-problems).
 
 The bottom status line reports activity and outcomes. When Review is
 empty it says **Nothing needs review.** That means there are no

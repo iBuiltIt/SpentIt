@@ -78,11 +78,13 @@ what it’s doing. Wait for the action to finish before trying it again.
 
 ## Open your file
 
-On the welcome screen, choose **Browse…** and select your `.spentit`
-file. If the right file is already shown, you can leave it selected.
+On the welcome screen, choose **Browse…**, select your `.spentit` file,
+and confirm your choice. SpentIt starts opening it right away.
 
-Enter the password if asked, then choose **Open file**. A file without
-a password may open automatically when you next start SpentIt.
+If the file you want is already shown on the welcome screen, choose
+**Open file**. Whenever SpentIt asks for a password, type it and press
+**Return** or choose **Open file**. A file without a password may open
+automatically when you next start SpentIt.
 
 You can also double-click a `.spentit` file in Finder on a Mac or in
 your file manager on Windows or Linux. SpentIt starts and opens that
@@ -92,7 +94,7 @@ If SpentIt already has a file open, its window comes forward and you
 can keep working in that file.
 
 ![Welcome screen with the Household file selected, a password field, and the Open file button.](images/create-file-unlock.png)
-*Check the selected file, enter its password, and choose Open file.*
+*Check the selected file, enter its password, and press Return or choose Open file.*
 
 ### If it won’t open
 

@@ -163,7 +163,7 @@ and splits with the imported values.
 
 Manually entered transactions cannot use Restore, even if Review later
 attached an imported transaction to them. Transfer relationships can also
-prevent restoration. Use **Rename payee…** if that is all you need to change.
+prevent restoration. Use **Set payee…** if that is all you need to change.
 
 ## Change a selection or delete entries {#change-a-selection-or-delete-entries}
 

@@ -69,6 +69,9 @@ Categories first, then return to the transaction.
 ## Change selected transactions {#change-selected-transactions}
 
 Select one or more rows, right-click, and choose **Change category…**.
+With the transaction list in focus, you can also press **Option+C** on
+a Mac or **Alt+C** on Windows and Linux. This works in the account
+ledger and in a report’s transaction list.
 The filter is ready for typing. Type any part of a name, using upper-
 or lowercase, or leave it empty to see the whole list. Click a choice
 or move with **Up/Down** and choose with **Enter** or **Tab**. If there

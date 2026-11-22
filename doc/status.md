@@ -17,7 +17,7 @@ passed unless you ran it.
 A later import can reopen an automatic link between two New postings when it
 adds another eligible match. Review offers the choices and keeps each bank
 posting. Undo the later import to restore the previous link. See [Review](review-sheet.md#reopen-an-automatic-link-after-a-later-import)
-and [MAN-113](manual-update-backlog.md#open-items).
+and [MAN-113](../manual/review-duplicates-transfers.md#when-a-later-import-brings-back-a-transfer-question).
 
 The macOS arm64 rules-enabled Release storage regression passed all six
 synthetic import orders, with Undo in the current session and after closing
@@ -39,7 +39,7 @@ unverified.
 Confirming a file in **Browse…** starts opening it from the welcome screen.
 If the file needs a password, the password field receives focus and Return
 submits it. See [the welcome contract](../features/001-documents-storage-security.md#creation-and-welcome)
-and [MAN-112](manual-update-backlog.md#open-items).
+and [MAN-112](../manual/create-open-file.md#open-your-file).
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release picker regression
 passed using Qt's offscreen dialog. It covered picker cancellation, direct
@@ -55,7 +55,7 @@ Date sort reverses the full posting sequence, including same-day rows. Each
 transaction keeps its balance in either direction. Newest-first QIF exports
 appear in file order when Date is newest first. SpentIt uses the dates and
 row positions retained with the import. See [ledger sorting and balances](search-ledger.md#search-contract)
-and [MAN-104](manual-update-backlog.md#open-items).
+and [MAN-104](../manual/find-transactions.md#sort-scroll-and-come-back).
 
 On macOS arm64 with Qt 6.12.0, the new offscreen regression reproduced the
 wrong balance on the earlier build and passed with the fix. It imports two
@@ -73,7 +73,7 @@ Native interaction was unverified.
 together as one Undo step. **Clear selection** is immediately to its right and
 clears staged choices without writing to the file. Review keeps its existing
 candidate groups. See [pending Review decisions](review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17)
-and [MAN-111](manual-update-backlog.md#open-items).
+and [MAN-111](../manual/review-duplicates-transfers.md#save-your-decisions-together).
 
 Seven macOS arm64 rules-enabled Release storage targets passed. The mixed
 decision fault sweep checked both account balances, exact retries, and
@@ -91,7 +91,7 @@ duplicate from the current import, both original payees match exactly, and the
 existing duplicate checks pass. The accepted posting and link stay in place.
 Unmerge restores the extra posting, and import Undo removes the later source.
 See [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14)
-and [MAN-110](manual-update-backlog.md#open-items).
+and [MAN-110](../manual/review-duplicates-transfers.md#let-spentit-handle-straightforward-matches).
 
 The macOS arm64 rules-enabled Release statement matching regression used a
 synthetic next-day OFX posting against an accepted linked QIF posting. It
@@ -154,7 +154,7 @@ payee action is labeled Set payee. Create rule puts the cursor in Category.
 Tab advances to Save, apply and back when it selects a different category.
 See [the ledger menu](ledger-editing.md#ledger-rule-creation-and-menu-availability--owner-go-2026-11-08),
 [Rules](../features/004-rules-and-explanations.md#workspace), and
-[MAN-105](manual-update-backlog.md#open-items).
+[MAN-105](../manual/rules.md#make-a-market-rule).
 
 The rules-enabled Release build on macOS arm64 with Qt 6.12.0 passed all six
 offscreen targets for Rules, Categories, committed editing, Reports, Import UI,
@@ -184,7 +184,7 @@ and the account ledger or report transaction list. With no results, focus
 stays in Search. Option+Shift+F or Alt+Shift+F clears the search text and
 filter from either place, using the existing unsaved-edit guard and selection
 restoration. See [the search contract](search-ledger.md#search-contract) and
-[MAN-106](manual-update-backlog.md#open-items).
+[MAN-106](../manual/keyboard-mouse.md#find-and-move-around).
 
 On macOS arm64 with Qt 6.12.0, the rules-enabled Release Navigation, Reports,
 Rules, and startup offscreen targets passed. The checks cover the shortcuts
@@ -1357,6 +1357,24 @@ included; see [Manual](#manual).
   repository run as passed without a new run.
 
 ## Manual
+
+### MAN-104 through MAN-114 — 2026-11-21
+
+Bundled Help now covers ledger Date order and statement balances, keyboard
+shortcuts for ledger Search and editing, the rule limit, import warnings
+and repairs, combined Review decisions, automatic transfer matches, opening
+a file from Browse, and scrolling report periods. It adds two synthetic
+pictures and refreshes eight. All 17 topic IDs and 158 existing section IDs
+were preserved. The [backlog](manual-update-backlog.md#open-items) is empty.
+
+On macOS arm64 with Qt 6.12.0, the eleven native capture walkthroughs staged
+all 56 linked pictures, with a focused rerun for Settings. The ten changed
+pictures were visually checked. The rules-enabled Release app rebuilt at
+`./build/SpentIt`. All 16 native chapter and reference reading cases, both
+continuous walkthroughs, and the Review, Reports and Recovery walkthroughs
+passed with the final bundle. `help.prepare`, `help.capture_manual_images`,
+`help.catalog`, offscreen startup, changed document links and
+`git diff --check` passed.
 
 ### MAN-100 through MAN-103 — 2026-11-20
 

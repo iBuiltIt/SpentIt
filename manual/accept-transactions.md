@@ -79,7 +79,7 @@ appear in Review. See [how to add or remove an account](review-duplicates-transf
 This later export contains a **5.00** Coffee purchase and an unreadable amount.
 Accepting the Coffee purchase leaves the card balance at **-61.18**.
 
-For a repairable record, choose **Correct** and enter the missing or corrected
+For a repairable record, choose **Repair record** and enter the missing or corrected
 value from your statement. If the import itself was a mistake, check whether
 [Undo import…](import-transactions.md#undo-a-mistaken-import) is still available
 before accepting any of it.

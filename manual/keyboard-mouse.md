@@ -54,7 +54,15 @@ another row leaves that editor where it is.
   and moves on. **Enter** chooses a suggestion or stays in the field
   if there is none. **Escape** first closes suggestions, and
   **Shift+Tab** moves back without choosing.
-- In **Change category…** from the ledger or report transaction menu, type part of a name.
+- With the transaction list in focus, use **Option+R** on a Mac or
+  **Alt+R** on Windows and Linux for **Create rule…**, and **Option+C**
+  or **Alt+C** for **Change category…**. Both work in the account ledger
+  and in report transactions.
+- **Create rule…** puts the cursor in **Category**. When you pick a
+  different category, **Tab** selects it and moves to **Save, apply and
+  back**. Press **Enter** to apply the rule. Use **Up** and **Down** as
+  soon as you’re back in the transaction list.
+- In **Change category…**, type part of a name.
   **Up/Down** moves through the matches. **Enter** or **Tab** chooses
   the highlighted entry.
   Click a choice to use it, or press **Escape** or click outside to close.
@@ -103,6 +111,10 @@ Choosing a date fills the field. Save the surrounding edit when ready.
 
 - In ledger search, **Enter** applies the search. **Escape** clears it
   and shows the account’s transactions again.
+- In the account ledger or a report’s transaction list, **Option+F**
+  on a Mac or **Alt+F** on Windows and Linux moves between **Search**
+  and the list. From either place, **Option+Shift+F** or **Alt+Shift+F**
+  clears Search.
 - Click a sortable column heading to sort; click it again to reverse
   the order. **Date** reverses the whole list, including two
   transactions on the same day. Each row keeps the balance after that

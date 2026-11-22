@@ -84,17 +84,13 @@ entry to keep if asked. The label changes to **Selected match** with
 a number. A group of more than two has no **Include match**; check
 its rows instead, as described above.
 
-**Merge pairs** merges every two-row question you marked, and any larger
-question where you checked exactly two rows and one of them is already
-the one to keep. A group that still needs a choice waits for its own
-button. One **Undo** reverses that whole batch. **Clear merge selection**
-drops the **Include match** marks without merging.
+**Apply decisions** at the top saves your selected merges along with
+any transfer decisions you’ve checked. For a larger group, it includes
+the two checked rows if SpentIt already knows which one to keep. Use
+the group’s own button if you still need to choose.
 
 Two rows left afterwards come back as an ordinary pair, with **Include
-match**. One row left leaves Review and stays in the account. Leaving
-Review, or a change to the file’s transactions, clears these choices.
-Reading a row does not. If a selected match is no longer valid, the
-batch is refused and nothing in it is merged.
+match**. A single remaining row stays in the account and leaves Review.
 
 ## Is it a payment between accounts? {#is-it-a-payment-between-accounts}
 
@@ -116,7 +112,7 @@ payment. If another pending link already uses that entry, its checkbox
 is dimmed. You can still read the details or use **Inspect**. Release
 the other choice to make the entry available again.
 
-![Review with a checked transfer partner, pending counts and Apply decisions beside Undo import.](images/review-link.png)
+![Review with a checked transfer partner and Apply decisions and Clear selection in the header.](images/review-link.png)
 *Check the pending decisions before saving them.*
 
 - Uncheck the selected partner to set **Not this transfer**. Use
@@ -126,18 +122,12 @@ the other choice to make the entry available again.
   Choosing a partner can suggest new checks on related cards. Review
   those changes before saving. Your own rejections and deferrals stay
   in place.
-- To save the pending links, rejections, and unmatched decisions together, choose
-  **Apply decisions** beside **Undo import**. One **Undo** reverses the
-  batch. Cards that still need a split or amount choice wait for you.
 - To save just one card, use its **Link** or **Not this transfer** button.
   Your other pending choices stay. If a choice is flagged after a change,
   check the card and choose again.
 
 ![Two withdrawal cards. Deposit one is checked for Withdrawal one and Deposit two is checked for Withdrawal two.](images/review-choices.png)
 *When two same-day withdrawals could each match either deposit, checking one pair can check the only remaining exact pair. Verify both before saving.*
-
-An unanswered card stays out of the batch. **Inspect** and **Back** keep
-pending choices. Leaving Review by another route clears them.
 
 If either transaction has several splits, use **Split to link** where
 shown. Check the parts before linking. A rejected pair stays in its two
@@ -176,15 +166,14 @@ When the card shows only the transfer, **Accept without bank match**
 starts unchecked. Check it to mark that transfer. To check all waiting
 transfers in an account, use **Unmatched transfers in** to pick the
 account that holds the entries SpentIt created, then choose **Select
-all**. Use **Clear selection** to uncheck that account’s waiting transfers.
+all**. Use **Deselect all** to uncheck that account’s waiting transfers.
 
-![Review showing Savings selected under Unmatched transfers in, with two transfers checked and Apply decisions available.](images/review-waiting.png)
-*Check the account and the pending count before choosing Apply decisions.*
+![Review showing Savings selected under Unmatched transfers in, Deselect all, and the header count of one merge and two without a bank match.](images/review-waiting.png)
+*Deselect all clears the waiting transfers for Savings. Clear selection at the top clears every pending choice.*
 
-**Apply decisions** saves the checked entries with any pending links
-and rejections. One **Undo** reverses the batch. Use **Accept
-transactions** separately when you’re ready to accept New transactions.
-You can still match the transfers to a later bank import.
+After applying these decisions, use **Accept transactions** when you’re
+ready to accept New transactions. You can still match the transfers to
+a later bank import.
 
 Cards with possible bank matches offer **Link**, **Not this transfer**,
 and **Hide suggestions…**. If the split’s imported destination is wrong,
@@ -199,6 +188,18 @@ that holds the entries SpentIt creates and select **Add account**. Use
 handles waiting transfers in listed accounts. Possible bank matches still
 appear in Review. This setting applies to the file at its current location
 on this computer. See the [Settings picture](backup-recovery.md#choose-how-dates-look).
+
+## Save your decisions together
+
+The Review header shows how many merges, links, **Not this transfer**
+answers, and decisions to accept without a bank match are ready to save.
+Choose **Apply decisions** to save them together. One **Undo** reverses
+the batch. Cards you’ve left unanswered or that still need a split or
+amount choice stay open.
+
+Choose **Clear selection** beside **Apply decisions** to start over with
+your checks. **Inspect** and **Back** keep your choices. Leaving Review by
+another route clears them.
 
 ## When the amounts differ {#when-the-amounts-differ}
 
@@ -251,10 +252,6 @@ amounts differ because of a fee, see [When the amounts differ](#when-the-amounts
 
 Read the confirmation before applying the link.
 
-If Review shows **Import problems**, choose **Review…** on that line.
-A line that names a transaction opens it. A line that does not opens
-that account’s ledger.
-
 With automatic linking on, confirming **Merge this payment?** in the
 ledger can also link remaining pairs that have just one clear match
 in the same group. Check the summary for any additional pairs.
@@ -286,6 +283,29 @@ SpentIt links the two bank transactions shown and removes the extra
 entries it created for this payment. One **Undo** brings those entries back
 and restores your **Not this transfer** decision. An extra entry you
 already accepted without a bank match can’t be merged this way.
+
+## Look at import problems {#look-at-import-problems}
+
+Open **Review** to see what needs attention. The action beside each
+message tells you what you can do.
+
+![Review showing Inspect for repeated payee text, Repair record for an invalid date, and View source for an excluded record.](images/review-import-problems.png)
+*Garden shop is already in the balance. The other two records need attention before they can count.*
+
+- **Inspect** opens a transaction with repeated payee lines in its
+  ledger editor. The transaction already counts in your balance.
+  Save a payee correction to clear the Review warning. **Undo** brings
+  it back. You can still read the original QIF from the ledger.
+- **Repair record** opens a record you can fix, such as one with an
+  invalid date. Check the statement, enter the correct value, and
+  press **Enter** to save. The record stays out of the balance while it
+  needs repair.
+- **View source** shows the original text of an excluded record that
+  needs a corrected export. That record stays out of your balance.
+- **Review duplicate** opens the record so you can decide whether it’s
+  already imported or belongs in the account as a separate entry.
+  **Choose categories…** opens the import’s category choices.
+  **Resume import** continues an interrupted import when available.
 
 ## Let SpentIt handle straightforward matches
 
@@ -319,9 +339,29 @@ can appear on accepted entries and stay when you reopen the file.
 ![Accepted Market purchase marked Merged after an automatic duplicate merge.](images/review-automatic.png)
 *The accepted purchase stays, with a mark to help you check the automatic result.*
 
+If you’ve already accepted a transfer, SpentIt can automatically merge
+a duplicate bank posting into the transfer’s entry in that account.
+The new posting must have no link of its own. Each posting must be
+the other’s only match, and both original payees must be present and
+match exactly. The usual date and amount checks apply. The accepted posting keeps its date, splits and link.
+Choose **Unmerge** to bring back the extra bank posting as **New**
+while keeping the transfer linked.
+
 **Accept transactions** clears the marks. If automatic matching is
 cancelled or fails, the import stays and the summary asks you to
 review the remaining matches.
+
+### When a later import brings back a transfer question
+
+A later import can reopen an automatic link while both transactions are
+still **New**. Say a **25.00** withdrawal from Chequing links to the
+only **25.00** deposit in Savings. If another eligible **25.00** deposit
+comes in, Review can offer both deposits. Compare them with your
+statement before choosing which one belongs with the withdrawal.
+
+If the later import was a mistake, [undo that import](import-transactions.md#undo-a-mistaken-import)
+to remove the extra deposit and restore the earlier link, provided the
+import is still eligible for Undo.
 
 ## Undo a mistaken answer
 
@@ -354,8 +394,8 @@ new transactions, with blue marks where the payment is shown twice again.
 You can use Merge to join the payment again, or answer its Link question in
 Review. If the imported destination was wrong, open the original
 transaction and choose a category or **Uncategorized**. Choose
-**Correct** on a Review problem to open the transaction editor, even
-if you previously closed it. An independent posting in the other
+**Inspect** in Review to find the transaction in its ledger, then
+open its editor. An independent posting in the other
 account stays. After cleanup, you can [delete an empty account](accounts.md#delete-an-unused-account)
 if it meets the deletion requirements.
 

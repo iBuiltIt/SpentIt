@@ -40,7 +40,9 @@ and this rule will correctly leave it alone. There is no need to clear
 its category just to try a rule.
 
 You can also select one imported transaction in the ledger and choose
-**Create rule…**. You do not need to open its editor first. With several
+**Create rule…** from the top of its right-click menu. With the list in
+focus, press **Option+R** on a Mac or **Alt+R** on Windows and Linux.
+Both ways work in a report’s transaction list too. With several
 splits, **Create a rule for** asks whether the rule is for the transaction
 or one split. Check the proposed pattern and category. When the transaction
 is open, **Edit rule…** opens a rule that assigned a value to that entry.
@@ -50,8 +52,14 @@ pictures in this chapter follow **New rule**, and that path leaves you
 in Rules. **Create rule…** shows **Save, apply and back**. That saves
 the rule, applies it, and returns you to the ledger. From a report’s
 transaction list, it returns to that list with refreshed amounts. Check the
-Account choice before applying: it starts at All accounts even when you
-created the rule from one report transaction.
+Account choice before applying. It starts at **All accounts** even
+when you start from a report transaction.
+
+When Create rule opens the editor, the cursor is in **Category**. If
+you pick a different category with the keyboard, **Tab** selects it
+and moves to **Save, apply and back**. Press **Enter** to apply the rule.
+Back in the transaction list, you can use **Up** and **Down** right
+away to move through the entries.
 
 ## Preview, save and apply {#preview-save-and-apply}
 
@@ -133,6 +141,11 @@ to edit. **Save rule** keeps that rule’s changes. **Discard changes**
 restores its saved version. **Discard draft** removes an unsaved new rule.
 **New rule** stays unavailable while a new draft is open. Finish or discard
 the one new rule before starting another.
+
+Each file can hold **4,096 saved rules**, including disabled ones.
+When the file is full, Rules asks you to delete a rule before adding
+another. The ledger menu shows **Create rule… (rule limit reached)**.
+Deleting a rule frees a slot.
 
 Select the rule before changing it. Uncheck **Enabled** to stop using it.
 **Delete rule…** asks **Delete rule “name”?** Choose **Delete rule** to

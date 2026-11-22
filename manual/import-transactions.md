@@ -148,15 +148,21 @@ and any questions left in Review.
 ![Credit card ledger with the 42.18 Market purchase, the 6.00 refund, and an opening dated the day before the purchase. The balance is -36.18.](images/import-results.png)
 *The purchase and refund leave the card balance at -36.18.*
 
+To compare running balances, click **Date** until the ledger runs in
+the same direction as your statement. Each balance stays beside its
+transaction when you reverse the list. SpentIt uses the saved statement
+order for earlier imports too. For a statement that covers just one
+day, sort oldest first. If other entries share a statement date, check
+those entries as well when comparing balances.
+
 You can [review and accept the new entries later](accept-transactions.md#leave-them-new-and-return-later).
 
 ### When something needs attention
 
-Open **Review** for failed records and unresolved choices. Use
-**Correct** to open a repairable record, check it against the statement,
-and enter the missing or corrected values. **Enter** saves a valid edit.
-Some unsupported records cannot be fixed by editing a date or amount.
-Follow the message rather than guessing a value to make it pass.
+For a missing or invalid value that you can fix, choose **Repair record**
+and check the entry against the statement before saving. **View source**
+lets you read an excluded record that needs a corrected export. It
+stays out of your balance. [See the other Review actions](review-duplicates-transfers.md#look-at-import-problems).
 
 A completed import can contain both successful rows and failures.
 Do not import it again just because some rows need attention.
