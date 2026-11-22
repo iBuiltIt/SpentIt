@@ -3,7 +3,7 @@
 Last updated: 2026-11-19
 
 The owner approved version 2 on 2026-11-18 for restoring merged transactions
-after acceptance. The application version is 1.0.2.
+after acceptance. The application version is 1.0.3.
 
 New rules-enabled databases use `user_version` 2. Opening an authenticated
 version-1 file runs the upgrade under its normal document lock. The upgrade

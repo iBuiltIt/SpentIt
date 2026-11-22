@@ -3,7 +3,7 @@
 Last updated: 2026-11-19
 
 The release rules database is version 2 and upgrades version-1 files on open.
-The rules-off build still writes version 69. The application version is 1.0.2.
+The rules-off build still writes version 69. The application version is 1.0.3.
 See [release schema](release-schema.md) for upgrade behavior.
 
 ## Prerequisites

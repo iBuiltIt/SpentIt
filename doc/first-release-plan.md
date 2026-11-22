@@ -39,6 +39,6 @@ explicit approval. See [feature 007](../features/007-licensing-and-distribution.
 
 1. Build, test, and package on Windows and Linux. Fix blockers those runs find.
 2. The release schema is version 2. The first application version is 1.0.0,
-   and the current application version is 1.0.2. See
+   and the current application version is 1.0.3. See
    [release schema](release-schema.md).
 3. Obtain explicit approval before publication.
