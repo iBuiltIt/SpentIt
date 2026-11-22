@@ -8,9 +8,25 @@ upgrades it transactionally. The rules-off build still writes version 69.
 The SpentIt exchange file is JSON version 1. See [release schema](release-schema.md).
 
 Build and launch are in the [README](../README.md) and [building](building.md).
-macOS arm64 with Qt 6.12.0 is the host used for product work. Linux and Windows
-have development notes and are not release-ready. Do not describe a check as
-passed unless you ran it.
+macOS arm64 with Qt 6.12.0 is the host used for product work. The latest
+published installers and their verification are recorded below.
+
+## GitHub release 1.0.3 — 2026-11-21
+
+[SpentIt 1.0.3](https://github.com/iBuiltIt/SpentIt/releases/tag/v1.0.3) was
+published from tag `v1.0.3` at commit `8e18159` with these installers.
+
+- macOS Apple Silicon, macOS 14.4 or newer as declared by the bundle.
+  [SpentIt-1.0.3-macos-arm64.dmg](https://github.com/iBuiltIt/SpentIt/releases/download/v1.0.3/SpentIt-1.0.3-macos-arm64.dmg)
+- Windows x64.
+  [SpentIt-1.0.3-windows-x64-setup.exe](https://github.com/iBuiltIt/SpentIt/releases/download/v1.0.3/SpentIt-1.0.3-windows-x64-setup.exe)
+- Linux x86-64.
+  [SpentIt-1.0.3-linux-x64-setup.run](https://github.com/iBuiltIt/SpentIt/releases/download/v1.0.3/SpentIt-1.0.3-linux-x64-setup.run)
+
+All three GitHub assets matched the local installers' SHA-256 checksums. The
+Developer ID–signed macOS app and DMG passed stapled ticket and Gatekeeper
+verification. The disk image checksum verified, and the signed app launched
+and created a temporary SpentIt file. Launch on macOS 14.4 remains unverified.
 
 ## Reopen provisional transfer links — 2026-11-21
 
@@ -1278,7 +1294,7 @@ link. The offscreen cases `automaticReviewSettings` and
 `build/SpentIt` was relinked. The per-pair fault sweep was not rerun. Sanitizers,
 other platforms, and the full repository suite were not run.
 
-## Still to do
+## Early installer verification — 2026-11-11
 
 - Linux `python3 tools/package.py` produced
   `dist/SpentIt-0.1.0-linux-x64-setup.run` (60566028 bytes) on 2026-11-11 in WSL Ubuntu 24.04.5
@@ -1298,12 +1314,8 @@ other platforms, and the full repository suite were not run.
   password. The remembered file was left unchanged. SQLCipher logged an HMAC
   failure while that open was refused.
 - macOS uses the same command. `--sign` with a notary keychain profile
-  produces a Developer ID DMG aimed at macOS 14.4. A Mac running 14.4 was not
-  used. Publication is not approved. `./build/SpentIt` stays the development
-  build.
-- The release schema is version 2 and the application version is 1.0.3. The
-  installers recorded above were built as 0.1.0 before the 1.0.0 stamp.
-  Rebuild them before publication. See [release schema](release-schema.md).
+  produces a Developer ID DMG aimed at macOS 14.4. `./build/SpentIt` is the
+  development build.
 
 ## Undo/Redo verification — 2026-11-14
 
