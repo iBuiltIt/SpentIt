@@ -1,7 +1,6 @@
 # Report PDF export
 
-Owner Go: 2026-11-15. This is presentation-only export; it changes neither the
-report definition nor the database format. See [report requirements](../features/006-reporting-drill-down.md).
+PDF export renders the current report. It leaves the saved definition intact. See [report requirements](reporting.md).
 
 ## Entry points and dialog
 
@@ -84,6 +83,5 @@ possible. Closing the dialog releases its preview and page plan.
 
 Automated synthetic coverage lives in
 [PDF tests](../tests/ui/report_pdf_tests.cpp) and
-[report UI tests](../tests/ui/report_ui_tests.cpp). Actual run results and
-platform limitations are recorded in [status](status.md). See [Save a report as PDF](../manual/reports.md#save-a-report-as-pdf)
+[report UI tests](../tests/ui/report_ui_tests.cpp). See [Save a report as PDF](../manual/reports.md#save-a-report-as-pdf)
 for the bundled Help instructions.

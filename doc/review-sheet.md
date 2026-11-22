@@ -7,10 +7,15 @@ cancellation or the next open. Completed uncommitted imports remain. Accept
 transactions accepts the file. Account Discard is account-owned.
 
 Each unresolved explicit transfer gets a generated entry, including when a
-plausible imported posting exists. The interaction below is the current Review
-sheet.
+plausible imported posting exists.
 
-## Selected-row Merge correction — owner Go, 2026-11-08
+- [Workspace and actions](#review-workspace)
+- [Duplicate eligibility](#common-duplicate-policy)
+- [Transfer suggestions, persistence, and Undo](#persistence-and-undo)
+- [Automatic Merge and Link](#automatic-one-to-one-review)
+- [Staging and applying decisions](#pending-transfer-decisions)
+
+## Selected-row Merge correction
 
 A duplicate group has one Merge action. For groups larger than two rows it is
 unavailable until at least two rows are checked and submits exactly those
@@ -29,9 +34,9 @@ unchanged. Cancel writes nothing. Existing automatic-survivor protections,
 financial validation, atomic commands and Undo remain unchanged. Batch inclusion
 uses the same selected identities and the richer survivor dialog.
 
-## Review workspace cleanup — owner Go, 2026-11-08
+## Review workspace
 
-Accepted and implemented: supporting tools at the top, question-specific actions
+Review puts supporting tools at the top, question-specific actions
 beside their items, and one **Accept transactions** action in a footer that states
 its all-account scope. **Accept transactions** stays at the bottom right even
 when there are no new transactions and a result mark remains. Hide unavailable
@@ -58,9 +63,6 @@ import-time missing-category decisions stay.
   the entire selected source, potentially including other accounts.
 - **Hidden transfer matches…** in Settings closes with Close; contextual **Hide
   suggestions…** remains beside transfer candidates. Exclusions do not delete rows.
-- Transfers has an explicit account picker that stays in Review. Add transfer
-  reveals the creation form; switching accounts clears its visibility. Transaction
-  matching controls require Review inspection rather than a hidden ledger choice.
 - Set up imported transfers appears only for unresolved mapped transfers and
   explains matching and counterpart creation before confirmation. The existing
   command matches within the selected import and then checks explicit transfers
@@ -68,9 +70,7 @@ import-time missing-category decisions stay.
   it is an explanation, not an exact per-posting dry-run preview. No matching,
   generation, acceptance, storage, or format policy changes are introduced.
 
-The manual already describes this workspace.
-
-## Missing destination warnings — owner Go, 2026-11-12
+## Missing destination warnings
 
 A transfer allocation whose destination name identifies no account in the file
 is a warning. It is not an import-problem row and it has no **Correct** action.
@@ -87,7 +87,7 @@ while one of these warnings remains. A destination that names an account already
 in the file, and an ambiguous account name, stay on their existing review path.
 **Set up imported transfers…** stays available.
 
-## One question per transfer — owner Go, 2026-11-12 and 2026-11-18
+## One question per transfer
 
 Review shows each candidate pair once, including on cards with several
 possible partners. When both directions offer the same pair, keep its
@@ -113,7 +113,7 @@ they meet the current matching criteria. A saved **Not this transfer** decision
 still suppresses its pair until Undo or an explicit ledger Merge for that pair.
 See [Merge after Not this transfer](#merge-after-not-this-transfer).
 
-## Link card — owner Go, 2026-11-12
+## Link card
 
 **Link** joins the two imported lines on the card and removes the created
 entries. The other button reads **Not this transfer**. It records that this
@@ -122,10 +122,9 @@ Neither line becomes ordinary spending. A one-row card for that created entry
 can remain, and it can still offer **Accept without bank match**.
 
 **Accept without bank match** is not shown on a card that already lists the
-other imported line. It stays on a card that shows only the transfer. The
-Transfers panel is unchanged. **Set up imported transfers…** stays.
+other imported line. It stays on a card that shows only the transfer. **Set up imported transfers…** stays.
 
-## Unmatched transfer count — owner Go, 2026-11-12
+## Unmatched transfer count
 
 Review does not list a transfer that has not been matched to an imported
 transaction above the questions. That line does not open the transaction.
@@ -141,13 +140,9 @@ that still have no bank match. It is not the Review question count.
 its own line, and **Accept anyway** stays hidden while one remains. Question
 cards, missing-destination warnings, and **Set up imported transfers…** stay.
 
-## Transfers panel removed — owner Go, 2026-11-12
+## Ledger transfer actions
 
-Review has no **Transfers…** button and no Transfers panel. That removes Add
-transfer, the panel’s account picker, transfer history, and the match, delete,
-and accept actions that lived only on that panel. Nothing replaces the history.
-
-**Set up imported transfers…** stays. Ledger **Link** still joins two existing
+**Set up imported transfers…** is in Review. Ledger **Link** joins two existing
 transactions: select one, switch accounts, select the other, then **Link**
 again. A transaction with one split can be linked that way. A transaction with
 more than one split still needs the split chosen; Review uses **Split to link**
@@ -159,17 +154,14 @@ newest-action Undo button.
 transfer. An Import problems line that names a transaction still opens that
 transaction. A line that does not name a transaction opens that account’s ledger.
 
-This replaces the Transfers panel described in the 2026-11-08 workspace cleanup
-and the Link card note that the panel was unchanged.
-
-## Newest-action Undo buttons removed — owner Go, 2026-11-12
+## Newest-action Undo buttons removed
 
 The ledger has no Undo button beside search, no **Undo category change**, and
 no **Undo review**. Review has no copy of that newest-action button. **Undo
 import…** stays.
 
 Cmd+Z, and Ctrl+Z on Windows and Linux, undoes only the newest saved action,
-after the existing confirmation. The Undo on an open Change history row stays.
+with confirmation for import rollback. The Undo on an open Change history row stays.
 **Undo opening or currency…** in the account menu stays. Rules has no **Undo
 application** button. A rule application is undone with that same shortcut
 when it is the newest saved action. The saved rule remains.
@@ -178,7 +170,7 @@ The ledger duplicate bar opens for a possible duplicate in the current account,
 or while that check is still running. A category change can still be the newest
 review-stack action. That alone does not open the bar.
 
-## Ledger duplicate resolution — owner Go, 2026-11-07
+## Ledger duplicate resolution
 
 Accepted: keep the existing matching policy and Merge source-association storage.
 The losing posting's imported representations continue to attach to the survivor;
@@ -218,9 +210,7 @@ direct candidates. An empty selection retains Review's group-wide No behavior.
 Other comparisons remain outstanding, including clean remainders from partial
 Merge. No schema change or widened automatic matching is introduced.
 
-The manual already describes ledger duplicate review.
-
-## Resolution performance and automatic discovery — owner Go, 2026-11-07
+## Resolution performance and automatic discovery
 
 Accepted: each decision remains immediately durable and individually undoable.
 Do not introduce accumulated unsaved resolutions or change Merge source retention.
@@ -239,13 +229,12 @@ backup validation must not consume that presentation cache. Keep the existing
 matching predicate and all source/relationship checks. Test actual command-to-UI
 latency using roughly 19,000 transactions, a 15,000-row main account, many retained
 transfers and nine outstanding duplicate questions, not just small functional
-fixtures. Record measurements and limitations in [status](status.md).
+fixtures.
 
 ## User interaction
 
 Review is above Categories as the first sidebar action. Review and Commit open
-the same compact dataset-wide workspace,
-grouped by account. Import does not automatically open Review. A row can show its splits.
+the same compact dataset-wide workspace. Within a question type, use account order. Import does not automatically open Review. A row can show its splits.
 **Inspect** opens that transaction in its account ledger, among the surrounding
 transactions, and leaves the transaction editor closed. **Back** returns to
 Review with the question that was on screen. If an edit removes that question,
@@ -262,34 +251,21 @@ than candidate transactions. Changing account/import, inspecting a record or
 attempting Commit does not resolve a question. The selected-import summary is
 explicitly scoped and no longer supplies a competing unresolved count.
 
-Same-account groups ask **Are these the same?** Yes merges the group; No saves
-that the displayed rows are separate. Groups larger than two also offer **Selected
-yes**, enabled for at least two selections. Unselected rows remain together when
+Same-account groups offer **Merge** and **Keep separate**. A larger group
+requires at least two checked rows for Merge. Unselected rows remain together when
 at least two remain. Exactly one committed selected row is the survivor automatically;
 otherwise the user chooses which row to keep. Merge preserves that row's current
 fields, splits and relationships. Different effective totals require correction
 first; a losing row with an existing transfer relationship cannot be merged.
 
-Link questions show one transaction and candidates with account names. Under the
-owner Go of 2026-11-03, a sole candidate is selected automatically and Yes is
-enabled when the worker is idle. With multiple candidates, the unique same-date candidate is preselected; no exact
-date or tied exact dates leave the choice unselected. Choose a candidate then Yes,
-or use No without selecting. Automatic selection does not confirm a
-link. No saves rejection of the displayed
-source/candidate comparisons. Whenever a candidate is selected, by the user or the initial default, its unique
-eligible exact opposite-amount allocation pair is preselected. Changing candidates
-resets both allocation choices to that pair, or to **Select split** when no unique
-exact pair exists. Users can change the split selection before confirming. These
-are presentation defaults only; the existing Link command revalidates the selection.
-Each Review question has a solid top separator, spacing and alternating themed
-background. Split selectors are indented, labelled **Split to link**, and kept
-within their owning transaction row rather than spanning the question. Same-currency opposite amounts of different magnitudes open **Link
-10.00 and categorise 0.40 as [Uncategorized]**. No dismisses only this popup. Yes
-splits the larger allocation, assigns the remainder's chosen ordinary category,
-and links the common amount in one transaction. Both account totals and unrelated
-splits remain unchanged. No currency conversion is inferred. Replacing a purely
-generated counterpart is identified in the question; independently supported
-postings are retained.
+Link questions show the transaction, candidate accounts, and the split
+allocations where relevant. Changing a candidate resets the split selectors
+to the new unique exact pair, or to **Select split** if there is none.
+For unequal eligible allocations, Link opens a choice to split the larger
+allocation, categorize the remainder and link the common amount atomically.
+Both account totals and unrelated splits remain unchanged. Independently
+supported postings are retained. See [pending decisions](#pending-transfer-decisions)
+for current selection defaults.
 
 **Repair record** opens the existing account ledger editor for repairable date
 or amount problems and retains the inclusion or duplicate decision after saving.
@@ -306,7 +282,7 @@ The ledger has separate **Merge** (Alt+M) and **Link** (Alt+L) commands. Merge u
 the same survivor and persistence rules. Link retains the existing allocation
 selection and cross-account navigation workflow.
 
-## Batch Merge and stable status — owner Go, 2026-10-31
+## Batch Merge and stable status
 
 Every right-pane workspace has a permanent bottom status line. Progress, success
 and errors occupy that reserved space; long messages expose Details. Review keeps
@@ -346,8 +322,7 @@ staged work; a sealed commit completes and is reversed through Undo instead.
 
 One parent Review receipt owns the batch's Undo stack entry. Each group has its own
 child answer, choices, source associations and financial-history members, so answering
-one group never records an answer between unrelated groups. Existing encrypted
-schema 40/39 tables encode parent/child relationships in reserved answer question
+one group never records an answer between unrelated groups. Existing Review tables encode parent/child relationships in reserved answer question
 values (`batch`, `batch-child:<operation>`); no schema change is needed. Child IDs
 are derived from the parent's operation identity. Exact request receipts reject
 changed retries. Undo restores children in reverse order in one transaction and
@@ -358,9 +333,9 @@ peer comparison loop. Review now loads comparison facts once per build and evalu
 the unchanged engine predicate before querying saved choices. This eliminates
 irrelevant database work; it does not change duplicate or transfer matching policy.
 The loop can still compare many pairs; this is not a constant-time performance claim.
-See [status](status.md) for measured workloads and verification limits.
+Use the [diagnostics guide](agent-diagnostics-guide.md#attribute-elapsed-time) to measure the current build.
 
-## Common duplicate policy — owner Go, 2026-10-31
+## Common duplicate policy
 
 All supported parsers produce common original facts. Same-account ordinary
 amount-based duplicate suggestions require equal original currency, exact signed
@@ -436,10 +411,8 @@ Cmd+Z / Ctrl+Z reverses decisions in order. Text editors
 retain their own Undo. Each reversal restores financial rows, associations,
 relationships and question state atomically; it retains persistent history.
 Individual financial children cannot be undone outside the grouped decision.
-The stack persists across reopening. Any intervening dataset mutation ends the
-safely undoable sequence, even if unrelated; read-only navigation does not. Undoing
-a newer decision cannot cross that earlier barrier. This is deliberately
-conservative rather than attempting to overwrite later changes. There is no Redo.
+See [file-wide Undo and Redo](action-undo-design.md) for ordering and session
+lifetime.
 
 Link exclusions are immutable encrypted events with preview, save, edit and remove
 operations. They match Payee or transaction/split Memo, with dataset-wide scope by
@@ -456,7 +429,7 @@ as explicitly chosen by the owner. Temporary duplicate balances remain visible
 until matching or linking removes the generated duplicates. Linking two independent postings safely
 retires generated duplicates, and Review Undo restores each account's exact balance.
 
-### Batched counterpart generation — 2026-10-30
+### Batched counterpart generation
 
 The owner authorized optimizing the measured generation bottleneck while preserving
 this policy. Generation requires an existing atomic import operation. It retains the
@@ -468,8 +441,7 @@ Account writability, currency, operation collisions and sequence limits remain
 checked. The complete resulting relationship set is validated before the caller can
 commit; cancellation or failure discards all staged children through the existing
 transaction. The working set and balance reuse are local to this invocation, so
-rollback cannot leave them available to a later attempt. See [status](status.md)
-for actual verification and timing evidence.
+rollback cannot leave them available to a later attempt.
 
 Review construction runs on the existing import worker. Cached raw candidate edges
 are updated for old and new date/amount neighborhoods when rows or occupied
@@ -478,82 +450,16 @@ filtering is separate. Restart reconstructs the cache from persisted state. Read
 the current rows still has linear cost. No claim of native large-dataset
 responsiveness is made by the functional fixtures.
 
-## Revision verification — macOS, 2026-10-30
+## Verification
 
-- Release policy tests cover the seven-day boundary, leap/year transitions,
-  inclusive 4%, overflow boundaries, explicit destinations, exclusion scope and
-  removal, saved No independence, persistent waiting tasks and acceptance/Undo.
-- Eight focused Qt cases pass in Release, ASan/UBSan and rules-disabled builds,
-  including workspace navigation/inspection, exclusion editing and transfer
-  controls. Final Release visual inspection also checked column alignment.
-- Eleven final engine/Review/grouped-import tests and six focused Qt cases pass
-  under ASan/UBSan and rules-disabled Release. Repaired imports without an original
-  amount retain imported provenance; manual transactions remain explicitly manual.
-- Six new policy recovery scenarios passed 662 injected write/sync positions,
-  before/after durable-boundary interruptions, idempotent retries, verified
-  backup restores and encrypted-source marker checks.
-- A synthetic 20,000-row workload produced exactly 10,000 expected pairs and no
-  unexpected pairs. Import took 39,230 ms, first Review 974 ms, five cached opens
-  13 ms, and an amount save plus affected Review 1,318 ms in a concurrent test run.
-- All 94 selected Release regression tests pass, including the full import UI
-  executable and grouped imports. Separate long-running fault/crash and diagnostics
-  suites are excluded from this selection.
-- The six existing Review recovery scenarios pass 1,122 injected write/sync
-  positions, durable-boundary interruptions, retries and verified backup restores.
-  Grouped import, repaired-transfer generation and Abort pass all 387 write-failure
-  positions and 387 abrupt-crash positions, plus durable-boundary interruptions.
-  Statement rollback and overlap recovery sweeps pass.
-- The rules-enabled `./build/SpentIt` executable is rebuilt. Native interaction,
-  Linux and Windows remain unverified. Document file-link and whitespace checks pass.
+Run `import.review_sheet`, `import.review_policy`, `import.review_batch`,
+`import.ledger_duplicates`, `import.automatic_review`, and the matching
+durability sweeps. Cover amount differences, repeated occurrences, source
+associations, both accounts' exact balances, reopen and exact retries.
+Use the focused Review cases in [Import UI tests](../tests/ui/import_model_tests.cpp)
+for staging, keyboard and viewport behavior. See [building](building.md).
 
-## Baseline verification — macOS, 2026-10-30
-
-Synthetic fixtures only. The new `import.review_sheet` case covers saved Yes/No,
-reopening, alternative-source reimport, partial four-row groups, repeated Undo,
-multiple committed rows, an intervening-mutation Undo barrier, generated-counterpart
-replacement, amount differences and exact balances. A 53-question fixture spans two
-accounts and includes an invalid record; counts stay stable during account changes,
-inspection, blocked Commit and reopening. This verifies the new count contract;
-the owner's original private-data count-flip sequence was not reproduced.
-
-Qt offscreen interaction tests exercise the actual Review/Commit entry points,
-saved decisions, standard keyboard Undo, the amount-difference popup's No/Yes
-behavior and category choice. Its rendered popup was inspected using synthetic
-data. The rules-enabled Release regression selection passed **93/93** in 81.75 s:
-
-```sh
-ctest --test-dir build/import-ui-rules-release --output-on-failure \
-  -E 'io$|crashes$|faults$|failures$|backup_publication|benchmark|diagnostics\.' -j4
-```
-
-This selection excludes the expensive existing failure suites and diagnostics;
-Review has its own dedicated failure sweep:
-
-- Six scenarios: Merge and Undo with one committed survivor, difference split/link
-  and Undo, and Merge/Undo involving multiple committed rows. The sweeps passed
-  **1,126 injected write/sync failure positions** (173, 145, 197, 165, 237, 209),
-  alternating disk-full and I/O errors. Each trial reopened, verified, retried as
-  needed and restored an encrypted backup. Raw-file marker scans found no synthetic
-  source marker. All twelve process interruptions, before/after durable commit for
-  each scenario, passed receipt/retry/replay checks.
-- The final rules-enabled Release storage case passed with positive-difference,
-  existing-split, operation-identity, saved-No and post-Merge account-rollback
-  checks. The complete import UI executable passed **51 Qt test cases** in 62.526 s.
-- The final ASan/UBSan build passed the Review storage case and both focused Review
-  UI interactions (`ASAN_OPTIONS=detect_leaks=0`; no leak-check claim).
-- The rules-disabled Release build passed the same storage case and both focused
-  UI interactions. The difference category resets to Uncategorized for each popup.
-- Changed document file links and `git diff --check` passed. The local
-  `./build/SpentIt` rules-enabled Release executable was rebuilt.
-
-The failure runner is `spentit_review_sheet_tests faults`; an optional final mode
-number starts a suffix of the six scenarios. The four original scenarios passed
-via CTest in 394.72 s; the two committed-row scenarios passed separately using
-`spentit_review_sheet_tests faults 4`. No private datasets were used.
-
-Native interaction, keyboard-layout conflicts, Linux and Windows remain unverified.
-
-## Ledger same payment and result marks — owner Go, 2026-11-13
+## Ledger same payment and result marks
 
 This section supersedes the ledger right-click **Resolve duplicate** sentence and the sentence that ledger **Link** joins any two selected transactions.
 
@@ -597,7 +503,7 @@ relationships and makes the prior rejection effective again. Redo replays
 the same pair. This action is available after closing and reopening the file
 while the selected entries remain eligible.
 
-### Unmerge safety and retries — 2026-11-14
+### Unmerge safety and retries
 
 Restoring removed transfer rows requires every affected relationship to match
 its recorded merge result, allowing acceptance alone. A later relationship
@@ -607,15 +513,7 @@ A retry of a completed Unmerge returns its existing receipt without another
 mutation; changing the selection or reusing another command's identity fails.
 The ledger obtains availability and confirmation text from one preview.
 
-Verification on 2026-11-14: macOS arm64, Qt 6.12.0, rules-enabled Release.
-`storage.action_repository`, `storage.unmerge_faults`, `import.review_sheet`,
-and `import.ledger_duplicates` passed. The Unmerge fault sweep covered 133
-write/sync boundaries with alternating disk-full/I/O failures and 133 with
-process exit, checking both account projections, acceptance, and durable retries.
-The UI cases `unmergeSelectionUsesOnePreview`, `ledgerSamePayment`,
-`selectedReviewMerge`, and `commonUndoDirtyTargetAndTextUndo` passed offscreen.
-
-### Unmerge after acceptance — 2026-11-18
+### Unmerge after acceptance
 
 In the rules-enabled application, a keep-one Unmerge restores the excluded
 transaction as New even if its original batch has been accepted. It keeps the
@@ -628,22 +526,15 @@ Restoration, source reassociation, and the Unmerge Undo record save together.
 Undo rejoins the postings and Redo restores them again. Ordinary file-wide
 acceptance can publish the restored row separately. The original publication
 still records its historical exclusion. See [release schema](release-schema.md).
-The Release application was rebuilt. Sanitizers and other platforms were not run.
 
-The separate `transferstore.management` failure also reproduced in a clean
-build of `2fe53d3` (`c9ed419^`). Its `visa-b` row is unresolved when `link-b`
-attempts to use it: the October 29 payment follows an accepted October 30 payment
-of the same amount, triggering the existing adjacent-date review guard from
-`46d3acc`. No change to that policy or fixture is included here.
-
-## Automatic one-to-one review — owner Go, 2026-11-14
+## Automatic one-to-one review
 
 Settings has two checkboxes immediately above **Hidden transfer matches…**:
 **Automatically merge one-to-one duplicate suggestions** and **Automatically
-link one-to-one transfer suggestions**. Both default on (owner Go, 2026-11-17).
+link one-to-one transfer suggestions**. Both default on.
 These preferences are local to this file path on this computer. A path with no
 saved choice, including a copy opened from another path, starts with both on.
-A saved choice stays with that path. They do not change the version-1 database format.
+A saved choice stays with that path.
 Changing a preference preserves Undo and clears pending Redo.
 
 After an import finishes its category choices and rules, take one fixed Review
@@ -743,13 +634,15 @@ that reopened the match restores the earlier link, including after closing
 and reopening if the import is still eligible for Undo. A conflicting later
 edit or relationship prevents restoration. See [import Undo](import-undo.md).
 
-## Automatic follow-on links after a manual Link — owner Go, 2026-11-16
+## Automatic follow-on links after a manual Link
 
 When Automatically link one-to-one transfer suggestions is enabled, manually
-linking a Review pair also handles the remaining unambiguous pairs in that
+linking a Review pair through an entry point that supports follow-ons also
+handles the remaining unambiguous pairs in that
 connected group of transfer suggestions. Overlapping cards belong to the same
 group; unrelated groups are not included. With the setting off, only the selected
-pair is linked. Import matching retains its existing behavior.
+pair is linked. The Review card's Link button always saves only its own pair.
+See [pending decisions](#pending-transfer-decisions).
 
 Capture the group's membership before the manual decision. Within one database
 transaction, write the manual Link, refresh Review once, and plan the remaining
@@ -769,16 +662,11 @@ follow-ons accept transactions. Automatic result marks retain their existing
 Accept behavior. A summary reports additional linked pairs and that Undo reverses
 them together. Progress and cancellation remain on the existing worker path.
 
-Existing version-1 batch parent/child receipts hold the group, including all link
+Batch parent/child receipts hold the group, including all link
 snapshots. Exact retries return the saved pair count; changed requests are refused.
 No schema change or new financial history format is introduced.
 
-## Link selected — owner Go, 2026-11-17
-
-Superseded by the staged-decision refinement below. The initial implementation
-batched links only and cleared unsaved checks after an individual save.
-
-## Pending transfer decisions — owner Go, 2026-11-17
+## Pending transfer decisions
 
 Review keeps three separate states: undecided, Link to a chosen partner, and
 Not this transfer. Checkboxes show the actual pending partner. Unchecking a
@@ -792,7 +680,7 @@ Differing-amount suggestions start unchecked, even with only one candidate.
 Single-amount candidates show **Amounts differ — review before linking**.
 Choosing the candidate enables Link, which opens the difference question;
 Apply decisions does not save that card. This supersedes the automatic check
-for differing amounts (owner Go, 2026-11-18). Checked cards
+for differing amounts. Checked cards
 sort before multiple-choice cards, retaining their place when unchecked or
 set aside. Other cards start undecided, including a multiple-choice card with
 one same-day suggestion. Choosing a partner can check a remaining mutually
@@ -827,7 +715,7 @@ Resolved cards leave the pending set. Inspect preserves the pending set;
 leaving Review by another route clears it. These are in-memory choices, not
 saved drafts that survive closing or restarting.
 
-## Unavailable transfer choices — owner Go, 2026-11-18
+## Unavailable transfer choices
 
 A partner checkbox that conflicts with another pending link stays visible but
 is disabled and dimmed. Releasing that choice immediately restores availability.
@@ -836,7 +724,7 @@ be unchecked, and switching partners can still release and recalculate automatic
 suggestions. The visual state follows the same conflict check as selection;
 matching and saving behavior are unchanged.
 
-## Batch accept without a bank match — owner Go, 2026-11-18
+## Batch accept without a bank match
 
 On a waiting-only transfer card, **Accept without bank match** starts unchecked.
 In **Unmatched transfers in**, choose the account that holds the generated
@@ -850,9 +738,9 @@ Review choices in one atomic operation and one Undo step. It records the
 decision without creating bank evidence or accepting a New transaction.
 **Accept transactions** remains a separate file-wide action. Redo replays the
 saved decisions. Cancellation, stale choices, and failure follow the same
-rules as other pending decisions. The database stays at version 1.
+rules as other pending decisions.
 
-## Accounts that don’t need bank matches — owner Go, 2026-11-18
+## Accounts that don’t need bank matches
 
 In **Settings → Accounts that don’t need bank matches**, add the account
 that holds the entries SpentIt creates for transfers. For listed active
@@ -875,4 +763,4 @@ The settings change preserves Undo and clears pending Redo. It creates no
 financial operation. The existing file-wide acceptance operation saves both
 sides and the unmatched decision atomically. Undo of acceptance restores
 the prior transaction and transfer state. The active preference still applies
-to Review after Undo. The database stays at version 1.
+to Review after Undo.

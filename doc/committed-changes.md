@@ -2,19 +2,22 @@
 
 Last updated: 2026-11-09
 
-Accepted transactions can be corrected or removed with strict Undo. See
-[feature 011](../features/011-committed-editing-and-reversal.md). Transfer cases
-are in [feature 008](../features/008-transfer-matching-and-lifecycle.md). Moving
-a committed row and rewriting source links are not part of this workflow.
-Bulk category changes and removal use one group Undo. See
-[search and ledger](search-ledger.md).
+Accepted transactions can be corrected or removed with strict Undo.
+Removal changes the balance directly and leaves the original source and
+amount available. A bank refund is its own imported transaction. Undo
+appends the restored state, has no force override, and does not undo
+acceptance as part of an ordinary correction. See [file-wide Undo](action-undo-design.md)
+and [Change history](action-undo-design.md#change-history). Domain and storage
+validation refuse moving an accepted transaction to another account or
+rewriting its source-occurrence links. See [ledger editing](ledger-editing.md),
+[selection commands](search-ledger.md), and [transfer edits](transfers.md#committed-edits).
 
 ## Current interpretation and retained history
 
 Version checks run before storage-setting changes. See
 [release schema](release-schema.md).
 
-Original source evidence, original import versions and import receipts remain immutable. Schema 4 stores complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
+Original source evidence, original import versions and import receipts remain immutable. Storage keeps complete committed entry revisions and a current head for each included occurrence. Revision zero is its original included publication. A correction appends a current interpretation; removal appends an inactive interpretation; eligible Undo appends the earlier state as a new revision. Removed entries remain available through history and source inspection. Actual bank refunds remain separate imported transactions.
 
 The exact current balance is the opening balance plus active current interpretations. Draft projection adds eligible pending entries exactly once. Corrected dates affect current chronological placement; permanent occurrence and sequence identities remain stable. Historical import receipts retain the before/change/after values recorded when those imports committed.
 
@@ -38,9 +41,12 @@ An exclusion records its target revision and whether that transaction was still 
 
 ## UI scope
 
-Committed inspection is read-only until Edit committed record is chosen. Corrections and removals show an exact preview before Apply. Cancelling preview retains the unsaved buffer. Save / Discard / Stay routes a committed Save through preview; pending navigation proceeds only after durable success.
-
-The Committed changes page provides bounded newest-first discovery, including removed entries, and per-entry immutable history. History rows, entry details and preview allocations are virtualized. Undo controls explain ineligibility instead of offering force-undo. Source fields remain immutable, and copying a source field only changes an explicitly active editor buffer. Existing ledger filters are not broadened automatically when a correction/removal changes visibility.
+Double-click opens the ledger editor for an accepted transaction. Follow the
+[ledger editing contract](ledger-editing.md) for save, selection, navigation
+and unsaved-input guards. User-facing Undo follows the file-wide
+[Change history contract](action-undo-design.md#change-history). Storage
+revision and source inspection preserve immutable source fields. Copying a
+source value changes only the explicitly active editor buffer.
 
 ## Boundaries and verification
 
@@ -48,6 +54,6 @@ The plain contracts are in `src/app/include/spentit/committed_changes.hpp` and `
 
 Independent storage regressions cover interleaved receipts, correction/removal/Undo, exact arithmetic, original evidence, global operation identities, preview freshness, later dependency conflicts, removed duplicate multiplicity, stale/reconfirmed exclusions, genuine legacy schemas, backup restoration and authenticated corruption. Failure tests exercise write/sync faults, process exits and both durable boundaries for each new operation. UI regressions cover guarded editing, retained buffers, explicit removal/Undo, removed reimports, and before/after/unknown acknowledgements and refresh failures.
 
-Run the existing optional import-UI build as described in [the UI report](import-ui.md). Relevant CTest names are `committed.*` and `import.committed_ui`; the full import/engine/storage suite remains required for integration. Final executed configuration results and limitations are recorded in [project status](status.md). No private financial inputs were used. Native macOS synthetic UI checks do not establish accessibility, other-platform support or production readiness.
-
-Verification on 2026-10-25: Release and ASan/UBSan each passed all 51 registered cases plus nine affected final-source reruns. Debug passed all 51 across separate invocations plus 17 affected final-source reruns. Native and offscreen committed-UI runs passed 7/7 each; the native correction preview was visually inspected. The independent committed fault sweeps exercised 49 positions for each of three operation kinds, for both injected I/O failures and abrupt exits, plus six explicit durable-boundary exits. Authenticated corruption coverage includes 14 cases. See project status for scope limitations.
+Run the affected `committed.*` storage tests and `import.committed_ui` in
+the [application build](building.md). Cover strict restoration and both sides
+of durable commit before retrying.

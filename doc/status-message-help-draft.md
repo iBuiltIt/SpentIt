@@ -1,17 +1,14 @@
----
-title: Draft help for status messages
-status: review draft, not the bundled manual
----
+# Status explanation source
 
-# Status messages that get an explanation
+The second-level headings are exact status messages or patterns with
+placeholders. Their paragraphs supply **Help with this problem**. Keep the
+messages aligned with the application. An explanation belongs here when it
+changes what a person can do next. Match the application's safety and recovery
+behavior, particularly when a saved outcome is uncertain.
 
-Whittled on 2026-11-13 from the 951 status sentences that can appear beside **Help with this problem** and are not already in the manual.
-
-A sentence stays here only when it does not already say both what happened and what to do, and the text under it would change what a person does. Sentences that already give the next step were removed. So were sentences whose only honest addition is to reopen the file and look. Those still show on the status line. **Status** shows the full sentence when the line cuts it off. They do not get an explanation dialog.
-
-This is a review draft. It is not the bundled manual, and it is not wired to the button.
-
-130 sentences.
+After editing an entry, run
+[`tools/generate_status_explanations.py`](../tools/generate_status_explanations.py)
+and verify `import.status_explanations`.
 
 ## A transfer Undo changes two account balances at once
 

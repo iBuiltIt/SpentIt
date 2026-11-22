@@ -1,17 +1,6 @@
 # Manual update backlog
 
-Last updated: 2026-11-21
-
-The bundled manual includes MAN-001 through MAN-056 after the owner-authorized
-2026-11-14 pass. Both entries previously labelled MAN-045 are covered; the
-older History instructions were reconciled with the later linear Undo/Redo
-contract. Verification is recorded in [status](status.md#manual).
-
-Two owner-authorized passes on 2026-11-18 completed MAN-057 through MAN-076
-and MAN-077 through MAN-087. The 2026-11-19 pass completed MAN-088 through
-MAN-099. The 2026-11-20 pass completed MAN-100 through MAN-103. The
-2026-11-21 pass completed MAN-104 through MAN-114. See [Manual](status.md#manual)
-for verification.
+Manual work through MAN-114 is complete. The next entry is MAN-115.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -26,7 +15,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
   recaptured once against the final UI.
 - Keep stable entry IDs. The next entry is MAN-115. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
-- Follow [feature 013](../features/013-help-system.md). Use synthetic examples.
+- Follow [Help contract](help.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items

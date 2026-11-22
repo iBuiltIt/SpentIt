@@ -31,7 +31,7 @@ current data as that operation's old result.
 - Rule definitions still referenced by a retained draft, entry, or allocation,
   plus one current ruleset baseline including deleted identities. Full save
   requests and superseded snapshots expire. See
-  [feature 004](../features/004-rules-and-explanations.md).
+  [rules contract](rules.md).
 
 Expire ordinary edit snapshots once nothing retained refers to them. Records
 kept only for import Undo must not appear as ordinary Change History rows.

@@ -65,7 +65,7 @@ open build/packages/macos-next/SpentIt.app
 
 ## Linux local packages
 
-First configure a native Release application build using the [application dependency instructions](../doc/import-ui.md), with storage/import/UI/rules enabled and matching native dependencies. Then:
+First configure a native Release application build using the [application dependency instructions](../doc/building.md#application), with storage/import/UI/rules enabled and matching native dependencies. Then:
 
 ```sh
 python3 tools/package_local.py --build build/linux-release --output build/packages/linux-local

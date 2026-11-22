@@ -2,7 +2,7 @@
 
 ## Import category decisions
 
-See [feature 004](../features/004-rules-and-explanations.md). After preparation,
+See [rules contract](rules.md). After preparation,
 missing ordinary names across every mapped account and the complete catalog
 appear once in an import-wide checklist. Apply Selected creates checked names
 and clears unchecked effective assignments. Use Uncategorized clears all missing
@@ -18,14 +18,13 @@ Incomplete preparation is cleaned up on cancellation or the next open.
 Completed uncommitted imports remain. Account Discard is account-owned.
 Review repairs import problems and Accept transactions accepts the file.
 
-Last updated: 2026-11-02
+See the [QIF profile](qif-profile.md) for ordinary records and
+[import and review](import-and-review.md) for the file-wide workflow.
 
-Implemented and verified within the accepted roadmap point-1 scope; exact selected checks and limitations are recorded in status. This extends the [ordinary QIF profile](../features/009-qif-profile.md), [account workspaces](accounts.md), and [transfer lifecycle](qif-transfers.md). It does not implement general account deletion, account currency reassignment, transfer repair, or new import formats.
+## New-account opening
 
-## Current mapping opening setup — 2026-10-30
-
-The mapping screen now completes new-account opening setup. Currency and editable
-opening date appear only for creation. Updated 2026-11-10: the date defaults to
+The mapping screen shows currency and an editable opening date for account
+creation. The date defaults to
 the calendar day before the earliest valid transaction date in that source
 account, so the opening sorts before that day's transactions. An account with
 no valid transaction date still defaults to 1900-01-01. A day before year 0001
@@ -39,8 +38,10 @@ within account capture. It confirms the account opening immediately and does not
 become stale when transactions are repaired or linked. No later opening setup panel
 is shown for those accounts. Omitting the choice refuses before capture.
 See [release schema](release-schema.md) for the file format.
-See [feature 003](../features/003-qif-import-review.md). The legacy staged-balance
-path below is retired.
+Verification checks one fixed opening choice per created mapping against
+source and creation facts. Transaction revisions do not participate. The
+retired staging API refuses without writing. Import Undo preserves the
+opening and the account.
 
 ## Accepted source envelope
 
@@ -70,12 +71,6 @@ No grouped account can commit or acquire transfer protection until every source 
 
 Account commit remains explicit and separate. The first related financial publication atomically records that the group has started and links it to the durable financial operation. The confirmation explains that whole-import Abort ends at this boundary; other accounts remain drafts. Afterwards their ordinary protected-discard rules apply. Discarded members no longer block remaining accounts, while retained protected portions must still satisfy their financial checks.
 
-## Reported balances and staged openings
-
-This path is retired. Do not offer an opening-versus-closing choice, do not
-derive an opening by subtracting imported totals, and do not stage a balance
-for a later commit. The mapping choice above is the only creation-time opening.
-
 ## Abort, recovery and retained identities
 
 Before first publication, Abort discards all group drafts and earlier saved repairs in one transaction. Encrypted source bytes and append-only histories remain. Accounts explicitly created by that import disappear from the active account list when unused; retained internal identities keep evidence references valid. Unrelated accounts or independent work survive. An aborted creation cannot be resurrected through an old creation retry, and new account identity allocation includes retired identities. If Abort removes the selected account, selection returns to the initial account.
@@ -84,13 +79,16 @@ Group outcome queries reject a transaction that has not returned to autocommit. 
 
 ## Verification
 
-Use the current [status record](status.md) for exact results. Synthetic `accounts.groups` covers capture/reopen/resume/cancellation, repairs, reported-balance choices, generated transfers and both commit orders, empty accounts, duplicate multiplicity/mapping, Abort, retired identities and restored backups. `accounts.group_io` and `accounts.group_crashes` exercise capture, materialization, balance staging, Abort after repair, staged-opening account/transfer publication and unknown-original repair. Explicit before/after durable-boundary assertions inspect the reopened state before retrying. Authenticated synthetic corruption tests also require reopen to reject mismatched mappings, balance replay/current-proposal divergence, invalid group history/publication references and invalid retired-account state, including corruption hidden from the active account list.
+Use the account-group and opening-mapping suites in
+[storage tests](../tests/storage/account_tests.cpp). Cover mapping, repeated
+sources, exact opening choices, incomplete capture, durable Resume/Abort,
+transfer publication and retry after both durable boundaries. Authenticated
+verification must reject mismatched mappings, publication and retired-account
+state.
 
-The model/QML regression uses mapping selections, Prepare, balance staging and the Abort dialog, plus acknowledgement and refresh failures. Offscreen rendering is distinct from native interaction, accessibility and Linux/Windows validation, which remain unverified and belong to subsequent hardening.
+## Staged category catalog
 
-## Staged category catalog — 2026-10-28
-
-Accepted and implemented: a complete QIF category catalog belongs to the whole import, not to one account. The encrypted immutable whole source is its durable staging store; no category-head, category-history or committed catalog change occurs during capture, materialization, repair or review. The review dialog lists every imported name and its source metadata, including unused definitions. Transactions retain their imported category labels during review. Pending categories are not offered to unrelated work as committed identities.
+A complete QIF category catalog belongs to the whole import, not to one account. The encrypted immutable whole source is its durable staging store; no category-head, category-history or committed catalog change occurs during capture, materialization, repair or review. The review dialog lists every imported name and its source metadata, including unused definitions. Transactions retain their imported category labels during review. Pending categories are not offered to unrelated work as committed identities.
 
 Whole-import Abort removes the entire staged catalog from active review, regardless of draft references. It does not decide category rollback using an unused-category test. Original encrypted evidence and audit history remain, as with discarded transactions. Pre-existing committed categories are unchanged. Restart and restored backups reconstruct the staged catalog from the same source and group state.
 
@@ -98,53 +96,28 @@ The first explicit account commit publishes the entire catalog in the same durab
 
 Source-owned allocations resolve to published category identities when their account commits; manual/rule replacements and transfer destinations remain unchanged. The first publication's immutable catalog revision determines that mapping, so a later rename or name reuse cannot redirect a still-pending account's source assignments. Reopening verifies the entire catalog at that revision, including unused definitions, and verifies the initial entry bindings against source evidence and publication history. Subsequent editing uses the usual stable identity/history behavior.
 
-Commit confirmations state that the complete catalog publishes with the first account and whole-import Abort ends. Other accounts stay uncommitted. Current source/profile limits and slash ambiguities are specified in [QIF v6](../features/009-qif-profile.md#category-catalog-and-literal-slash-names--accepted-2026-10-28). No private exports were copied or opened for this work. See [status](status.md) for actual verification.
+Commit confirmations state that the complete catalog publishes with the first account and whole-import Abort ends. Other accounts stay uncommitted. Current source/profile limits and slash ambiguities are specified in [QIF v6](qif-profile.md#category-catalog-and-literal-slash-names).
 
-## Reusing confirmed mappings for transfer pairs — accepted 2026-10-28
+## Reusing confirmed mappings for transfer pairs
 
-The owner approved automatic destination resolution for complete named-account QIF exports. The confirmed source-account mapping is the authority: a bracketed or unbracketed source name resolves through that mapping and the confirmed account alias list even when the target account has a different display name. This supersedes the requirement to choose that destination again for every record in this bounded whole-export case. Standalone statement imports retain explicit transfer resolution.
+For a complete named-account QIF export, the confirmed source-account mapping is the authority: a bracketed or unbracketed source name resolves through that mapping and the confirmed account alias list even when the target account has a different display name. Standalone statement imports retain explicit transfer resolution.
 
-The 2026-10-29 alias extension recognizes unbracketed account names as well as bracketed references, including split allocations, through current names, rename history and confirmed import mappings. Account-named catalog entries produce an import-review warning and no ordinary category. During materialization, current included, structurally valid draft allocations with reciprocal account references, the same currency definition, exactly opposite signed amounts and the same posting date are eligible. Equivalent reciprocal groups must have equal eligible occurrence counts. Each endpoint is consumed exactly once, in stable source-account, record-ordinal and allocation order; this association does not claim source evidence identifies a unique historical pair. Already-linked endpoints are excluded. Unequal groups are left wholly unresolved rather than partially paired. This repeated-group extension was implemented on 2026-10-29. Class metadata remains separate. Unknown destination names, self references, currency mismatches, different dates, unavailable/unequal amounts, excluded or unresolved rows and ambiguous candidates remain for review. No date tolerance or currency conversion is inferred.
+Matching recognizes unbracketed account names as well as bracketed references, including split allocations, through current names, rename history and confirmed import mappings. Account-named catalog entries produce an import-review warning and no ordinary category. During materialization, current included, structurally valid draft allocations with reciprocal account references, the same currency definition, exactly opposite signed amounts and the same posting date are eligible. Equivalent reciprocal groups must have equal eligible occurrence counts. Each endpoint is consumed exactly once, in stable source-account, record-ordinal and allocation order; this association does not claim source evidence identifies a unique historical pair. Already-linked endpoints are excluded. Unequal groups are left wholly unresolved rather than partially paired. Class metadata remains separate. Unknown destination names, self references, currency mismatches, different dates, unavailable/unequal amounts, excluded or unresolved rows and ambiguous candidates remain for review. No date tolerance or currency conversion is inferred.
 
 A match writes the existing independently evidenced Merge relationship and history. It preserves both records, their allocations, dates, memo/category text and source evidence; it generates no counterpart or extra posting. All matches and draft materialization share one transaction. Cancellation or failure rolls them all back; retry uses the retained capture. Later per-account commit and protection remain explicit. Whole-import Abort releases both uncommitted independent sides and discards the entire group atomically, including unused newly created accounts. It records the releases using the existing transfer history and replay machinery.
 
-Existing drafts can use **Resolve mapped transfers**. This scans only current account-named allocations (bracketed or unbracketed), uses the same mapping and matching criteria, and atomically records any new matches. Repeating it is idempotent; linking alone does not change the reviewed opening amounts. It creates no migrator and needs no schema bump. It reuses the current transfer and history tables. Resolution failures never permit partial commit.
+Existing drafts can use **Set up imported transfers…**. This scans only current account-named allocations (bracketed or unbracketed), uses the same mapping and matching criteria, and atomically records any new matches. Repeating it is idempotent; linking alone does not change the reviewed opening amounts. Resolution failures never permit partial commit.
 
-The whole-import readiness counter now includes unresolved transfer allocations. **What’s blocking commit?** lists up to 200 account/record-specific blockers and navigates to the relevant account or record. Opening decisions, repairs, transaction inclusion/duplicate decisions and unresolved transfers are distinct reasons. All blockers still contribute to the count even when the list is capped. Unmatched transfers can be reviewed from their now-locatable record; the list does not invent missing counterparts. The earlier general storage/status latency remains outside this fix.
+The storage readiness snapshot counts all unresolved work, including transfer
+allocations, and retains up to 200 account/record-specific blocker details.
+Review presents import problems and their available actions. See the
+[Review contract](review-sheet.md#user-interaction).
 
-## Actionable blocker details and navigation — 2026-10-28
-
-The owner approved replacing the generic unresolved-transfer message with diagnostic reasons, candidate inspection, a usable scrollbar, and reliable record reveal. This is read-only analysis and UI behavior; the matching criteria, amounts, evidence, schema and commit policy do not change.
+## Actionable blocker details and navigation
 
 For each displayed transfer blocker, the group snapshot distinguishes a missing mapped destination, self reference, archived/unavailable source or destination, incompatible currency, an unrepresentable opposite amount, no reciprocal draft reference, unequal amounts, differing dates, unavailable candidates, unequal eligible occurrence counts, or a unique pair/equivalent balanced repeated group awaiting the resolve command. Current draft allocations provide candidate facts; committed and discarded imports are not presented as available draft counterparts. Excluded, stale and already-linked draft candidates retain their explicit status. Analysis is bounded to 400,000 transfer allocations; exceeding that bound yields an explicit analysis-limit reason rather than claiming no counterpart exists.
 
-The dialog displays up to ten candidate allocations per blocker, with the total count, account, record number, date, exact amount/currency and review status. Same-date/opposite-amount candidates are displayed first as a group; absent those, opposite-amount candidates on other dates are shown, then reciprocal allocations with different amounts. These are inspection links, not match confirmations. Following either a blocker or candidate clears the ledger filter, selects the projected account view, expands the requested record and reveals it instead of restoring the old account viewport. Opening-only blockers navigate to their account. The virtualized list reserves space for a visible draggable scrollbar; the aggregate blocker count and 200-entry display cap remain unchanged. No private dataset is needed to verify this behavior; see [status](status.md).
-
-## Legacy staged-balance retirement — owner Go 2026-11-08
-
-The caller audit found no supported workflow needing post-import balance-meaning
-selection. Desktop mapping supplies `useReportedOpening` explicitly. Remaining
-callers were historical tests, an investigation driver and an unreachable legacy
-UI command/panel. The older “Reported balances and staged openings” description
-above is retired; it is not an alternative supported workflow.
-
-Every new-account mapping must supply an explicit zero/reported opening choice.
-Omission refuses before the capture transaction and creates no account/source.
-Existing-account mappings supply no opening choice and retain their current
-opening. A reported amount is used literally, never treated as a closing balance
-or adjusted by imported transaction totals. It must parse exactly. Fixed openings
-remain set at creation; subsequent changes use Correct opening. Import Undo
-continues to preserve the opening setting and account creation.
-
-Staged balance mutation and commit-time opening publication are removed. The old
-repository method refuses without writing, making attempts to invoke the retired
-operation explicit; there is no fallback to a new interpretation. The obsolete UI
-panel/command is removed. Diagnostic action numbering remains stable.
-
-Verification requires exactly one fixed-choice record for each created mapping,
-checks it against source/creation facts and the current mapping, and rejects
-staged-choice values. Subsequent transaction revisions are not inputs to opening
-choice validation. No ordinary edit snapshots are retained for balance replay.
-See [release schema](release-schema.md) for the file format.
-No migration or silent repair is introduced. Ruleset retention is already in
-place. Other retention cleanup stays deferred. See [status](status.md).
+The diagnostic snapshot retains up to ten candidates per blocker and their
+total count. Same-date, opposite-amount candidates take priority, followed
+by opposite amounts on different dates, then reciprocal allocations with
+different amounts. Candidate evidence does not authorize a match.

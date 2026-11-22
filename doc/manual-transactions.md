@@ -78,7 +78,7 @@ transaction instead of requiring an imported original. Existing split selection,
 transfer restrictions, atomic group saving and Undo remain in force. Category
 assignment does not create an imported original or accept a new transaction.
 Reopening preserves the category and eligible group Undo. Formats remain 48/47;
-existing manual entries need no recreation. See [status](status.md) for checks.
+existing manual entries need no recreation.
 
 ## Explicit matching
 
@@ -100,4 +100,4 @@ imported amount and no bank-file bytes. Its internal journal payload retains the
 initial values for verification and exact retry; it is never displayed as an
 import.
 
-Verification results and remaining limits belong in [status](status.md).
+Use the synthetic manual-transaction regressions in [storage](../tests/storage/manual_transaction_tests.cpp) and [Import UI](../tests/ui/import_model_tests.cpp).

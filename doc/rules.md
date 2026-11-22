@@ -1,14 +1,11 @@
-# 004 — Rules and explanations
-
-Status: **active**
-Last updated: 2026-11-14
+# Rules and explanations
 
 Rules assign an explicit ordinary category. They do not create transfers,
 change amounts, dates, or split structure, or force a category that is already
 set. Only Uncategorized allocations are eligible. There is no parent-category
 inheritance.
 
-The evaluator is in [doc/rules-engine.md](../doc/rules-engine.md). A rules-off
+The evaluator is in [rules engine](rules-engine.md). A rules-off
 file has no rule commands.
 
 ## Matching and application
@@ -51,7 +48,7 @@ that import.
 
 A file can hold up to 4,096 saved rules, including disabled rules. Removed
 rules free a slot. Rules and the ledger menu explain when the file has
-reached the limit. See [Rules storage](../doc/durable-rules.md) for compatibility.
+reached the limit. See [Rules storage](durable-rules.md) for compatibility.
 
 One searchable list and one expanded editor. One new draft at a time. Save rule
 and Discard changes affect the selected definition. Leaving with outstanding
@@ -65,11 +62,9 @@ The Apply section has the account box and the Transactions control. It opens
 on All accounts. Choosing All accounts does not change the ledger account.
 Choosing one account selects it, stays in Rules, keeps drafts, and clears the
 preview. Each visit to Rules opens on All accounts. A narrowed choice stays
-until it is changed or Rules is left. When the match list is taller than its
-area, dragging its scrollbar moves through the matches. The Rules page
-scrollbar still moves the page. The wheel still scrolls the match list. A
-scrollbar that is not needed does not cover the bottom or the side of the
-page, so Preview and Apply rule can be clicked on their lower half.
+until it is changed or Rules is left. The match list scrolls independently
+from the Rules page. A hidden scrollbar leaves the full Preview and Apply
+buttons clickable.
 
 The ledger **Create rule…** command needs exactly one eligible selection. It
 does not open the transaction editor. An open transaction does not list which
@@ -97,6 +92,3 @@ older definition still referenced by a retained draft, entry, or allocation.
 Compact request fingerprints still reject an exact retry and a conflicting
 operation id. A failed close keeps the session. Verification checks the
 baseline and later saves. It does not replay expired requests.
-
-The owner-reported Rules accessibility crash is not proven fixed. See
-[status](../doc/status.md).

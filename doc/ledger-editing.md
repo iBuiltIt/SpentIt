@@ -3,10 +3,7 @@
 Last updated: 2026-11-18
 
 Manual and imported postings share transfer assignment, explicit Link, editing,
-and Undo. Rules match imported fields. The release rules database is version 1.
-
-This supersedes the older inline Save draft / Cancel edit
-and explicit committed-edit opt-in presentation.
+and Undo. Rules match imported fields. 
 
 ## Accepted interaction
 
@@ -21,11 +18,11 @@ and explicit committed-edit opt-in presentation.
 - Single-click selection remains independent. The open editor stays attached to
   its transaction, with no empty reserved space or move to the bottom panel.
   Filtered-out and otherwise absent records retain the existing fallback inspector.
-  Follow-up Go (2026-11-01): ordinary single-click selection does not enter the
+  Ordinary single-click selection does not enter the
   global busy state or flash the editor/sidebar disabled styles. An unchanged
   selection is a no-op. Plain selection uses the published ledger and cached
   transfer flags; range/toggle selection uses the worker path, without a fixed row ceiling
-  under the [2026-11-06 follow-up](search-ledger.md#selection-size--owner-go-2026-11-06).
+  under the [selection contract](search-ledger.md#selection-size).
   Actual operations continue to disable controls while running.
 - Enter accepts the complete valid edit durably and retains its viewport and field
   focus. Ordinary category-picker choices also accept the edit. There are no
@@ -39,7 +36,7 @@ and explicit committed-edit opt-in presentation.
   Undo button beside search. While typing unaccepted text, the text field
   retains native text Undo. Enter does not advance to another transaction.
 
-## Ledger rule creation and menu availability — owner Go, 2026-11-08
+## Ledger rule creation and menu availability
 
 The ledger context menu lists **Create rule…**, **Change category…**,
 **Add transaction…**, **Set memo…**, **Set payee…**, **Merge**, **Unmerge**,
@@ -63,7 +60,7 @@ failed save stays in Rules. Existing original-field eligibility and the
 one-new-rule limit remain.
 The open editor does not list which rule assigned the payee, memo, or
 category. **Edit rule…** still opens one. See the
-[Rules entry point](../features/004-rules-and-explanations.md).
+[Rules entry point](rules.md).
 
 Report-ledger Create rule… uses the same source inspection without opening the
 transaction editor. Save, apply and back returns to the report transactions,
@@ -86,9 +83,9 @@ each account.
 
 Disabled ledger menu text and submenu arrows use a distinct colour in light and
 dark themes and do not highlight on hover. Financial command eligibility is
-unchanged. Verification and platform limits are in [status](status.md).
+unchanged.
 
-## Category completion — owner Go, 2026-11-01
+## Category completion
 
 The allocation category button is replaced with a text field. Uncategorized is
 blank. Focus opens a dropdown with case-insensitive substring matching against
@@ -106,7 +103,7 @@ Enter chooses the highlighted row, using the existing complete-edit acceptance
 or guarded transfer command. Choosing moves to transaction Memo for a single
 allocation, or that split's memo for multiple allocations. Tab and amount
 selection are in
-[Amount and category Tab](#amount-and-category-tab--owner-go-2026-11-17).
+[Amount and category Tab](#amount-and-category-tab).
 Date, Payee, Amount, Category and Memo support forward/reverse keyboard
 navigation. Memo follows allocations visually. Add split remains a button.
 The dropdown has an interactive scrollbar.
@@ -159,32 +156,16 @@ step. Undo and Redo restore the corresponding postings and links together.
 
 ## Undo scope and persistence
 
-Accepted edits survive closing and reopening. The editor Undo capability is
-session-only, for a consecutive sequence of accepted edits; other dataset
-mutations end that sequence. Selection, inspection and filtering do not end it.
-Undo restores values, split identities, ownership/provenance, and any transfer
-relationships changed by the edit together. No partial restoration is permitted.
-There is no new Redo command.
+Saved edits survive reopening. [File-wide Undo](action-undo-design.md)
+restores values, split identities, ownership, provenance and affected transfer
+relationships in one operation. Failed validation preserves the buffer. A
+committed save with failed refresh is reported as saved and requires reopen.
+An uncertain outcome requires reopen and inspection.
 
-The worker retains only operation identities and transaction/account references
-for this capability. Exact snapshots use the existing encrypted durable journal,
-its mutation-generation gate and stacked reversal logic. Accept and Undo are
-complete atomic repository operations with durable outcome lookup. Failed
-validation preserves the buffer; an unknown outcome or failed post-save refresh
-requires reopening, with an accurate explanation. Committed edits remain in
-persistent history, whose existing strict individual Undo is still available
-when eligible after a restart. Session Undo does not erase history.
+The editor needs a valid existing transaction. Use Review to repair malformed
+imports. Generated counterparts and protected transfers keep their edit guards.
 
-The ledger command requires an existing valid transaction. First repair of a
-malformed import still uses the existing repair path in Review; restoring an
-absent pre-repair transaction is outside this ledger-edit scope. Existing generated
-counterpart and protected-transfer edit restrictions remain in force.
-
-No schema change: formats remain 40 with rules / 39 without. The full-audit
-verifier identity changes with the implementation. No migrations or private
-financial fixtures are introduced.
-
-## Opening balance editing — owner Go, 2026-11-01
+## Opening balance editing
 
 The stored opening amount and date are usable immediately, including the initial
 zero. There is no separate confirmation action or opening-confirmation Commit
@@ -208,7 +189,7 @@ still checks its creation amount/date and all financial/history relationships.
 Legacy headless reported-balance interpretation APIs are separate from the
 desktop's fixed creation-time mapping choices.
 
-## Restore imported values — owner Go 2026-11-02
+## Restore imported values
 
 Show original imported transaction opens a compact Format / Restore imported
 values header and the selectable original record snippet. Parsed fields and
@@ -237,7 +218,7 @@ payee as though it had been typed manually. New and committed edits use their
 existing atomic history/Undo paths; no format change or data rewrite is required.
 
 
-## Selected Rename payee and Restore — owner Go 2026-11-02
+## Selected Rename payee and Restore
 
 The ledger right-click menu offers **Rename payee…** and **Restore imported
 values…** for one or multiple selected transactions, including selections made
@@ -276,10 +257,9 @@ categories or silently repair incomplete originals.
 The storage command derives values from retained originals, records its full
 request for idempotent retries, and shares the encrypted snapshot journal with
 ordinary edits. Cancellation remains available until the final durable commit
-gate. Read-only selection changes cannot acknowledge mutations. See
-[status](status.md) for actual verification and remaining limits.
+gate. Read-only selection changes cannot acknowledge mutations.
 
-## Selected Set memo — owner Go 2026-11-09
+## Selected Set memo
 
 The ledger right-click menu offers **Set memo…** for one or multiple selected
 transactions, including a search selection. The menu name stays **Set memo…**.
@@ -323,7 +303,7 @@ overwrite choice for an exact retry. A changed retry is rejected. Help for the
 dialog stays on Add/correct transactions, “Change a selection or delete entries.”
 The manual already describes Set memo.
 
-## Split-only editor actions — owner Go 2026-11-02
+## Split-only editor actions
 
 Remove and Create rule from split memo appear only when the editor has more than
 one allocation. Add split remains available for ordinary transactions. Returning
@@ -332,7 +312,7 @@ rejects activation at one allocation, preserving the final category line. Existi
 transfer-removal restrictions and imported-source eligibility for memo rules
 remain in force. Memo and amount field presentation is unchanged by this fix.
 
-## Shared category completion — owner Go 2026-11-02
+## Shared category completion
 
 The ledger and rule editor now share `CategoryCompletion.qml`. Gaining focus
 selects the current text for replacement; later clicks/dragging select text
@@ -342,9 +322,9 @@ Escape, split-field navigation and category Undo retain their existing behavior.
 Tab through an unchanged field is specified with amount selection below.
 Ledger choices still include Uncategorized and eligible transfer accounts, and
 assignment still uses the existing immediate command. Rule choices and saves
-remain separate caller responsibilities. See [status](status.md) for checks.
+remain separate caller responsibilities.
 
-## Amount and category Tab — owner Go 2026-11-17
+## Amount and category Tab
 
 Tab or Shift+Tab into the transaction amount or a split amount selects the
 whole amount. A click that gives the field focus does the same. A later click
@@ -366,7 +346,7 @@ unmapped label, is unchanged by that pass-through Tab. The rule editor uses
 the same distinction. Pass-through Tab there moves to the Transactions choice
 and does not change the rule's category.
 
-## Split amount editing — owner Go 2026-11-03
+## Split amount editing
 
 Follow-up owner Go (2026-11-03): a designated balancing split replaces the
 fixed Split 1 rule. On first opening an automatic editor, choose the largest
@@ -408,10 +388,10 @@ editor retains the existing explicit discard behavior.
 
 The encrypted draft and entry revision metadata stores the balancing identity
 and manual-mode flag alongside every complete transaction snapshot, including
-Undo history. See [status](status.md) for verification.
+Undo history.
 
 
-## Amount expressions — owner Go 2026-11-03
+## Amount expressions
 
 Accepted: monetary entry supports decimal numbers, whitespace, unary plus/minus,
 `+`, `-`, `*`, `/` and parentheses, with normal precedence and left-associative
@@ -423,7 +403,7 @@ use the shared exact engine evaluator. Leaving a valid amount field replaces the
 expression with its formatted answer; Enter/save also evaluates before submitting
 an amount. Invalid input stays available for correction and cannot save. Only the
 answer enters transaction storage, history and Undo; no formula or expression
-history is stored. No format change is needed (48/47).
+history is stored.
 
 Intermediate fractions remain exact: `(10/3)*3` is `10.00`. Final results must fit
 the currency's retained scale and signed 64-bit minor-unit range. `10/3` in CAD is
@@ -436,12 +416,11 @@ intermediate bound is rejected even if a later operation could reduce it.
 Existing split balancing, manual-mode selection, transfer protections and atomic
 save/Undo validation still apply to evaluated amounts. An invalid or unbalanced
 edit cannot change the saved transaction. Bank-file and storage decimal parsing
-remain strict and do not evaluate expressions. See [status](status.md) for tests
-and platform limits.
+remain strict and do not evaluate expressions.
 
-## Amount formatting — owner Go 2026-11-03
+## Amount formatting
 
-Accepted and implemented: Settings → Current file settings offers **Use amount formatting**
+Settings → Current file settings offers **Use amount formatting**
 and a format selector. New files enable it and derive the initial style from the
 creation-time currency. The saved selection applies to every account in that file;
 changing an account's currency does not reset it. Amounts retain their own currency's
@@ -471,10 +450,9 @@ parsers; only the resulting Money value is stored.
 The encrypted singleton preference is updated atomically without changing financial
 rows, account revisions or ledger mutation generation. Failed saves are read back
 before UI success; unknown outcomes require reopening. Preference changes invalidate
-cached presentation. See [status](status.md) for verification and platform
-limits.
+cached presentation.
 
-## Text-field Home and End — owner Go 2026-11-03
+## Text-field Home and End
 
 All editable single-line fields use shared Home/End handling: Home moves to
 position zero, End to the text end, and Shift extends selection to that boundary
@@ -484,8 +462,6 @@ rules, ledger and split editors, and the synthetic sheet. Control/Alt/Meta
 combinations retain Qt's platform behavior. Completion and existing Enter, Tab,
 Escape and Undo handling remain in their field-specific handlers.
 
-The implementation uses shared Qt Quick code on all platforms. macOS verification
-is recorded in [status](status.md); Windows/Linux behavior remains unverified.
 Read-only multiline displays retain Qt's existing navigation.
 
 ## Delete a selection
@@ -514,7 +490,7 @@ command. A stale selection is rejected. The ordinary rows and the Undo receipt
 commit together. Cancellation before that commit leaves every row in place.
 Undo restores the deleted ordinary transactions in a bulk selection.
 
-## Linked selection deletion and large-operation performance — owner Go 2026-11-06
+## Linked selection deletion and large-operation performance
 
 Read-only planning and the final command both derive changes from retained rows.
 
@@ -527,12 +503,12 @@ the relevant operation tables, strict Undo uses the complete member key, and dra
 Undo uses an audit-local lookup capped at 65,536 members / 16 MiB, falling back to
 the original query above that budget. No integrity/durability check is disabled.
 Undo and committed replay share a bounded revision-to-history lookup and reuse
-already-read facts, while retaining validation. The release rules database is version 1.
+already-read facts, while retaining validation. 
 The clean-marker open policy is in [fast-startup.md](fast-startup.md). Full
 audit still checks retained history. It does not run on every ordinary open.
 
 
-## Edit refresh performance — owner Go, 2026-11-16
+## Edit refresh performance
 
 A memo-only edit still validates and saves the complete transaction and its Undo
 record atomically. When amounts, dates, allocations, other fields and transfer
@@ -548,6 +524,4 @@ financial fields and the opening-balance payee classification, while text
 exclusions are evaluated separately. Category display labels are reused within
 one view build.
 
-These are in-memory optimizations. The release database remains version 1;
-commit synchronization, financial validation, recovery checks and Undo are
-unchanged. Measurements and verification limits are in [status](status.md).
+These optimizations preserve validation, recovery, commit and Undo.

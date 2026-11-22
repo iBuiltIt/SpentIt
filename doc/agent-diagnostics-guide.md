@@ -2,7 +2,10 @@
 
 Last updated: 2026-10-30
 
-Read this when the owner mentions **hooks**, **diagnostics**, **introspection**, **observing the app**, or **profiling with an agent**. This is the operational entry point; [the runtime contract](application-diagnostics.md) defines the schema, masks, limits and verification evidence. [Feature 012](../features/012-application-diagnostics.md) preserves the requirements and design. No chat history is required.
+Read this when the owner mentions **hooks**, **diagnostics**, **introspection**,
+**observing the app**, or **profiling with an agent**. The
+[runtime contract](application-diagnostics.md) defines the schema, masks,
+limits, and verification evidence.
 
 ## Standing owner authorization and attachment discipline — 2026-10-30
 
@@ -37,7 +40,7 @@ Both builds use the same financial logic and document format. Switching editions
    ./build/SpentIt --diagnostics
    ```
 
-   These commands assume the established dependency configuration and `build/SpentIt` output location. For a fresh checkout, first follow [building](building.md), [UI setup](import-ui.md), and [the README launch instructions](../README.md). The diagnostics option alone does not enable the UI/storage/rules targets. Do not rebuild during timed comparisons.
+   These commands assume the established dependency configuration and `build/SpentIt` output location. For a fresh checkout, first follow [the application build instructions](building.md#application) and [the README launch instructions](../README.md). The diagnostics option alone does not enable the UI/storage/rules targets. Do not rebuild during timed comparisons.
 3. Read the exact `Diagnostics endpoint: ...` line from that application's stderr. Retain the **PID, exact executable path, managed terminal/process handle, endpoint and returned diagnostics session together** in the working session. Keep its terminal/process available. Each launch has a new endpoint; do not guess its name or choose another instance's socket. If attaching to an existing enabled app, obtain that instance's startup endpoint. Do not relaunch merely to discover it without accounting for the owner's current work.
 4. In another terminal/tool invocation, set these shell variables, replacing the placeholder with the observed path:
 

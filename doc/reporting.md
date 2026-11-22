@@ -1,7 +1,4 @@
-# 006 — Reporting and drill-down
-
-Status: **active**
-Last updated: 2026-11-18
+# Reporting and drill-down
 
 Reports is one sidebar entry below Rules. It lists saved definitions and edits
 the selected one. Show opens the result. The top-bar Back returns from Report
@@ -112,9 +109,4 @@ normalizes it.
 
 ## Save as PDF
 
-Save as PDF… beside Refresh report and File → Save report as PDF… export the
-visible result with a preview. Readable pages and the open file's folder are
-the defaults. Paper, orientation and Fit on one page are selectable. Tables
-paginate vertically and group wide comparisons, repeating the main period.
-PDFs contain exact report amounts and separate currencies; they are not
-password-protected. See the [PDF contract](../doc/report-pdf.md).
+See the [report PDF export contract](report-pdf.md).

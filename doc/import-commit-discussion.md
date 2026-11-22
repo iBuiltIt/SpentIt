@@ -11,7 +11,7 @@ balance includes new and accepted rows. Closing does not accept.
 acceptance without a bank match for waiting-only generated counterparts
 in selected accounts. Accept records this decision in the same transaction
 as file-wide acceptance. A transfer with a candidate follows the ordinary
-Review and acceptance flow. See [account preference](review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
+Review and acceptance flow. See [account preference](review-sheet.md#accounts-that-dont-need-bank-matches).
 
 Account Discard removes that account's exclusively owned uncommitted material.
 It preserves accepted transactions and other retained sources. It requires an

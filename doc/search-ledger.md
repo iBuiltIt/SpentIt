@@ -2,9 +2,9 @@
 
 Last updated: 2026-11-21
 
-This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [feature 005](../features/005-transaction-sheet-navigation.md). See [release schema](release-schema.md) for the file format.
+This is the bounded durable QIF experiment; search and bulk actions operate within the selected [account workspace](accounts.md). Requirements and owner decisions are in [ledger contract](ledger.md). See [release schema](release-schema.md) for the file format.
 
-## Selection size — owner Go, 2026-11-06
+## Selection size
 
 Current ledger range/toggle selection and selection restoration have no fixed row
 count ceiling. Rename, Set memo, Restore imported values, Delete, category/account assignment,
@@ -19,9 +19,9 @@ This changes command validation only; formats remain 58/57. The inactive legacy
 schema/preview bounds remain unchanged. Historical bulk descriptions below describe
 that earlier API. Unrelated parser, regex and duplicate/transfer candidate-search
 resource limits are unchanged. Removing a row ceiling is not a claim of constant
-memory use or responsiveness at arbitrary sizes. See [verification](status.md).
+memory use or responsiveness at arbitrary sizes.
 
-## Selection shortcuts — owner Go, 2026-11-06
+## Selection shortcuts
 
 With the transaction list or a transaction row focused, the platform Select All
 shortcut selects every transaction in the current filtered view, including rows
@@ -76,7 +76,7 @@ Delete and Change category are available from the ledger context menu; Change ca
 
 ## Atomic bulk operations
 
-Schema 7 introduced immutable `bulk_operations` and `bulk_members`; current schema 40/39 retains them with account-scoped behavior. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
+Immutable `bulk_operations` and `bulk_members` record account-scoped changes. The group receipt references the existing financial operation history; member revisions, financial history, dependency stamps, and group membership are written inside one SQLCipher transaction. A group is never implemented by invoking separately committing single-row commands.
 
 A category command explicitly assigns the chosen category, including Uncategorized, to every allocation in every selected committed row. Amounts, split structure, memos, dates, payees, source associations, and original evidence remain unchanged. Category ownership becomes manual and its previous rule mark is cleared. Other field marks remain intact. Removal changes active balance effects while preserving evidence and history. The preview lists every affected allocation and exact before/change/after account totals. Previews are bounded at 4,096 rows, 16,384 allocations, and 16 MiB of text.
 
@@ -88,9 +88,12 @@ Existing experimental-format support remains where already implemented. It is no
 
 ## Verification
 
-Debug, Release and ASan/UBSan covered the bounded search/bulk paths, including complete bulk fault sweeps. The initial sanitizer run found a test-only temporary-lifetime bug; the corrected case passed. The known Qt delegate-reset warning remains despite passing behavioral assertions. Full results, selected-suite scope, workload measurements and limitations are recorded in [project status](status.md). All fixtures are synthetic. Linux, Windows, physical power loss, and instrumentation of the installed PCRE2 library remain outside the verified scope.
+Exercise search and selection through the ledger and report lists. Cover exact
+results, invalid queries, hidden selections, batch Undo and both sides of
+durable commit. A clean offscreen run is separate from native focus and
+accessibility evidence.
 
-## Dataset dates and category selection — 2026-10-28
+## Dataset dates and category selection
 
 Ordinary date text is displayed/searched using the dataset's stored format. Full `period:` dates use that format; named months and four-digit years retain their existing meaning. For the default ISO format, existing unambiguous year-first compact/slash forms remain accepted. Ranges use `..`. Import parsing and raw `QIF:` evidence searches remain independent of display formatting.
 

@@ -80,5 +80,4 @@ Read text in context with the available controls, including empty, busy, error
 and recovery states. Remove redundant paragraphs before rewriting them. Check
 that the next step exists, the label matches the action, and success wording
 matches what actually completed. Preserve internal keys and financial behavior
-when changing presentation. Record actual verification and remaining limits in
-[status](status.md).
+when changing presentation.

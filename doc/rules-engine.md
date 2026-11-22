@@ -2,9 +2,8 @@
 
 Last updated: 2026-11-11
 
-Category-gated evaluation is the implementation. The release rules database is
-version 1. Matching searches immutable original fields. Current-value
-matching is deferred. See [feature 004](../features/004-rules-and-explanations.md).
+Evaluation is category-gated and searches immutable original fields.
+Current-value matching is deferred. See the [rules contract](rules.md).
 
 ## Matching and derived fields
 
@@ -46,6 +45,8 @@ The rules page prints these published limits. Printing them is not a measurement
 
 ## Verification
 
-Standalone Debug, Release and ASan/UBSan each passed all 16 registered engine/parser/regex/evaluation/application-preview cases. Coverage includes exact financial preservation, aggregate-allocation bounds, validation cancellation, manual blanks, obsolete rule results, source-association reorder/forgery and explicit replacement. Final builds and sanitizer logs were clean. Schema 6 Save and Apply have a separate Debug `rulestore.*` run, recorded in [project status](status.md). The rules sheet has a separate Debug `import.rules_ui` run, also recorded there. Neither run is Release or sanitizer evidence.
-
-The historical Debug-only persistence/UI results above are superseded by the 2026-10-26 72/72 Release and ASan/UBSan baseline runs in [project status](status.md). The installed PCRE2 library itself remains uninstrumented.
+Use the [engine rule tests](../tests/engine) and the configured `rulestore.*`
+and `import.rules_ui` CTest targets for affected behavior. Check financial
+preservation, cancellation, bounds, manual fields and source-association
+reordering. The installed PCRE2 library is outside SpentIt's sanitizer
+instrumentation.

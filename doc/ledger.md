@@ -1,13 +1,10 @@
-# 005 — Transaction sheet and navigation
-
-Status: **active**
-Last updated: 2026-11-21
+# Ledger and navigation
 
 The durable ledger is the application sheet. Editing, Set memo, Rename payee,
 Restore, splits, expressions, and amount formatting are in
-[doc/ledger-editing.md](../doc/ledger-editing.md). Search, selection size, and
-bulk commands are in [doc/search-ledger.md](../doc/search-ledger.md). Duplicate
-markers and Review navigation are in [doc/review-sheet.md](../doc/review-sheet.md).
+[ledger editing](ledger-editing.md). Search, selection size, and
+bulk commands are in [search ledger](search-ledger.md). Duplicate
+markers and Review navigation are in [review sheet](review-sheet.md).
 
 ## Ledger
 
@@ -29,7 +26,7 @@ Date sort reverses the entire posting sequence, including rows on the same
 day. A newest-first statement keeps its file order within each day when the
 ledger is sorted newest first. An oldest-first statement keeps its file order
 within each day when the ledger is sorted oldest first. Each row shows the
-balance after that posting in either direction. See [ledger sorting and balances](../doc/search-ledger.md#search-contract).
+balance after that posting in either direction. See [ledger sorting and balances](search-ledger.md#search-contract).
 
 With the account ledger or the report transaction list focused, Up and Down
 move one row. Home and End go to the first and last row. Page Up and Page
@@ -72,8 +69,7 @@ place.
 Enter accepts a complete validated edit. Escape cancels the pending text.
 Tab into an amount selects it. Tab through an unchanged category field moves
 to the next memo field without saving. The amount and category Tab rules are
-in [ledger editing](../doc/ledger-editing.md). Session Undo restores a saved
-edit. Other dataset mutations end that Undo sequence.
+in [ledger editing](ledger-editing.md). A saved edit participates in the [file-wide Undo chain](action-undo-design.md).
 
 Leaving an account records an identity and offset anchor. Back, Forward, and
 the account button restore it after layout. A hidden refresh must not replace
@@ -100,11 +96,4 @@ seal, and group Undo remain.
 
 ## Search
 
-Search covers the displayed fields and original imported text, including the
-`QIF:` token for retained occurrence bytes. An invalid pattern is an error, not
-an empty result. Clearing search restores the previous view unless the user
-opened a result; that result then stays selected and visible. Clear and Escape
-honor Save, Discard, and Stay. Option+F (Alt+F on Windows and Linux) moves
-between Search and the transaction list. Option+Shift+F (Alt+Shift+F on
-Windows and Linux) clears Search from either place. See the
-[search contract](../doc/search-ledger.md#search-contract).
+See the [search and selection contract](search-ledger.md).

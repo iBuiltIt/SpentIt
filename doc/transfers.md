@@ -1,13 +1,10 @@
-# 008 — Transfer matching and lifecycle
-
-Status: **active**
-Last updated: 2026-11-18
+# Transfer matching and lifecycle
 
 Transfers are explicit links between two allocations. A generated counterpart
 stays in one currency. An explicit Link may join two existing allocations in
 different currencies and keeps each posted amount. The engine
-contract is [doc/transfer-engine.md](../doc/transfer-engine.md). QIF bracket
-destinations resolve through [doc/qif-transfers.md](../doc/qif-transfers.md).
+contract is [transfer engine](transfer-engine.md). QIF bracket
+destinations resolve through [qif transfers](qif-transfers.md).
 Rules cannot create transfers. The ledger category menu can assign an account,
 which uses the existing transfer commands.
 
@@ -18,7 +15,7 @@ distinct.
 The new-transaction editor offers same-currency account destinations on its
 Category fields before the first save. The original and all generated
 counterparts save together in one Undo step. See
-[manual transactions](../doc/manual-transactions.md#accepted-interaction).
+[manual transactions](manual-transactions.md#accepted-interaction).
 
 ## Lifecycle
 
@@ -42,11 +39,11 @@ counterparts save together in one Undo step. See
   same command as Review Link. Link to other account is a separate command for
   one selected transaction. A kept merge and a resolved link stay marked on new
   transactions until acceptance. The contract is
-  [review sheet](../doc/review-sheet.md).
+  [review sheet](review-sheet.md).
 - Selecting the imported bank posting and the eligible extra entry in one
   account lets ledger Merge override a saved **Not this transfer** answer for
   that pair. It saves as one Merge action. Undo restores the extra entries and
-  the prior answer. See [Merge after Not this transfer](../doc/review-sheet.md#merge-after-not-this-transfer).
+  the prior answer. See [Merge after Not this transfer](review-sheet.md#merge-after-not-this-transfer).
 - Link of unequal amounts in one currency is refused unless the user uses the
   amount-difference action, which splits the larger allocation, categorizes
   the remainder, and links the common amount. No fee and no rate are invented.
@@ -54,45 +51,17 @@ counterparts save together in one Undo step. See
   amounts. One amount must be outgoing and the other incoming. No rate is
   stored or applied. Choosing another account as the category still creates a
   same-currency counterpart and refuses a different currency.
-- The automatic Link
-  setting starts on when this file path has no saved choice, and a saved off
-  choice stays off. It resolves mutually one-to-one, exact-amount Review pairs after import
-  and rules, prioritizing same-day pairs before remaining mutually unique pairs
-  throughout the existing seven-day window. Exactly one eligible allocation pair
-  may link even when other splits exist; those splits stay unchanged. Multiple eligible allocation pairs and amount
-  differences stay manual. Other suggestions require
-  an explicit choice. The links are one save inside the import. Cancel saves none
-  of them. Unmerge still breaks one link. A later import with another
-  eligible match [reopens a provisional link](../doc/review-sheet.md#reopen-an-automatic-link-after-a-later-import)
-  between two New postings for a decision in Review. Undo of that import
-  restores the earlier link.
-  With Auto Link enabled, a manual Review Link also links remaining mutually
-  unique pairs in its original connected suggestion group. The manual choice
-  and follow-ons are one atomic save and one Undo step; unresolved choices stay
-  manual. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
-  **Apply decisions** saves staged links, Not this transfer answers and
-  checked **Accept without bank match** decisions as one atomic operation
-  and one Undo. Waiting-only cards can be selected by the account holding
-  the generated entries. See [batch acceptance without a bank match](../doc/review-sheet.md#batch-accept-without-a-bank-match--owner-go-2026-11-18).
-  Review shows a reciprocal candidate pair once, on its outgoing card when
-  possible. A choice offered only from the other side stays available.
-  See [one question per transfer](../doc/review-sheet.md#one-question-per-transfer--owner-go-2026-11-12-and-2026-11-18).
-  One-to-one suggestions sort first and start
-  checked; untouched multiple-choice cards stay out. Review card Link saves
-  only its pair and preserves unrelated pending decisions, as does individual
-  Not this transfer. Inferred links stay beside related cards; changing a
-  partner recalculates automatic choices without overriding explicit decisions.
-  This refines the prior follow-on behavior for Review cards.
-  See [pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
-  See [automatic review](../doc/review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14).
+- Automatic Link, follow-on links, and staged transfer decisions follow the
+  [Review contract](review-sheet.md). A later import may reopen a provisional
+  link between New postings. Undo of the later import restores the earlier link.
 - **Accounts that don’t need bank matches** omits waiting-only Review cards
   for generated entries in listed accounts. **Accept transactions** records
-  their unmatched decisions in the same file-wide save. Possible matches
-  stay in Review. See [account preference](../doc/review-sheet.md#accounts-that-dont-need-bank-matches--owner-go-2026-11-18).
+  their unmatched decisions in the same file-wide save. Possible matches stay
+  in Review. See the [account preference](review-sheet.md#accounts-that-dont-need-bank-matches).
 
 ## New transfer dates
 
-A [date correction](../doc/ledger-editing.md#correcting-the-date-of-a-new-transfer)
+A [date correction](ledger-editing.md#correcting-the-date-of-a-new-transfer)
 on a New transfer preserves its link and is one Undo step. An eligible New
 generated counterpart follows the original's correction. Independent or
 accepted counterparts keep their dates. Attached or proposed bank matches
@@ -100,7 +69,7 @@ protect the dates.
 
 ## New manual transfer edits
 
-A [New manual posting](../doc/ledger-editing.md#editing-a-new-manual-transfer)
+A [New manual posting](ledger-editing.md#editing-a-new-manual-transfer)
 remains editable after linking. A generated New counterpart follows eligible
 changes to the original in the same operation. Review refreshes and one Undo
 reverses the edit across accounts. The editor asks before breaking links and
@@ -123,12 +92,12 @@ preserves independent and accepted postings.
   destinations. Original imported allocations remain available. Bulk deletion
   skips live linked rows; break or release the links first.
 - Deleting one linked pair from either account lets the user keep the other
-  posting or delete both. See [Delete a selection](../doc/ledger-editing.md#delete-a-selection)
+  posting or delete both. See [Delete a selection](ledger-editing.md#delete-a-selection)
   for the category, confirmation and Undo behavior.
 - A later edit, a newer transfer relationship, or a newer source association
   blocks Undo. The entry's own publication association does not.
 
-## Empty account cleanup — owner Go 2026-11-17
+## Empty account cleanup
 
 Released and unresolved relationship snapshots remain historical identities. They
 do not by themselves block deletion of an account with an empty current ledger

@@ -1,15 +1,11 @@
-# 013 — Help and the user manual
+# Help and the user manual
 
-Status: **active**
-Last updated: 2026-11-21
-
-Help is an offline viewer of the bundled manual: twelve chapters, five quick
-references, and 56 pictures. Sample topics in tests are fixtures, not the
-manual. Contextual Help opens fixed `help:topic#section` targets from
-workspaces, dialogs, leave windows, and error or status actions.
+Help is an offline viewer for the bundled manual. Contextual Help opens
+fixed `help:topic#section` targets from workspaces, dialogs, leave windows,
+and error or status actions. Test topics are separate fixtures.
 
 Do not edit `manual/` or its pictures unless the owner asks. Log the next
-user-visible change in [doc/manual-update-backlog.md](../doc/manual-update-backlog.md).
+user-visible change in [manual update backlog](manual-update-backlog.md).
 
 ## Behavior
 
@@ -45,14 +41,8 @@ user-visible change in [doc/manual-update-backlog.md](../doc/manual-update-backl
 
 Topic and section identifiers stay stable.
 
-## Not in scope
+## Scope
 
 A public documentation site, platform-specific manuals, printing or PDF export,
 translations, interactive tours, executable examples, runtime AI answers, and
 a separate help updater.
-
-## Not verified
-
-Linux, Windows, and a person clicking through Help. The owner closed standalone
-screen-reader verification as skipped, not passed. Spoken accessibility is not
-a release claim.

@@ -1,18 +1,12 @@
-# 003 — Import and review
+# Import and review
 
-Status: **active**
-Last updated: 2026-11-17
-
-Supported imports are the [QIF banking profile](009-qif-profile.md) and the
-[OFX, QFX, QBO, and ASO statement profile](003-ofx-profile.md). Further dialects
-are not authorized. Investment and other non-banking QIF sections are not
-imported. An OFX transfer destination stays a visible blocker. There is no
-fuzzy match and no cross-account date tolerance. Same-account review can still
-ask about a date one day off. That question is in
-[doc/review-sheet.md](../doc/review-sheet.md). It is not automatic recognition.
+Supported imports are the [QIF banking profile](qif-profile.md) and the
+[OFX, QFX, QBO, and ASO statement profile](statement-profile.md). Further dialects
+are outside the supported scope. Investment and other non-banking QIF
+sections are refused. An OFX transfer destination stays a visible blocker.
 Named QIF account sections, explicit mapping, and transfer
-destinations are in [doc/qif-account-imports.md](../doc/qif-account-imports.md)
-and [doc/qif-transfers.md](../doc/qif-transfers.md).
+destinations are in [qif account imports](qif-account-imports.md)
+and [qif transfers](qif-transfers.md).
 
 ## Opening a statement file
 
@@ -39,10 +33,10 @@ A QIF, OFX, QFX, QBO, or ASO file can start the same import as **Import…**.
   Open With and does not take ownership of these types. Windows and Linux
   installers do not register them.
 
-The existing import questions still apply. An unnamed file with no chosen
-account asks for a destination. A file that already matches one account uses
-that account. Several accounts open the mapping dialog. An ambiguous QIF date
-still asks for the date order.
+An unnamed QIF file with no chosen account asks for a destination. A QIF
+source that already matches one account uses that account. Several source
+accounts open the mapping dialog. An ambiguous QIF date asks for the date
+order. OFX-family sources always open explicit account mapping.
 
 ## What import does
 
@@ -65,7 +59,7 @@ still asks for the date order.
   when it is the latest action. Review **Undo import…** can remove an eligible
   older import when the Undo stack is empty. Accepted transactions are not
   deleted. Created accounts, categories, aliases, and openings remain.
-  See [import Undo](../doc/import-undo.md).
+  See [import Undo](import-undo.md).
 
 ## Matching
 
@@ -83,37 +77,9 @@ Automatic recognition uses saved original facts.
   stay in the balance until the user decides.
 - Reimport of a removed transaction stays unresolved for an explicit decision.
 
-Two Settings preferences automatically Merge or Link
-mutually one-to-one Review pairs after import and rules. They start on when
-this file path has no saved choice. A saved off choice stays off. They leave transaction
-acceptance explicit. Same-day pairs take priority, followed by mutually unique adjacent-day pairs.
-An eligible bank posting can merge into an accepted transfer when their
-nonempty original payees match exactly. The accepted posting keeps its link.
-Ambiguous relationships, survivor choices,
-multiple eligible split pairs, and amount differences stay manual. A unique
-matching split can link without changing the other allocations. Those pairs are
-one save inside the import, not separate Undo steps. Cancel saves none of them.
-Manual and automatic keep-one merges both show **Merged**, even when the
-kept transaction was already accepted. Accept, Undo of the merge, or Unmerge
-clears the mark. The exact eligibility, local preference scope, failure
-behavior, and Undo contract are in the automatic-review section of
-[doc/review-sheet.md](../doc/review-sheet.md).
+Local Auto Merge and Auto Link preferences can resolve eligible one-to-one
+Review pairs after import and rules. Automatic decisions are part of the import
+operation. The [Review contract](review-sheet.md) defines eligibility, date
+windows, provisional links, staged decisions and Undo.
 
-With Auto Link enabled, a manual Review Link also resolves remaining unambiguous
-pairs in its original connected suggestion group. That manual decision and its
-follow-ons share one ordinary Undo step, separate from import Undo. Acceptance
-stays explicit. See [follow-on links](../doc/review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
-**Apply decisions** saves pending duplicate merges, transfer links, rejections
-and checked **Accept without bank match** decisions together in one Undo step.
-**Clear selection** sits to its right and clears the pending choices. Select waiting-only
-transfers individually or by the account holding the generated entries.
-Review card Link now saves only its pair; individual saves preserve unrelated
-pending choices. Exact one-to-one suggestions sort first and start checked.
-Differing amounts start unchecked and single-amount candidates show
-**Amounts differ — review before linking**. Choose the candidate and use Link
-to resolve the difference before saving; Apply decisions omits that card.
-Untouched multiple-choice cards are omitted. See
-[pending decisions](../doc/review-sheet.md#pending-transfer-decisions--owner-go-2026-11-17).
-
-Review behavior is in [doc/review-sheet.md](../doc/review-sheet.md). Dataset-wide
-acceptance is in [doc/import-commit-discussion.md](../doc/import-commit-discussion.md).
+See [dataset-wide acceptance](import-commit-discussion.md).

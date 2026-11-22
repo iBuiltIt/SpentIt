@@ -13,20 +13,16 @@ rules-enabled Release build with `./build/SpentIt`. See the README and
 ## Discover the project before changing it
 
 1. Read this file and [doc/status.md](doc/status.md).
-2. Read [doc/project-layout.md](doc/project-layout.md) and the feature document
-   for the area you are changing. Start at [features/README.md](features/README.md).
-3. Read the contract named by that feature. Documentation is not evidence that
-   code exists or works; inspect the implementation and tests.
-4. [doc/first-release-plan.md](doc/first-release-plan.md) is the accepted release
-   scope. It does not authorize implementation by itself.
-5. Do not invent financial or security behavior. Ask about material ambiguities.
+2. Read [doc/project-layout.md](doc/project-layout.md) and use the
+   [contract index](doc/README.md) to find the area you are changing.
+3. Read the relevant contracts and inspect the implementation and tests.
+4. Check the [accepted product scope](doc/status.md#product-scope). Ask about
+   material ambiguities before changing financial or security behavior.
 
 ## Where information belongs
 
-- `AGENTS.md`: durable contributor instructions. Detailed behavior lives in the
-  feature and contract documents.
+- `AGENTS.md`: durable contributor instructions.
 - `doc/`: current contracts, build and recovery guidance, and [status](doc/status.md).
-- `features/`: current requirements and open work.
 - `src/`: `engine/`, `storage/`, `app/`, and `ui/`, as in
   [project layout](doc/project-layout.md). UI code does not execute SQL or own
   financial transaction boundaries. The engine does not depend on UI or concrete
@@ -153,16 +149,16 @@ These are the current rules. The linked documents are the full contracts.
   Save and apply is atomic; Undo restores the transactions and keeps the saved
   rule. Older-import removal and account Discard require an empty chain and are
   not themselves undoable. Do not resume generic per-row storage capture.
-  [Design](doc/action-undo-design.md), [inventory](doc/action-undo-inventory.md),
-  [Change history](doc/change-history-handoff.md).
+  [Undo and Redo](doc/action-undo-design.md),
+  [Change history](doc/action-undo-design.md#change-history).
 - **Session close.** [Session history](doc/session-history-baseline.md) and
   [open/close checks](doc/fast-startup.md).
 - **Import and acceptance.** Dataset-wide Accept. Explicit zero or reported
   opening on every new-account mapping. Same-account duplicate policy and
   strict bank IDs. [Acceptance and matching](doc/import-commit-discussion.md),
   [QIF accounts](doc/qif-account-imports.md), [import Undo](doc/import-undo.md),
-  [QIF profile](features/009-qif-profile.md),
-  [statement profile](features/003-ofx-profile.md).
+  [QIF profile](doc/qif-profile.md),
+  [statement profile](doc/statement-profile.md).
 - **Review.** [Review sheet](doc/review-sheet.md).
 - **Ledger editing.** [Ledger editing](doc/ledger-editing.md), including Set
   memo, Rename payee, Restore, splits, amount expressions, and amount formatting.
@@ -170,13 +166,11 @@ These are the current rules. The linked documents are the full contracts.
   [Manual transactions](doc/manual-transactions.md).
 - **Rules.** Category-gated, Uncategorized only, no rule-created transfers.
   Matching uses immutable imported fields. Current-value matching is deferred.
-  [Feature 004](features/004-rules-and-explanations.md),
+  [rules contract](doc/rules.md),
   [evaluator](doc/rules-engine.md).
-- **Categories, transfers, reports, file exchange.** Features
-  [010](features/010-categories-and-selection.md),
-  [008](features/008-transfer-matching-and-lifecycle.md),
-  [006](features/006-reporting-drill-down.md), and
-  [015](features/015-file-exchange.md).
+- **Categories, transfers, reports, file exchange.**
+  [Categories](doc/categories.md), [transfers](doc/transfers.md),
+  [reporting](doc/reporting.md), and [file exchange](doc/file-exchange.md).
 
 ## Licensing
 
@@ -184,4 +178,4 @@ SpentIt is released under the Unlicense. See [LICENSE](LICENSE). That
 dedication applies to SpentIt. Third-party libraries and the currency reference
 files keep their own terms. Do not relicense those components, and do not
 replace the Unlicense without an explicit decision. See
-[feature 007](features/007-licensing-and-distribution.md).
+[licensing requirements](doc/licensing.md).

@@ -1,8 +1,5 @@
 # Undo an uncommitted import
 
-Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
-[status](status.md). The owner approved removing account-menu Undo on 2026-11-18.
-
 ## Accepted behavior
 
 - File-wide **Undo** reverses the latest saved action. When that action is an
@@ -51,9 +48,7 @@ Accepted owner Go: 2026-11-03. Implementation and verification are recorded in
 ## Import identification and format decision
 
 Existing documents retain source contents, batches, account mappings and source
-associations, but not original filenames. The owner explicitly chose to retain
-current-format compatibility instead of introducing a new experimental format for
-filename metadata. The picker uses file type, transaction date range, record count
+associations, but not original filenames. The picker uses file type, transaction date range, record count
 and newest-first order. Internal source IDs are not displayed. Identical-looking
 imports are distinguished by list position; filenames are not promised after restart.
 

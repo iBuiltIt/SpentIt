@@ -1,8 +1,5 @@
 # Document session locks
 
-Owner Go: 2026-11-04. Implemented scope and executed checks are recorded in
-[status](status.md).
-
 ## Accepted behavior
 
 Ordinary private local datasets and backup candidates do not create adjacent

@@ -28,7 +28,7 @@ These are not the database schema number:
 - `manual-v1`.
 
 Open checks for the expected tables and rejects unsupported or inconsistent
-versions before the upgrade can write. See [Review](review-sheet.md#unmerge-after-acceptance--2026-11-18).
+versions before the upgrade can write. See [Review](review-sheet.md#unmerge-after-acceptance).
 
 Changing the file's date format updates the existing encrypted preference row.
 On the first change to an older file, the same transaction replaces the

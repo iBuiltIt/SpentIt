@@ -12,6 +12,6 @@ Selected for storage on 2026-10-25. SQLCipher stays under its own license. Spent
 - SQLCipher license: upstream BSD-style three-clause terms, copied unmodified in [LICENSE.md](LICENSE.md). SQLite's upstream public-domain material is included in the source archive; retain upstream notices in distribution review.
 - Crypto provider used for verification: installed **OpenSSL 3.5.9**, Apache-2.0, through `OpenSSL::Crypto`. OpenSSL is a separately supplied system dependency, not downloaded or version-pinned by this prototype. CMake requires OpenSSL 3.x or newer compatible with that minimum; the exact tested version is recorded, not a reproducible full dependency closure. A shipping build must pin/package/review it separately and retain its notices.
 
-SpentIt is under the Unlicense. SQLCipher and OpenSSL do not become Unlicense by that choice. See [licensing requirements](../../features/007-licensing-and-distribution.md).
+SpentIt is under the Unlicense. SQLCipher and OpenSSL do not become Unlicense by that choice. See [licensing requirements](../../doc/licensing.md).
 
 Build instructions: [building](../../doc/building.md).

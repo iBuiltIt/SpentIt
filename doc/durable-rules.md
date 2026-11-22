@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-16
 
-Current rule behavior is [feature 004](../features/004-rules-and-explanations.md).
+Current rule behavior is [rules contract](rules.md).
 The evaluator is [rules-engine.md](rules-engine.md).
 
 The format and upgrade policy are in [release schema](release-schema.md).
@@ -28,10 +28,10 @@ change that count. The explicit pending-batch Apply command keeps its own scope.
 
 Successful close keeps one current ruleset baseline and any definition still
 referenced by retained work. It drops full save requests and superseded
-snapshots. See the retention section of feature 004.
+snapshots. See [rules retention](rules.md#retention).
 
 
-## Save performance — owner Go, 2026-11-16
+## Save performance
 
 A definition-only save preserves financial and import-readiness caches because
 it changes neither transaction values nor their relationships. Its durable
@@ -47,4 +47,4 @@ is still refreshed for application. Rollback discards speculative reads, and
 acknowledgement failure cannot publish an unsaved result.
 
 No database schema change or durability setting change is involved. See
-[status](status.md) for measurements and checks.
+[diagnostics guide](agent-diagnostics-guide.md) for measuring current behavior.

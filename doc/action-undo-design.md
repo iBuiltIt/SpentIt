@@ -1,78 +1,29 @@
 # Unified transaction Undo and whole-import rollback
 
-Last updated: 2026-11-16
+The file-wide `ActionChain` is the transaction Undo authority. An import
+creates one source-owned action and zero ordinary edit-Undo members for new
+imported rows. See the [release schema](release-schema.md).
 
-This replacement is the Undo implementation. The release rules database is
-version 1. Do not resume generic per-row storage capture. An import must not
-create an ordinary edit record for each new row.
-
-## 1. The model
+## The model
 
 One saved user operation is one Undo step, across the file. Use the existing
 transaction snapshots and operation-specific restoration logic to reverse user
 changes. Treat an import as one whole-import rollback using its source ownership.
 **Importing a row must create no ordinary edit-Undo record for that row.**
 
-Example:
-
-| User operation | One Undo step does this |
-| --- | --- |
-| Import a file into three accounts | Removes that import's contributions across all three accounts and restores earlier relationships it changed. |
-| Apply a rule to 12,000 transactions | Restores the actual changed transactions together, using their retained prior states. |
-| Rename one payee | Restores that payee edit and any effects belonging to it. |
-| Accept new transactions | Returns exactly that accepted set to New and restores the acceptance-related state. |
-
 Undo traverses those steps newest first. Import occupies one position in this
 order, but does not pass its inserted rows through the ordinary edit journal.
 Redo is connection-local and replays a saved result as a fresh ordinary action.
 Import Undo is not redoable. There is no selective skipping or automatic
-undo-to-here. See the version-1 Redo section below.
+undo-to-here. See [Redo](#redo).
 
-Accounts and categories created by an import **remain after its rollback**, as
-the owner explicitly accepted during this rethink. The proposed retained setup
-also includes confirmed aliases and the account's explicitly chosen initial
-opening, matching today's import rollback. Existing accounts' openings never
-change merely because of import or import rollback. A retained new account with
-a nonzero opening still has that opening afterward: this is financial-posting
-rollback, not byte-for-byte restoration of the entire document.
+Import-created accounts, categories, confirmed aliases and the explicitly
+chosen initial opening survive rollback. Existing openings are unchanged.
+Keep restoration data for changed pre-existing state when ownership and
+retained domain versions cannot reconstruct it. See [import Undo](import-undo.md)
+and [session retention](session-history-baseline.md).
 
-A 50,000-row import requires storage and deletion work for 50,000 rows. It does
-not require 350,008 extra inverse entries describing their insertion. Extra
-restoration state is needed only where import changes pre-existing state that
-cannot be recovered from ownership and already-retained versions.
-
-## 2. Authority and deliberate scope choices
-
-Read [session history](session-history-baseline.md) and
-[import Undo](import-undo.md). Generic import row capture is rejected.
-
-The requirements are whole-import atomic reversal, ordinary Undo for user
-transaction changes, permission to retain import-created accounts and
-categories, and the existing financial, recovery, and successful-close
-guarantees. File-wide ordering and reversible acceptance remain.
-
-These scope choices are the implementation:
-
-- Standalone rule, report, category and account definitions and display settings
-  are outside ordinary Undo. Saving them does not silently clear the chain.
-- Opening corrections and currency reassignment remain financial actions in the
-  chain because they change ledger money. Existing eligibility and exact conversion
-  policy remain; no new currency capability is introduced.
-- Reversing an eligible older import remains the existing destructive source-owned
-  removal. Making that removal itself undoable is dropped from this design.
-- Account-wide Discard retains its existing destructive scope and is not made
-  undoable. Older-import removal and Discard require an empty active Undo chain.
-- Undo of Save and apply restores the transaction application; the saved rule
-  definition remains. The combined forward operation is atomic.
-- Initial import decisions belong to the import workflow. It finishes or rolls
-  back before unrelated saved commands or a successful close can proceed.
-
-These choices remove the old requirement to retain a deleted import for undoing
-its deletion, and remove the all-document-mutations conversion. If the owner
-later wants either capability, design it explicitly; do not silently restore the
-94-table journal under the word "unified".
-
-## 3. What participates
+## What participates
 
 | Operation | Treatment |
 | --- | --- |
@@ -115,7 +66,7 @@ clearing file-wide Undo/Redo if an active inverse or replay depends on the delet
 identity. Expire history and retire the identity in one transaction; preserve
 unrelated Undo/Redo when neither needs that identity. Retain historical identities
 and imported facts internally. Cancel, stale confirmation and failed saves change
-neither deletion nor history. This deletion exception was authorized 2026-11-17.
+neither deletion nor history. This deletion exception applies only to otherwise eligible deletion.
 Account archive must still refuse while an active action needs writable access to that account;
 retain today's other archive restrictions. Explain the affected action and that
 successful close ends session Undo. Do not silently discard history or allow the
@@ -127,15 +78,14 @@ rewrite transaction/relationship state. Any discovered such write needs an expli
 typed action treatment or a refusal before shipping; it cannot be called a harmless
 settings change merely because that is its UI location.
 
-## 4. One coordinator, existing domain restoration
+## One coordinator, existing domain restoration
 
 Keep SQL in storage and use cases behind the application repository interface.
-The serial worker submits one complete operation. Introduce a small durable action
-header and one common history/Undo API; replace competing eligibility stacks.
+The serial worker submits one complete operation. The durable action header and shared history/Undo API own eligibility.
 Reuse `review_answers`, `review_members`, `review_sources`, `review_link_history`,
 existing draft/entry snapshots and account/rule receipts where they already hold
 the necessary state. Do not duplicate those bodies into a second generic journal.
-The [operation inventory](action-undo-inventory.md) identifies adaptation points.
+See the [implementation map](#implementation-and-verification).
 
 An action header needs: unique ID, session, parent, chronological sequence, kind,
 state and a typed payload reference, plus a bounded label/count/account summary.
@@ -161,7 +111,7 @@ Payloads follow the operation:
 - Opening/currency action: existing account restoration inputs, restricted to the
   monetary fields and affected postings; do not restore a later account rename.
 - Acceptance: exact acceptance group, prior decisions and the state transitions
-  specified in section 6.
+  specified under [reversible acceptance](#reversible-acceptance).
 - Import: source/group identity and references/deltas for pre-existing objects
   changed by the import. Its ordinary new rows are found through source ownership.
 
@@ -209,9 +159,7 @@ Every prepared command uses `{session, epoch, head}` plus its domain scope.
 Epoch advances on every saved semantic mutation and Undo, including compatible
 settings changes. It never rewinds. Old previews remain stale after change/Undo.
 Entity/action IDs and any ordering allocator whose rows can disappear must not be
-reused. Audit current MAX+1 allocators, especially manual record/source order.
-Physical revision counters continue upward; unrelated definition revisions do not
-need the rejected design's universal backwards-head/ancestry conversion.
+reused. Physical revision counters continue upward.
 
 Undo is a durable command, not another undoable head. After A, B, Undo B, C, the
 active chain is A → C. B remains an undone session summary, not C's parent. B's in-memory Redo
@@ -223,7 +171,7 @@ original status, including subsequently undone; conflicting reuse refuses. A ret
 of Undo B never pops A. After successful close, compact already-completed receipts
 may replace detailed results under the existing session contract.
 
-## 5. Whole-import rollback
+## Whole-import rollback
 
 ### Ownership is the boundary
 
@@ -249,7 +197,7 @@ For pre-existing state, distinguish:
 3. A replaced/removed earlier association or modified existing transaction: retain
    the actual typed prior state once, or reference its existing immutable version.
 4. New setup: keep the accounts, categories, aliases and explicit initial openings
-   under section 1; they require no import reversal images.
+   under [the model](#the-model); they require no import reversal images.
 
 This permits restoration storage proportional to actual changes to existing
 objects. An import changing many existing objects can legitimately need many
@@ -281,8 +229,8 @@ A successful close requires this workflow to finish or cancel first.
 After a crash, recover SQLCipher and validate the recorded stage. Capture-only
 incomplete work follows existing cleanup. Materialized work awaiting an initial
 decision is retained for resume or explicit rollback, never mistaken for capture-only
-cleanup. Applied roots recover as completed imports with their chain. The new
-stage record must distinguish these cases without relying on an in-memory flag.
+cleanup. Applied roots recover as completed imports with their chain. The durable
+stage record distinguishes these cases without relying on an in-memory flag.
 
 ### Executing Undo Import
 
@@ -296,12 +244,10 @@ exclusively owned new material; retain shared originals and required earlier sta
 validate; record completion and pop the head. Preserve the current import rollback's
 independent verification gate for destructive collection.
 
-Adapt `account_rollback.inc`; do not call it unchanged. It currently clears
-`review_stack`, uses a one-slot rollback receipt and may collect history required
-by earlier actions. The replacement must retain the parent action's payloads,
-restore their logical dependencies, and use the common durable retry mechanism.
-Its source/transfer conflict checks and acceptance protections remain authoritative.
-No external input file needs to be opened again; no external file is deleted.
+The [rollback implementation](../src/storage/account_rollback.inc) preserves
+the parent action's restoration dependencies and durable retry status. The
+source/transfer conflict and acceptance checks remain authoritative. Undo
+uses retained evidence, leaving the external statement file alone.
 
 ### Older imports and Discard
 
@@ -322,7 +268,7 @@ removal preserves compact retry status and existing cross-session restoration
 requirements for surviving data. Subsequent user edits start a new chain from the
 resulting saved state. No early expiry of an active chain is introduced.
 
-## 6. Reversible acceptance
+## Reversible acceptance
 
 Keep acceptance in the chain. Existing `dataset_acceptance.inc` shows why changing
 a single accepted flag is insufficient. A typed acceptance receipt must identify:
@@ -348,13 +294,11 @@ payment is created. Later accepted-entry edits must already have been undone.
 
 Accepted overlays/history cannot be erased while active actions or surviving
 relationships reference them. Record the acceptance reversal explicitly; current
-visibility follows active acceptance membership. Extend verification to understand
-revoked acceptance without replaying it as currently accepted. Reacceptance uses
+visibility follows active acceptance membership. Verification treats revoked acceptance as historical. Reacceptance uses
 new operation identity and revision allocation above retained versions, not a reused
-revision-zero overlay. Update affected publication/verification assumptions together.
-This is a focused acceptance transition, not a rewrite of every table's identity model.
+revision-zero overlay.
 
-Removing transient transfer history can leave gaps in financial sequence
+Pruning transient transfer history can leave gaps in financial sequence
 numbers. An acceptance reversal's recorded preview sequence must be at or
 after the previous retained operation and before the reversal. Its
 publication, membership, and balance must still reconcile.
@@ -366,19 +310,11 @@ identity, originals, decisions and transfer state as well as exact amounts.
 Quit-time acceptance is saved before close. If close fails/cancels, it remains a
 saved undoable action. Successful close makes its resulting state the new baseline.
 
-## 7. Presentation and lifecycle
+## Presentation and lifecycle
 
-All financial Undo buttons/shortcuts ask the common repository head. Contextual
-buttons cannot secretly undo a different action or bypass a newer account's work.
-Show the actual action and its complete scope, including affected accounts/counts.
-Import remains clearly named as whole-import rollback. Do not list inserted rows
-as individual changes. Rules that run during that import stay inside the same
-Import action. The Change History layout in
-[the handoff](change-history-handoff.md) is implemented. See
-[status](status.md). That layout does not add a history search box.
+All financial Undo commands consult the common repository head. The [Change history viewer](#change-history) exposes that same action.
 
-Use durable action data after reopen/crash; remove `sessionEdits` as an independent
-source of eligibility. Unsaved buffers keep existing Save/Discard/Cancel protections.
+Use the durable chain after recovery. Unsaved buffers keep existing Save/Discard/Cancel protections.
 Before Undo, identify buffers whose base or referenced entities will change. Discard
 only those explicitly chosen; Cancel does nothing. Saving first creates a new action
 and requires refreshing the Undo target, never silently undoing that new save.
@@ -391,33 +327,15 @@ rule application and explain that the saved rule remains. A definition-only resu
 adds no transaction Undo step. Save and show report keeps a saved definition even
 if later report calculation/rendering fails and reports that outcome accurately.
 
-Successful document close atomically expires ordinary actions/restoration payloads,
-publishes the current baseline and clean marker, and prunes only unneeded data.
-Include active action references in reachability before that boundary. Preserve
-current values, originals, recognition, rule provenance and eligible import rollback
-inputs afterward. Failed/cancelled close and crashes retain the session chain.
+Successful close expires ordinary actions and publishes the new baseline
+atomically. See [session retention](session-history-baseline.md) and
+[open and close verification](fast-startup.md). Bounded undone summaries may
+outlive their details within the session. Report unavailable details accurately.
 
-Normal open/close adds no full audit/hash or routine full-file copy. Full abnormal
-recovery and explicit checks validate the baseline, current session
-chain, restoration lineage and retained import dependencies. No automatic repair, plaintext
-sidecar, lock bypass or weaker durable commit is permitted.
+## Redo
 
-Undone activity may keep bounded session labels/counts, with unavailable old details
-reported honestly after payload collection. It is not a permanent history archive.
-
-## 8. Structural gate
-
-Import-only produces one root and **zero ordinary transaction-Undo members for
-new imported rows**. Initial setup and automatic rules cannot add per-row
-capture. The command map is [action-undo-inventory.md](action-undo-inventory.md).
-Change history is [change-history-handoff.md](change-history-handoff.md).
-
-## Version-1 linear Redo — 2026-11-14
-
-The owner authorized a conventional file-wide Undo/Redo stack. History is its
-viewer; arbitrary older-action and connected-branch reversal are no longer
-application commands. Existing typed inverse routines and the durable Undo chain
-remain. There are no schema changes, new persisted action kinds, or migrations.
+Redo uses typed replay and the existing receipt structure. Each replay writes
+a fresh ordinary action.
 
 Before Undo, storage prepares a typed, connection-local replay recipe from the
 saved result. Undo publishes that recipe only after durable completion. Ordinary
@@ -427,7 +345,7 @@ domain operation. Acceptance checks that replay publishes the exact recorded
 membership. Manual creation and new transfer creation allocate fresh identities;
 later replay recipes resolve their references to the recreated objects.
 
-Replayed row images retain a SHA-256 fingerprint in the existing version-1
+Replayed row images retain a SHA-256 fingerprint in the existing
 no-change receipt structure, keyed by row identity, revision and draft/accepted
 kind. This is verification evidence, not a pending Redo recipe. It permits exact
 restoration of a historical category binding after a rename/archive that happened
@@ -436,7 +354,7 @@ commit atomically. Close expires the receipt under existing rules, retaining its
 fingerprint for any retained historical snapshot. No new table, column, schema
 number or receipt status is introduced.
 
-Redo writes a fresh normal action using the existing version-1 receipts. It never
+Redo writes a fresh normal action using the existing receipts. It never
 resets an old completion or rewinds revisions. Its entire financial operation,
 normal Undo information, and receipt commit together. Redo performs full domain
 verification before committing. Failure leaves the recipe available. A lost
@@ -465,7 +383,7 @@ latest applied action exposes Undo; there is no branch selection.
 
 ### Automatic Review decisions
 
-The opt-in [automatic Review](review-sheet.md#automatic-one-to-one-review--owner-go-2026-11-14)
+The opt-in [automatic Review](review-sheet.md#automatic-one-to-one-review)
 pass runs after import, initial category choices, and rules. Its pairs share the
 import's source-owned Undo and are not ordinary action steps. Individual Unmerge
 remains an ordinary action. Undo does not trigger matching again.
@@ -474,9 +392,62 @@ With Auto Link enabled, a manual Review Link and its unambiguous follow-ons in
 the same suggestion group instead form one ordinary Review action. One Undo
 reverses that whole group. Redo replays precisely its recorded pairs as one new
 action, without consulting preferences or discovering additional matches. The
-version-1 batch receipts contain each child's relationship snapshots. See
-[follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link--owner-go-2026-11-16).
+batch receipts contain each child's relationship snapshots. See
+[follow-on links](review-sheet.md#automatic-follow-on-links-after-a-manual-link).
 
 Local automatic-review preference saves preserve Undo and clear pending Redo.
 Accepting only outstanding result marks records an Accept action, so Undo restores
 those marks without changing financial amounts.
+
+## Change history
+
+History is a viewer of the file-wide linear Undo/Redo stack. It lists applied
+saved actions newest first across all accounts, with their existing transaction
+and field-change details. The available Redo actions are listed separately,
+next action first. There is no account filter or selective branch Undo.
+
+Only the newest applied action offers Undo. Edit → Undo and Cmd+Z / Ctrl+Z
+perform that same operation. Edit → Redo and the platform Redo shortcut replay
+the next undone action. Native text editing keeps its own Undo/Redo. Ordinary
+saved Undo/Redo runs directly; import Undo asks for confirmation and explains
+that it clears Redo and cannot itself be redone.
+
+After undoing a transfer assignment, undoing **Add transaction** removes the
+posting from its account and keeps the account you are viewing selected.
+
+An import is one action. Its automatic rules and mapping work belong to it.
+A later explicit rule application, acceptance, merge, unmerge, bulk edit, or
+transaction edit is its own action. Standalone definition and settings saves
+remain outside Undo. Saved rules remain when their transaction application is
+undone.
+
+If SpentIt cannot verify the file’s rule history during Redo and confirms the
+replay did not save, Change history explains that the Undo is still in effect.
+
+A new saved change clears Redo. Import Undo also clears it; the user can reimport
+the original file. Successful close clears both stacks. Failed/cancelled close
+preserves both. A crash preserves the existing durable Undo chain and saved
+state, but loses in-memory Redo.
+
+## Implementation and verification
+
+- [ActionChain](../src/storage/action_chain.hpp) defines the typed chain.
+  [Undo publication](../src/storage/action_store.inc) checks the head,
+  ownership and inverse scopes. `redo_store.inc` holds connection-local
+  recipes. Legacy connected-Undo storage helpers serve compatibility tests.
+- `import_review.inc` verifies Redo before commit and `acceptance_undo.inc`
+  checks exact accepted membership. `account_rollback.inc` owns import and
+  Discard rollback. `session_prune.inc` and `session_snapshot.inc` own expiry
+  and baseline reachability.
+- `manual_store.inc`, `ledger_selection_store.inc`, `committed_store.inc`,
+  `review_sheet_store.inc`, `transfer_store.inc`, `rule_account_store.inc`,
+  `category_store.inc`, and `account_lifecycle.inc` contain the typed adapters.
+- Run `storage.action_chain`, `storage.action_repository`, and the affected
+  action, composed-operation and domain fault cases. Verify that import-only
+  actions have no per-row ordinary Undo members.
+
+`storage.action_redo` exercises the existing action-family suite with an
+Undo/Redo/Undo cycle, plus ordering, retries, invalidation, file lifetime and
+identity dependencies. `storage.action_redo_faults` sweeps I/O and process-exit
+boundaries. UI coverage is in [Import UI tests](../tests/ui/import_model_tests.cpp)
+and the `import.committed_ui` target.

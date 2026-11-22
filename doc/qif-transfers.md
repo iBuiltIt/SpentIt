@@ -2,11 +2,12 @@
 
 Last updated: 2026-11-17
 
-See the [QIF banking profile](../features/009-qif-profile.md) for parser behavior. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
+See the [QIF banking profile](qif-profile.md) for parser behavior. Class suffixes remain separate source metadata. A malformed amount cannot erase a retained transfer destination.
 
-The bounded banking parser now admits `L[Account]` and `S[Account]` destinations and connects their allocations to the [durable transfer workflow](transfer-engine.md). Reports are outside this package. The parser contract for this destination package was `bank-v2`; the current statement parsers are recorded in [status](status.md).
-
-Current extension (2026-10-29): [account names and confirmed aliases](../features/010-categories-and-selection.md) identify transfers even without QIF brackets. Grouped matching uses allocation amounts, so an ordinary fee split does not prevent matching the transfer split. This supersedes the earlier bracket-only admission and same-named ordinary-category policy. Original source bytes are retained unchanged.
+The parser retains `L[Account]` and `S[Account]` destinations. Exact
+[account names and confirmed aliases](accounts.md#account-names-and-aliases)
+also identify transfer destinations without brackets. Grouped matching
+compares allocation amounts, allowing a separate ordinary fee split.
 
 ## Review and resolution
 
@@ -31,10 +32,14 @@ Per-account commit, draft protection, discard, later evidence attachment, indepe
 
 ## Limits and verification
 
-Only the existing banking dialect is extended. Multi-account QIF sections, investment records and category/class suffixes remain unsupported. Empty, nested, unbalanced or class-suffixed brackets fail explicitly. Broader committed transfer reversal, and cross-currency conversion remain outside this package. Merge, unlink, replacement, linking two independently committed equal allocations, account entries in the category selector, and the read-only transfer journal are implemented; see [transfer management](../features/008-transfer-matching-and-lifecycle.md). Grouped evidence links only at the equal allocation, not at the transaction total. This does not claim general QIF compatibility or complete feature 008.
+See the [QIF banking profile](qif-profile.md) for supported sections and
+class suffixes. Empty, nested, and unbalanced brackets fail explicitly.
+Grouped evidence matches the equal allocation amount. See
+[transfer lifecycle](transfers.md) for linking, replacement, and committed
+edits.
 
 Synthetic tests cover parsing, malformed notation, rules protection, both import orders, unknown/duplicate names, explicit identity choice, unresolved/partially resolved commit rejection, repeated equal allocations, mixed signs, reopen, backup restoration and UI resolution. Existing transfer write/sync and interruption sweeps now use bracketed source and bank fixtures. Do not treat this description as a passing test run.
 
-## Complete named-account export exception — 2026-10-28
+## Complete named-account export exception
 
-The owner superseded repeated manual destination selection for a complete export whose source accounts have already been explicitly mapped. The [confirmed-mapping resolution](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs--accepted-2026-10-28) automatically links mutual unique, same-date, same-currency reciprocal allocations without creating money or duplicate records. Remaining cases stay visible as navigable blockers. This is narrower than general automatic statement matching. Standalone imports, different-date candidates, ambiguous pairs, and cross-currency conversion are not silently resolved. Existing files use the command without a reimport. The release rules database is version 1.
+The owner superseded repeated manual destination selection for a complete export whose source accounts have already been explicitly mapped. The [confirmed-mapping resolution](qif-account-imports.md#reusing-confirmed-mappings-for-transfer-pairs) automatically links mutual unique, same-date, same-currency reciprocal allocations without creating money or duplicate records. Remaining cases stay visible as navigable blockers. This is narrower than general automatic statement matching. Standalone imports, different-date candidates, ambiguous pairs, and cross-currency conversion are not silently resolved. Existing files use the command without a reimport.

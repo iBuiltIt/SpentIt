@@ -1,8 +1,9 @@
 # Engine split-editing contract
 
-Last updated: 2026-10-25
-
-The second engine milestone adds `SplitEditor`, an in-memory value that wraps a validated `Transaction` and designates one allocation by its current index as the remainder. It is independent of UI and storage. The UI will need a separate temporary text-input state; this API does not accept invalid monetary text or persist keystrokes.
+`SplitEditor` wraps a validated `Transaction` and designates one allocation by
+its current index as the remainder. It works on validated values in memory.
+See [ledger split editing](ledger-editing.md#split-amount-editing) for the
+production editor and persistence workflow.
 
 ## Operations and invariants
 
@@ -15,7 +16,8 @@ The second engine milestone adds `SplitEditor`, an in-memory value that wraps a 
 - `correct_total(total)` preserves entered allocations, adjusts only the remainder, and retains the original imported amount through repeated corrections. The same sign-choice and range rules apply. Manual transactions still have no imported amount. Correcting a total does not create history or perform any storage operation.
 - Every operation returns a new validated value. On errors, the input editor/transaction is unchanged. No invalid intermediate transaction is exposed for saving. Currency differences, bad indices, protected remainder edits, and overflow produce explicit errors.
 
-The mixed-sign choice is a workflow guard, not a ban in the transaction model: `Transaction` still accepts valid mixed-sign allocations directly, including imports. The synthetic sheet experiment now offers an explicit mixed-sign checkbox; production UI/persistence remains unimplemented.
+`Transaction` accepts valid mixed-sign allocations directly, including imports.
+The explicit sign choice belongs to the editing workflow.
 
 ## Example
 
@@ -33,4 +35,4 @@ const auto corrected = split.correct_total(Money(11000, cad));
 // Transport stays 2500, remainder becomes 8500, original remains 10000.
 ```
 
-See [feature 002](../features/002-accounts-money-splits.md), [currency snapshot provenance](../third_party/iso4217/README.md), and [build/test results](building.md). Accounts, history, storage, UI confirmation, historical-currency policy, and conversion remain deferred.
+See [account money](accounts.md) and [currency snapshot provenance](../third_party/iso4217/README.md).

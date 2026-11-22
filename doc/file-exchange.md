@@ -1,8 +1,5 @@
 # File menu exchange
 
-Last updated: 2026-11-10. Owner accepted the design and authorized implementation.
-Implementation/verification status is recorded in [status](status.md).
-
 ## Accepted behavior
 
 File offers QIF Export…, SpentIt Export… and SpentIt Import… while a file is
@@ -130,7 +127,7 @@ Edited or new chained comparisons use `prior_calendar_month`,
 `prior_calendar_year`, and `prior_year_same_period`. The older identifiers
 `last_month`, `last_year`, and `previous_year` retain their original meaning.
 Importing reports that use the new identifiers requires a build that supports
-[Previous comparisons](../features/006-reporting-drill-down.md#previous-comparisons).
+[Previous comparisons](reporting.md#previous-comparisons).
 
 The importer validates the complete file structure before showing choices and the
 selected definitions before saving. Only dependencies
@@ -140,7 +137,7 @@ that would produce duplicate filters refuse instead of silently rewriting filter
 New categories and explicit Income updates, appended rules and appended reports save
 in one database transaction. Exact retries use a compact completion digest; failures
 before commit restore all catalogs, and uncertain acknowledgements are checked before
-success. No database schema bump is needed. The release rules database remains version 1.
+success. The JSON version is independent of the database schema.
 
 QIF is limited to 64 MiB per export; select smaller periods when necessary. The export
 uses `MM/DD/YYYY`, independent of dataset display settings, and includes category

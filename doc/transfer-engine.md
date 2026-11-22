@@ -1,8 +1,7 @@
 # Transfer lifecycle engine and durable workflow
 
-Last updated: 2026-11-18
-
-The bounded same-currency [transfer lifecycle](../features/008-transfer-matching-and-lifecycle.md) connects the pure engine to encrypted storage and the durable import UI. See [release schema](release-schema.md) for the file format and upgrade policy. Application id remains `1397770577`. Merge, retarget, and committed link edits use the existing transfer event and version blobs; point 6 did not change that shape or add a ledger kind. Point 7 added committed rule reapplication on schema 22. [QIF account destinations](qif-transfers.md) and account choices in the category selector use the same transfer commands. Moving a committed row and rewriting source-occurrence links remain open. Feature 008 remains active.
+See [transfer lifecycle](transfers.md) for product behavior and the
+[release schema](release-schema.md) for storage compatibility.
 
 ## Implemented contract
 
@@ -23,7 +22,6 @@ attached or proposed bank match on an affected relationship blocks the edit.
 Storage writes the draft revision and transfer versions in one transaction
 using the editor's existing Undo journal. The verifier replays the date change
 from the recorded draft revisions and checks the resulting link snapshots.
-The release schema remains version 1.
 
 A correction to a New manual ledger posting can also resize or reverse its
 purely generated New counterpart and update its text. A link change that
@@ -36,7 +34,7 @@ changes for atomic Undo, Redo, and verification replay.
 
 The owner accepted provisional matching: a confirmed match from a pending import remains a proposal until that importing account explicitly commits. Discarding that import drops the proposal and retains the original evidence, leaving the existing transfer's financial state and protection unchanged.
 
-The owner clarified that manual and unmatched entries must be committable even when no bank record will ever arrive. Provide explicit acceptance as valid without a bank match, followed by separate account commit. Acceptance must preserve provenance and allow later matching. It does not override exact-money checks: −100 and +95 may each be committed as valid unmatched entries, but linking stays blocked until the difference is explicitly accounted for. See [feature 008](../features/008-transfer-matching-and-lifecycle.md).
+The owner clarified that manual and unmatched entries must be committable even when no bank record will ever arrive. Provide explicit acceptance as valid without a bank match, followed by separate account commit. Acceptance must preserve provenance and allow later matching. It does not override exact-money checks: −100 and +95 may each be committed as valid unmatched entries, but linking stays blocked until the difference is explicitly accounted for. See [transfer lifecycle](transfers.md).
 
 The engine now supports manual-origin generation, explicit unmatched acceptance, provisional evidence proposals, proposal discard and explicit publication. Unmatched manual/generated sides require acceptance before ordinary commit; acceptance alone changes neither state nor money and creates no bank evidence. Whole-entry acceptance applies consistently across sibling allocations. Creation provenance and the original generated date survive later matching, including when the bank posting date differs. Proposal publication requires the exact expected evidence snapshot. Whole-import helpers act only on the selected account and named import and reject reused bank allocations across links.
 
@@ -54,17 +52,17 @@ Pure value transitions alone do not establish durability. Linux and Windows rema
 
 Encrypted immutable transfer events and version snapshots share the existing financial operation ordering. Heads select the current snapshot; authenticated open replays transitions, evidence identities/amounts/dates, local movement effects and retained-source membership. A match proposal leaves committed amounts unchanged. Projection counts the bank allocation once in place of its local generated/manual amount. Committing that import attaches evidence and removes the redundant local projection in the same SQLCipher transaction, without erasing the bank record. An already committed local side therefore produces a zero net balance change when equal bank evidence is published. Different posting dates survive, alongside original generated provenance.
 
-Commit remains explicit per account. Imported origins commit through their batch; manual/generated entries commit individually after unmatched acceptance. Committing either side protects the opposite draft without committing it. Clearing an import retains any protected whole source row and its sibling links, excludes ordinary cleared rows, and permits another import. Retained rows have a separate explicit commit control. Dropping a pending bank import drops its proposal while preserving source evidence and the existing transfer. Complete operations and their history are one transaction; no UI loop owns a financial boundary.
+The storage primitives publish a local side without implicitly accepting its counterpart. The UI submits [file-wide acceptance](import-commit-discussion.md), including any recorded unmatched decisions. Committing either side protects the opposite draft without committing it. Clearing an import retains any protected whole source row and its sibling links, excludes ordinary cleared rows, and permits another import. Retained rows have a separate explicit commit control. Dropping a pending bank import drops its proposal while preserving source evidence and the existing transfer. Complete operations and their history are one transaction; no UI loop owns a financial boundary.
 
-## UI and bounded scope
+## UI entry points
 
-The Transfers dialog exposes manual creation, assignment of a selected valid draft allocation to another account, exact-amount candidate review, explicit match proposals, unmatched acceptance, per-account commit, proposal removal and counterpart navigation. Candidate suggestions are bounded to 100 results and never auto-confirm. Generated dates and protected draft state are visible. Navigation restores each account's selection, filter, ordering and viewport within the current session; counterpart navigation reveals the destination and honors the unsaved-edit guard. Restart still begins in account 1.
+Use the ledger category picker to generate or replace a destination. Review
+and the ledger actions handle matching and linking existing allocations.
+The [Review contract](review-sheet.md) defines candidate presentation and
+the [ledger editing contract](ledger-editing.md) defines preview and
+confirmation for changes to accepted postings.
 
-The ledger context menu and Ctrl+M (Command+M on macOS) invoke Merge for the current multiselection. Opposite accounts can be chosen in two steps when only one account is on screen. The category selector lists other real accounts as transfer destinations, labeled with name, currency, and account identity. Choosing an account stores that identity and creates or replaces a destination through the worker in one command. It does not auto-link an existing independent row. A same-named ordinary category stays a category assignment. The Transfers dialog includes a read-only journal of persisted operations: action, link identity, accounts, amounts, dates, and sequence. Those amounts are formatted before they reach QML.
-
-A Merge that changes committed money opens a review dialog naming both accounts. Cancel writes nothing. Confirm applies the same operation id. A zero-change Merge, including two uncommitted drafts, still applies immediately. An active committed transfer-linked import row can be corrected; the ordinary editor stays closed until Edit committed record is chosen, and local `~transfer-` rows and evidence-only rows stay out of that editor. The committed preview states whether the other side's date and amount stay and whether the link remains or ends. Choosing an account destination still applies immediately. Choosing a category while the committed editor is open updates the editor buffer and waits for the correction preview. New generation, proposal, and commit still reject a cross-currency match. Unequal amounts and ambiguous endpoints refuse. Workspace clearing still does not retire a protected draft. Independently valid imported entries can still commit unmatched; acceptance does not authorize linking unequal amounts. Undo does not un-commit an import and does not create an opposite payment. No new responsiveness or native multi-platform claim is made.
-
-## Atomic category transfer assignment — 2026-10-31
+## Atomic category transfer assignment
 
 The owner's follow-up Go extends the right-click account category operation to
 1–4096 selected transactions. `assign_transfer_batch` validates complete allocation
@@ -83,10 +81,9 @@ reuses that stack, restores prior links and retires purely generated drafts for
 new links; independent imported postings remain. Replay applies the same rule.
 The ledger exposes the group Undo even before loading Review suggestions. No new
 schema or migration is involved. Existing matching policies are unchanged.
-See [category behavior](../features/010-categories-and-selection.md)
-and [verification](status.md).
+See [category behavior](categories.md).
 
-### Reverse category assignment — 2026-10-31
+### Reverse category assignment
 
 The group command also accepts category-release requests (retarget mode 0).
 All caller facts are validated before any sibling advances a source batch's

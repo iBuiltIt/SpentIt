@@ -1,7 +1,4 @@
-# 001 — Documents, storage, and security
-
-Status: **active**
-Last updated: 2026-11-21
+# Documents, storage, and security
 
 Encrypted local files are the application. One running process has one active
 file. There is no application-wide instance limit. Settings remembers the file
@@ -38,12 +35,13 @@ GBP, AUD, and NZD, `YYYY-MM-DD` otherwise) and stays if the user overrides it.
 Imported dates use the source parser, not this display preference. Stored dates
 are canonical Gregorian dates with no timezone conversion.
 
-In Settings → Current file settings, the same selector and example let the
+Open Settings from the lower-left sidebar. In Current file settings, the
+same selector and example let the
 user save a new format for the open file. The choice takes effect immediately
 for date display and entry, including ledger searches and reports. Existing
 calendar dates and original imported evidence are preserved. Saving the
 preference preserves ordinary Undo and clears pending Redo, like other file
-settings. See [release schema](../doc/release-schema.md).
+settings. See [release schema](release-schema.md).
 
 If the destination exists, Cancel leaves it alone and Overwrite replaces it at
 creation time. Overwrite is not a backup. Do not replace a file another process
@@ -70,8 +68,8 @@ recovery journal requires a full check before writable use. Successful close
 expires ordinary Undo and marks the file clean in one transaction. It does not
 accept transactions, hash the file, or copy the database. A failed close rolls
 back and keeps the session. The full check reports errors and does not repair data.
-See [session history](../doc/session-history-baseline.md) and
-[open/close checks](../doc/fast-startup.md).
+See [session history](session-history-baseline.md) and
+[open/close checks](fast-startup.md).
 
 The application does not write a backup. After a successful close, and while
 SpentIt is not running, a copy of the file is another file of the same format.
@@ -80,4 +78,28 @@ while the file is open, or after a crash before a successful close, is not a
 consistent copy. Do not add an in-application backup command.
 
 Private local files lock under the platform
-application-data directory. See [document locking](../doc/document-locking.md).
+application-data directory. See [document locking](document-locking.md).
+
+## Operation progress
+
+The bottom status line is shared by every workspace. A rotating indicator is
+visible during work. It has no extra caption from the indicator itself.
+
+- Graceful quit shows **Closing SpentIt…** after unsaved-edit and acceptance
+  choices are resolved. The main window stays visible. The dialog has no
+  buttons. Escape and outside clicks do not dismiss it. A check failure offers
+  the existing Return and Quit anyway choices. Quit anyway uses the same
+  progress while closing without a new audit.
+- Import mapping shows **Importing transactions…**. Apply Selected and Use
+  Uncategorized show **Applying imported categories…**. Cancel requests
+  cancellation while it is still available. Individual SQLite calls and file
+  synchronization finish before cancellation can take effect. The control becomes
+  **Cancelling…** and **Finishing…**. Completion closes the dialog and shows
+  the next required decision. A saved operation whose refresh failed keeps the
+  existing recovery message.
+- The shared calendar is used for report dates, opening dates in import
+  mapping, opening-balance corrections, and transaction dates. Choosing a date
+  updates the field. It does not submit the enclosing operation. Typing remains
+  available. Date-format settings are not calendar dates.
+- Export dialogs show their own progress and errors and disable Export while
+  work is in progress.
