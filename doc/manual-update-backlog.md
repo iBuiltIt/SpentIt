@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Manual work through MAN-114 is complete. The next entry is MAN-115.
+Manual work through MAN-114 is complete. The next entry is MAN-116.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -13,14 +13,23 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-115. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-116. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [Help contract](help.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
 
 ## Open items
 
-There are no open items.
+### MAN-115 — Ledger search examples and hint
+
+2026-11-22 · [Ledger search contract](search-ledger.md#search-contract)
+
+The ledger search hint now displays `period:may..june` and `source:`. In
+[Search examples](../manual/search-examples.md), use `period:may..june` for
+the named-month example and `source:` followed by a space for original-record
+examples. Mention that `QIF:` still works and that the search covers QIF, OFX,
+QFX, QBO, and ASO. In [Find transactions](../manual/find-transactions.md),
+refresh the ledger picture (`transactions-ledger.png`) to show the updated hint.
 
 ## Recapturing pictures
 

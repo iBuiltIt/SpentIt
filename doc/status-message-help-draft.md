@@ -72,7 +72,7 @@ Type the category as a name, with at most one colon. SpentIt does not store a se
 
 ## Category filters use interpreted transactions, not raw source search
 
-A category search looks at the categories on your transactions. It cannot be combined with a raw QIF: search. Use one or the other.
+Use a category filter to search current assignments. To search original imported records, start with source: followed by a space.
 
 ## Category names cannot contain controls or surrounding whitespace
 

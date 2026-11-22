@@ -2231,7 +2231,7 @@ private slots:
         run(m,"query",{{"filter","regex:\"(\""},{"projected",true}},false);
         QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),2);QCOMPARE(m.state().value("withdrawals").toString(),"-3.00");
         run(m,"query",{{"filter","period:02/03/2026"},{"projected",true}},false);QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),2);
-        run(m,"query",{{"filter","QIF: \"Original memo\""},{"projected",true}});QCOMPARE(m.rowCount(),1);
+        run(m,"query",{{"filter","source: \"Original memo\""},{"projected",true}});QCOMPARE(m.rowCount(),1);
         run(m,"query",{{"filter","QIF:"},{"projected",true}});QCOMPARE(m.rowCount(),3);
         bool requested=false;auto connection=connect(&m,&ImportModel::changed,&m,[&]{if(m.canCancel()&&!requested){requested=true;m.requestCancel();}});
         run(m,"query",{{"filter","coffee"},{"projected",true}},false);disconnect(connection);QVERIFY(requested);QVERIFY(m.state().value("active").toBool());QCOMPARE(m.rowCount(),3);

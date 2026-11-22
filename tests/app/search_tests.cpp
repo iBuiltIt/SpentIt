@@ -29,6 +29,11 @@ int main(){try{
     check(match("QIF: regex:\"^POriginal\"","2026-05-01",{"POriginal\n^\n"},true));
     check(!match("QIF:","2026-05-01",{},false));
     check(match("\"QIF:\"","2026-05-01",{"QIF:"}));
+    check(match("SOURCE: regex:\"^POriginal\" period:may..june","2026-05-01",{"POriginal\n^\n"},true));
+    check(!match("source: regex:\"^POriginal\" period:may..june","2026-07-01",{"POriginal\n^\n"},true));
+    check(!match("source: Original","2026-05-01",{"Original"},false));
+    check(match("\"source:\"","2026-05-01",{"source:"}));
+    for(auto q:{"coffee source:", "source: QIF:", "source: category:Auto", "source: category-exact:Auto"})rejects([&]{LedgerSearch query(q,2026);});
     check(match("\"regex:word\"","2026-05-01",{"regex:word"}));
     {LedgerSearch limited("regex:\"^(a+)+$\"",2026);const auto subject=std::string(10000,'a')+"!";const std::array<std::string_view,1> fields{subject};bool failed=false;try{limited.matches("2026-05-01",fields,false);}catch(const rules::RegexError& e){failed=e.kind()==rules::RegexFailure::resource_limit;}check(failed);}
     LedgerSearch cancel("coffee",2026);bool cancelled=false;try{cancel.matches("2026-05-01",{},false,[]{return true;});}catch(const rules::RegexError& e){cancelled=e.kind()==rules::RegexFailure::cancelled;}check(cancelled);

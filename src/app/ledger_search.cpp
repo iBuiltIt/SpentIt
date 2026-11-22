@@ -102,7 +102,11 @@ LedgerSearch::LedgerSearch(std::string_view query,int year,std::string_view form
     auto tokens=tokenize(query);
     for(std::size_t i=0;i<tokens.size();++i){
         const auto& token=tokens[i];const auto key=lower(token.text);
-        if(key=="qif:" && !token.quoted){if(i!=0)invalid("QIF: must be the first query token");source_=true;continue;}
+        if((key=="source:" || key=="qif:") && !token.quoted){
+            if(i!=0)invalid("Put source: at the start of the search");
+            source_=true;
+            continue;
+        }
         if(key.starts_with("period:") && !token.quoted){if(!first_.empty())invalid("Use one period filter per query");const auto bounds=period(std::string_view(key).substr(7),year,format);first_=bounds.first;last_=bounds.second;continue;}
         if(!token.starts_quoted && (key.starts_with("category:") || key.starts_with("category-exact:"))) {
             if(category_)invalid("Use one category filter per query");
