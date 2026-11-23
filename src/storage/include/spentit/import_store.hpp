@@ -283,7 +283,7 @@ private:
     std::vector<imports::Occurrence> duplicate_candidates(const qif::Record&,std::string_view,bool first_only) const;
     app::Receipt publish_review(std::string_view,std::int64_t,std::string_view);
     void accept_local(std::string_view,const app::TransferRequest&);
-    void prepare_review();
+    void prepare_review(bool clean_open=false);
     struct RetainedRowReads {std::int64_t epoch;std::set<imports::Occurrence> changed;};
     void finish(const std::function<void()>&,bool compatible=false,bool import_state_unchanged=false,const RetainedRowReads* retained=nullptr);
     void require_account_name(std::string_view,std::int64_t) const;
@@ -292,7 +292,7 @@ private:
     bool review_link_category(std::string_view,std::int64_t counterpart_account) const;
     void require_qif_transfers(const imports::Occurrence&,const imports::DraftRow&,const std::set<std::tuple<std::string,std::size_t,std::string>>&) const;
     void resolve_group_transfers(std::string_view,const app::OperationContext&);
-    app::ImportGroup import_group(std::string_view) const;
+    app::ImportGroup import_group(std::string_view,bool stream_sources=false) const;
     void require_group_ready(std::string_view) const;
     std::set<std::string> financial_group_batches(std::int64_t) const;
     const std::vector<qif::CategoryDefinition>& source_categories(std::string_view batch) const;
@@ -336,7 +336,8 @@ private:
     std::vector<app::BatchInfo> batches_for(std::int64_t) const;
     Money committed_for(std::int64_t) const;
     Money balance_for(std::int64_t) const;
-    std::vector<app::LedgerRow> ledger_rows(bool,bool) const;
+    enum class LedgerRead { display, review };
+    std::vector<app::LedgerRow> ledger_rows(bool,bool,LedgerRead=LedgerRead::display) const;
     std::optional<Money> projected_for(std::int64_t) const;
     app::Account account_for_batch(std::string_view) const;
     void require_account(std::string_view) const;
@@ -382,7 +383,8 @@ private:
     // A saved revision change still names the same import when the original
     // date, amount, payee and bank id match and the transaction was not removed.
     bool duplicate_source_still_matches(const app::RowView&,std::int64_t revision) const;
-    app::RowView load_row(const imports::Occurrence&, bool candidates) const;
+    struct GroupedRowReads;
+    app::RowView load_row(const imports::Occurrence&, bool candidates, GroupedRowReads* = nullptr) const;
     static ImportStore connect(const std::filesystem::path&,std::string_view,bool,const app::OperationContext* = nullptr,bool overwrite=false,const std::filesystem::path& cache={},bool activate=true);
 };
 } // namespace spentit::storage

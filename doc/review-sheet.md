@@ -238,6 +238,18 @@ latency using roughly 19,000 transactions, a 15,000-row main account, many retai
 transfers and nine outstanding duplicate questions, not just small functional
 fixtures.
 
+Within a Review build, transfer discovery reuses each posting's opening-balance
+classification and each category and counterpart eligibility result. Candidate
+order, date ranges, amount checks, and the existing per-posting limit still
+govern the suggestions published at open and after edits.
+
+Review reads ledger rows without calculating their display-only source order.
+It reads the newest accepted original dates only when a possible adjacent-day
+comparison needs them. An accepted memo edit can refresh the affected cards
+from the saved row when the current sheet is reusable. Applicable memo
+exclusions, dependent duplicate decisions and changes to transfer or financial
+inputs require a rebuild.
+
 ## User interaction
 
 Review is above Categories as the first sidebar action. Review and Commit open

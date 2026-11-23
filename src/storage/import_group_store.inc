@@ -113,7 +113,7 @@ void ImportStore::resolve_import_transfers(std::string_view id,app::OperationCon
     if(pending){struct Scope{std::string& value;std::string prior;~Scope(){value=std::move(prior);}} scope{impl_->import_action,std::exchange(impl_->import_action,std::string(id))};finish([&]{transaction.commit();});}
     else finish([&]{transaction.commit();},true);
 }
-app::ImportGroup ImportStore::import_group(std::string_view id) const {
+app::ImportGroup ImportStore::import_group(std::string_view id,bool stream_sources) const {
     if(!impl_->verifying && !impl_->preparing_review && (impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
         const auto found=impl_->reviewed_groups.find(std::string(id));
         if(found!=impl_->reviewed_groups.end())return found->second;
@@ -142,10 +142,26 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         const auto batch_id=members.bytes(2);const auto b=batch(impl_->db,batch_id);
         app::ImportGroupAccount member{source_account,account.identity,batch_id,members.integer(3)!=0,static_cast<app::ReportedBalanceChoice>(members.integer(4)),{},{},members.null(7)?account.opening_date:members.bytes(7)};
         const auto source_currency=pinned_currency(impl_->db,batch_id);
+        // Readiness evaluates every retained row against the same batch facts.
+        // Keep the facts local to this scan, including speculative reads during
+        // a command. The ordinary row reader remains the bounded fallback.
+        GroupedRowReads row_reads{b,source_currency,members.bytes(10),{}, {}};
+        const bool use_grouped_reads=impl_->preparing_review && !impl_->verifying;
+        if(use_grouped_reads){
+            if(row_reads.parser==qif::parser_version || row_reads.parser==qif::strict_parser_version)
+                row_reads.categories=source_categories(batch_id);
+            row_reads.removed.emplace();
+            Statement removed(impl_->db,pending_removals_in_batch);
+            removed.text(1,batch_id);
+            while(removed.row()){
+                row_reads.removed->insert(static_cast<std::size_t>(removed.integer(0)));
+                if(row_reads.removed->size()>65536){row_reads.removed.reset();break;}
+            }
+        }
         const auto source_stamp=source_currency.definition_id()+":"+std::to_string(static_cast<int>(result.profile));
         auto cached_source=impl_->reviewed_sources.find(batch_id);
         if(impl_->verifying || cached_source==impl_->reviewed_sources.end() || cached_source->second.first!=source_stamp) {
-            document.parser=members.bytes(10);
+            document.parser=row_reads.parser;
             auto parsed=statements::parse_mapped(bytes,document,source_account,result.profile,source_currency);
             cached_source=impl_->reviewed_sources.insert_or_assign(batch_id,std::pair{source_stamp,std::move(parsed)}).first;
         }
@@ -153,10 +169,26 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
         bool ready=!parsed.diagnostic && b.state!=app::BatchState::captured && b.state!=app::BatchState::discarded;
         const bool active_review=b.state!=app::BatchState::discarded;
         std::vector<Money> amounts;
-        std::set<std::size_t> retained_ordinals,stored_ordinals,accepted_ordinals;
-        for(auto [table,target]:{std::pair{"source_occurrences",&retained_ordinals},std::pair{"records",&stored_ordinals},std::pair{"accepted_transactions",&accepted_ordinals}}){
-            const auto sql="SELECT ordinal FROM "+std::string(table)+" WHERE batch=?";Statement ordinals(impl_->db,sql.c_str());ordinals.text(1,batch_id);
-            while(ordinals.row())target->insert(static_cast<std::size_t>(ordinals.integer(0)));
+        const auto read_ordinals=[&](const char* sql){
+            std::set<std::size_t> values;
+            Statement ordinals(impl_->db,sql);ordinals.text(1,batch_id);
+            while(ordinals.row())values.insert(static_cast<std::size_t>(ordinals.integer(0)));
+            return values;
+        };
+        const auto retained_ordinals=read_ordinals("SELECT ordinal FROM source_occurrences WHERE batch=?");
+        const auto accepted_ordinals=read_ordinals("SELECT ordinal FROM accepted_transactions WHERE batch=?");
+        std::optional<Statement> source_rows;
+        bool source_available=false;
+        std::set<std::size_t> stored_ordinals;
+        // Clean opens reconstruct whole groups in order. A command may only
+        // need a handful of row reads, so it keeps the indexed point lookups.
+        if(stream_sources && use_grouped_reads){
+            source_rows.emplace(impl_->db,stored_source_rows);
+            bind_source_range(*source_rows,batch_id,0,INT64_MAX);
+            source_available=source_rows->row();
+            row_reads.bank_ids.emplace(impl_->db,batch_id);
+        } else {
+            stored_ordinals=read_ordinals("SELECT ordinal FROM records WHERE batch=?");
         }
         for(std::size_t i=0;i<parsed.records.size();++i) {
             if(b.state==app::BatchState::protected_drafts && !retained_member(impl_->db,batch_id,i))continue;
@@ -165,8 +197,15 @@ app::ImportGroup ImportStore::import_group(std::string_view id) const {
             if(record.diagnostic && record.repairable) {
                 ++result.repairs_total;if(record.amount_repair)++result.amount_repairs;
             } else if(record.diagnostic)++result.blocked_records;
-            if(!stored_ordinals.contains(i)){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
-            const auto row=load_row({batch_id,i},false);
+            if(source_rows) {
+                const auto ordinal=integer(i);
+                while(source_available && source_rows->integer(stored_source_ordinal)<ordinal)
+                    source_available=source_rows->row();
+                row_reads.stored_source=source_available && source_rows->integer(stored_source_ordinal)==ordinal?&*source_rows:nullptr;
+            }
+            const bool stored=source_rows?row_reads.stored_source!=nullptr:stored_ordinals.contains(i);
+            if(!stored){if(active_review){++result.unresolved;blocker(account.identity,batch_id,i,"",record.diagnostic?std::string(qif::message(*record.diagnostic)):"Import processing incomplete");}ready=false;continue;}
+            const auto row=load_row({batch_id,i},false,use_grouped_reads?&row_reads:nullptr);
             if(row.matched_generated){if(record.diagnostic && record.repairable)++result.repairs_done;continue;}
             if(row.draft && !accepted_ordinals.contains(i) && b.state!=app::BatchState::committed && b.state!=app::BatchState::discarded)for(const auto& allocation:row.draft->transaction.allocations())if(const auto destination=transfer_name(allocation.category)) {
                 const bool linked=resolved.contains({batch_id,i,allocation.identity});

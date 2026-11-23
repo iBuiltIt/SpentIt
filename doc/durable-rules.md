@@ -39,12 +39,19 @@ receipt and ordinary Undo/Redo policy still apply; the published Review generati
 advances with the saved command.
 
 Save and apply prepares and validates the category lookup once per streamed rule
-pass, retaining cancellation and per-record input bounds. It retains exact
-validated revisions for preview and re-reads changed transactions before writing. Its changed-row set allows unrelated source reads
-and accepted ledger entries to survive the operation. Duplicate dependents and
-any actual source/transfer cleanup invalidate the relevant reuse. Import readiness
-is still refreshed for application. Rollback discards speculative reads, and
-acknowledgement failure cannot publish an unsaved result.
+pass. Bounded lookups reuse import category decisions and account alias results
+within that pass. The matcher evaluates the same scope with its existing
+cancellation and input bounds. Save and apply keeps exact validated revisions
+for preview and re-reads changed transactions before writing. It calculates the
+committed balance once per affected account and checks that each rule write
+preserves it.
+
+When no transactions change, Save and apply retains prepared import readiness
+and Review results and advances their generation after commit. Applications that
+change transactions refresh import readiness. Their changed-row set allows
+unrelated source reads and accepted ledger entries to survive. Duplicate
+dependents and source or transfer cleanup invalidate the relevant reuse. Rollback
+discards speculative reads. A lost acknowledgement follows the durable receipt.
 
 No database schema change or durability setting change is involved. See
 [diagnostics guide](agent-diagnostics-guide.md) for measuring current behavior.

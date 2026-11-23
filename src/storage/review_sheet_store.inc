@@ -232,12 +232,12 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         impl_->selected_account=account.identity;
         const auto account_batches=batches();std::map<std::string,bool> manual_batches;
         for(const auto& b:account_batches)manual_batches.emplace(b.id,b.manual);
-        for(const auto& row:current_ledger()) {
+        for(auto& row:ledger_rows(true,true,LedgerRead::review)) {
             if(row.identity.batch.starts_with("~transfer-"))continue;
-            const auto [entry,inserted]=rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,row.draft,row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
+            const auto [entry,inserted]=rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,std::move(row.draft),row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
             // A saved manual payee supersedes the import suggestion. Undo
             // restores the prior payee ownership along with its text.
-            if(inserted && row.repeated_payee && !row.committed && row.draft.payee_owner!=FieldOwnership::manual)
+            if(inserted && row.repeated_payee && !row.committed && entry->second.draft.payee_owner!=FieldOwnership::manual)
                 result.questions.push_back({"payee:"+review_key(row.identity),app::ReviewKind::notice,account.identity,account.name,std::string(qif::repeated_payee_warning),row.identity.batch,row.identity.ordinal,{entry->second},{},0,app::ReviewIssueAction::inspect});
         }
         for(const auto& b:account_batches)if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){
@@ -320,11 +320,6 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         if(found==comparison_sources.end()){impl_->selected_account=rows.at(id).account;found=comparison_sources.emplace(id,load_row(id,false).source).first;}
         return found->second;
     };
-    std::map<std::int64_t,std::string> newest_accepted;
-    {Statement frontier(impl_->db,R"SQL(SELECT b.account_id,max(o.original_date) FROM accepted_transactions a
-        JOIN batches b ON b.id=a.batch JOIN source_occurrences o ON o.batch=a.batch AND o.ordinal=a.ordinal
-        WHERE o.original_date<>'' GROUP BY b.account_id)SQL");
-    while(frontier.row())newest_accepted.emplace(frontier.integer(0),frontier.bytes(1));}
     auto neighboring=[&](const qif::Record& source,std::int64_t account,const imports::Occurrence& self){
         std::vector<imports::Occurrence> hits;
         if(!source.original_amount || source.date.empty() || source.format=="manual")return hits;
@@ -359,11 +354,20 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     std::map<imports::Occurrence,std::size_t> attached;
     std::vector<imports::Occurrence> free_orphans;
+    std::optional<std::map<std::int64_t,std::string>> newest_accepted;
     for(const auto& id:unresolved){
         if(!rows.contains(id) || same_day_component.contains(id))continue;
         const auto source=source_for(id);
-        const auto frontier=newest_accepted.find(rows.at(id).account);
-        if(frontier==newest_accepted.end() || source.date.empty() || source.date>=frontier->second)continue;
+        if(source.date.empty())continue;
+        if(!newest_accepted){
+            newest_accepted.emplace();
+            Statement frontier(impl_->db,R"SQL(SELECT b.account_id,max(o.original_date) FROM accepted_transactions a
+                JOIN batches b ON b.id=a.batch JOIN source_occurrences o ON o.batch=a.batch AND o.ordinal=a.ordinal
+                WHERE o.original_date<>'' GROUP BY b.account_id)SQL");
+            while(frontier.row())newest_accepted->emplace(frontier.integer(0),frontier.bytes(1));
+        }
+        const auto frontier=newest_accepted->find(rows.at(id).account);
+        if(frontier==newest_accepted->end() || source.date>=frontier->second)continue;
         const auto hits=neighboring(source,rows.at(id).account,id);
         std::set<std::size_t> groups;
         for(const auto& hit:hits){const auto found=same_day_component.find(hit);if(found!=same_day_component.end())groups.insert(found->second);}
@@ -462,11 +466,23 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     for(const auto& [id,row]:rows)if(std::all_of(row.draft.transaction.allocations().begin(),row.draft.transaction.allocations().end(),[&](const auto& allocation){return occupied[id].contains(allocation.identity);}))linked.insert(id);
     using DateIndex=std::pair<std::string,int>;
-    std::map<DateIndex,std::vector<imports::Occurrence>> dated;
-    std::map<imports::Occurrence,int> days;
+    struct DatedRow {
+        const app::ReviewTransaction& row;
+        const std::set<std::string>& occupied_allocations;
+        int day;
+        std::optional<bool> opening_balance;
+
+        bool is_opening_balance() {
+            if(!opening_balance)opening_balance=review_opening_balance(row.draft);
+            return *opening_balance;
+        }
+    };
+    std::map<imports::Occurrence,DatedRow> dated_rows;
+    std::map<DateIndex,std::vector<DatedRow*>> dated;
     for(const auto& [id,row]:rows){
-        const auto day=imports::posting_distance("0001-01-01",row.draft.date);days.emplace(id,day);
-        dated[{row.draft.transaction.effective_total().currency().definition_id(),day}].push_back(id);
+        const auto day=imports::posting_distance("0001-01-01",row.draft.date);
+        auto& indexed=dated_rows.emplace(id,DatedRow{row,occupied[id],day,{}}).first->second;
+        dated[{row.draft.transaction.effective_total().currency().definition_id(),day}].push_back(&indexed);
     }
     // Raw eligibility depends only on current financial fields and resolved aliases.
     // Re-evaluate both the old and new date neighborhoods after a mutation. Saved
@@ -477,7 +493,8 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     std::set<imports::Occurrence> affected;
     const auto neighborhood=[&](const app::ReviewTransaction& row){
         const auto day=imports::posting_distance("0001-01-01",row.draft.date);const auto currency=row.draft.transaction.effective_total().currency().definition_id();
-        for(auto bucket=dated.lower_bound({currency,day-7});bucket!=dated.end() && bucket->first.first==currency && bucket->first.second<=day+7;++bucket)affected.insert(bucket->second.begin(),bucket->second.end());
+        for(auto bucket=dated.lower_bound({currency,day-7});bucket!=dated.end() && bucket->first.first==currency && bucket->first.second<=day+7;++bucket)
+            for(const auto* candidate:bucket->second)affected.insert(candidate->row.identity);
     };
     if(alias_stamp!=impl_->link_alias_stamp){for(const auto& [id,row]:rows){(void)row;affected.insert(id);}}
     else {
@@ -486,16 +503,30 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
     }
     auto edges=impl_->link_edges;
     std::erase_if(edges,[&](const auto& entry){return !rows.contains(entry.first);});
+    // Category labels and account aliases are fixed for this read. Resolve
+    // each label and counterpart once while the current row images are alive.
+    std::map<std::pair<std::string_view,std::int64_t>,bool> category_eligibility;
+    const auto allows_account=[&](std::string_view category,std::int64_t counterpart){
+        if(category.empty())return true;
+        const auto key=std::pair{category,counterpart};
+        const auto found=category_eligibility.find(key);
+        if(found!=category_eligibility.end())return found->second;
+        const bool eligible=review_link_category(category,counterpart);
+        if(category_eligibility.size()<4096)category_eligibility.emplace(key,eligible);
+        return eligible;
+    };
     for(const auto& id:affected){
-        const auto& left=rows.at(id);auto& matches=edges[id];matches.clear();
-        if(review_opening_balance(left.draft))continue;
-        const auto day=days.at(id);const auto currency=left.draft.transaction.effective_total().currency().definition_id();
-        for(auto bucket=dated.lower_bound({currency,day-7});bucket!=dated.end() && bucket->first.first==currency && bucket->first.second<=day+7;++bucket)for(const auto& other:bucket->second){
+        auto& origin=dated_rows.at(id);
+        const auto& left=origin.row;auto& matches=edges[id];matches.clear();
+        if(origin.is_opening_balance())continue;
+        const auto day=origin.day;const auto currency=left.draft.transaction.effective_total().currency().definition_id();
+        for(auto bucket=dated.lower_bound({currency,day-7});bucket!=dated.end() && bucket->first.first==currency && bucket->first.second<=day+7;++bucket)for(auto* candidate:bucket->second){
             if(matches.size()>4096)break;
-            const auto& right=rows.at(other);if(right.account==left.account || review_opening_balance(right.draft))continue;
+            const auto& right=candidate->row;if(right.account==left.account || candidate->is_opening_balance())continue;
             bool eligible=false,difference=false;
             for(const auto& a:left.draft.transaction.allocations())for(const auto& b:right.draft.transaction.allocations()){
-                if(occupied[id].contains(a.identity) || occupied[other].contains(b.identity) || !review_link_category(a.category,right.account) || !review_link_category(b.category,left.account))continue;
+                if(origin.occupied_allocations.contains(a.identity) || candidate->occupied_allocations.contains(b.identity) ||
+                   !allows_account(a.category,right.account) || !allows_account(b.category,left.account))continue;
                 const auto& outgoing=a.amount.units()<0?a:b;const auto target=a.amount.units()<0?right.account:left.account;
                 const auto name=transfer_name(outgoing.category);const auto destination=name?resolve_account_name(*name):std::optional<std::int64_t>{};
                 if(destination && *destination!=target)continue;
@@ -503,10 +534,9 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
                     eligible=true;difference|=a.amount.units()==INT64_MIN || b.amount.units()==INT64_MIN || a.amount.units()!=-b.amount.units();
                 }
             }
-            if(eligible)matches.emplace(other,difference);
+            if(eligible)matches.emplace(right.identity,difference);
         }
     }
-    impl_->link_rows=rows;impl_->link_edges=std::move(edges);impl_->link_alias_stamp=alias_stamp;impl_->link_occupied=occupied;
     std::map<std::string,bool> current_review_answers;
     enum class PairDecision { open, linked, rejected };
     const auto pair_decision=[&](const imports::Occurrence& a,const imports::Occurrence& b){
@@ -551,9 +581,9 @@ ORDER BY answer.sequence DESC
         if(suppressed.contains(id) || linked.contains(id) || duplicate_rows.contains(id) || (left.committed && !repair_origins.contains(id)))continue;
         auto source=left;if(repair_origins.contains(id))source.note=repair_origins.at(id);
         std::vector<app::ReviewTransaction> candidates{source};
-        const auto found=impl_->link_edges.find(id);
-        if(found!=impl_->link_edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 transactions could match. Select the transfer manually in the ledger.",id.batch,id.ordinal,{left},{},0,app::ReviewIssueAction::inspect});continue;}
-        if(found!=impl_->link_edges.end())for(const auto& [other,difference]:found->second){
+        const auto found=edges.find(id);
+        if(found!=edges.end() && found->second.size()>4096){result.questions.push_back({"many-links:"+review_key(id),app::ReviewKind::correction,left.account,left.account_name,"More than 4096 transactions could match. Select the transfer manually in the ledger.",id.batch,id.ordinal,{left},{},0,app::ReviewIssueAction::inspect});continue;}
+        if(found!=edges.end())for(const auto& [other,difference]:found->second){
             const auto target=rows.find(other);if(target==rows.end())continue;const auto& right=target->second;
             if(!rejected_pair.empty() && !rejected_pair.contains(other))continue;
             if(suppressed.contains(other) || linked.contains(other) || duplicate_rows.contains(other))continue;
@@ -562,7 +592,7 @@ ORDER BY answer.sequence DESC
             const auto decision=pair_decision(id,other);
             if(decision!=(rejected_pair.empty()?PairDecision::open:PairDecision::rejected))continue;
             auto candidate=right;
-            candidate.note=(difference?"Explicit transfer destination; outgoing difference at most 4%; ":"Equal opposite allocation amounts; ")+std::to_string(std::abs(days.at(id)-days.at(other)))+" calendar day(s) apart";
+            candidate.note=(difference?"Explicit transfer destination; outgoing difference at most 4%; ":"Equal opposite allocation amounts; ")+std::to_string(std::abs(dated_rows.at(id).day-dated_rows.at(other).day))+" calendar day(s) apart";
             if(repair_origins.contains(other))candidate.note+=". "+repair_origins.at(other);
             std::size_t exact_pairs=0;
             for(const auto& a:left.draft.transaction.allocations())for(const auto& b:right.draft.transaction.allocations()){
@@ -593,7 +623,13 @@ ORDER BY answer.sequence DESC
         }),choices.end());
     }
     std::erase_if(result.questions,[](const auto& q){return q.kind==app::ReviewKind::link && q.rows.size()==1;});
-    if(!rejected_pair.empty())return result;
+    const auto retain_link_inputs=[&]{
+        impl_->link_rows=std::move(rows);
+        impl_->link_edges=std::move(edges);
+        impl_->link_alias_stamp=std::move(alias_stamp);
+        impl_->link_occupied=std::move(occupied);
+    };
+    if(!rejected_pair.empty()){retain_link_inputs();return result;}
     for(const auto& value:relationships){
         const auto& link=value.link;
         if(link.unresolved || link.destination_released || link.destination.state==transfers::State::removed || link.destination.independent_evidence || link.destination.ledger_entry || link.destination.attached_evidence || link.destination.proposed_evidence || link.destination.accepted_unmatched)continue;
@@ -620,6 +656,7 @@ ORDER BY answer.sequence DESC
         result.questions.push_back({key,app::ReviewKind::correction,account.identity,account.name,warning.reason,warning.batch,warning.ordinal,{},{},0,action,0,warning.category_source});
     }
     std::stable_sort(result.questions.begin(),result.questions.end(),[](const auto& a,const auto& b){return a.account<b.account;});
+    retain_link_inputs();
     return result;
 }
 app::ReviewSheet ImportStore::preview_rejected_transfer_merge(const std::vector<imports::Occurrence>& selected) const {
@@ -2234,10 +2271,37 @@ app::ReviewReceipt ImportStore::edit_transaction_impl(std::string_view operation
 #endif
         imports::validate_draft(row.source,canonical,row.source.source_currency && *row.source.source_currency!=canonical.transaction.effective_total().currency());
     }
-    auto without_memo=canonical;without_memo.memo=original.memo;without_memo.memo_owner=original.memo_owner;without_memo.memo_rule=original.memo_rule;
+    // Import readiness uses retained source evidence, inclusion, dates, money
+    // and transfer allocations. The editor can pin a balancing split while
+    // saving text, without changing any of those inputs.
+    auto readiness_image=canonical;
+    readiness_image.payee=original.payee;
+    readiness_image.payee_owner=original.payee_owner;
+    readiness_image.payee_rule=original.payee_rule;
+    readiness_image.memo=original.memo;
+    readiness_image.memo_owner=original.memo_owner;
+    readiness_image.memo_rule=original.memo_rule;
+    readiness_image.remainder_allocation=original.remainder_allocation;
+    readiness_image.manual_split_amounts=original.manual_split_amounts;
     const auto cache_changes=sqlite3_total_changes64(impl_->db);
-    const bool prepared_current=impl_->review_changes==cache_changes;
-    const bool memo_only=!transfer && prepared_current && same_draft(original,without_memo) && (!links || links->changed.empty());
+    const bool keep_readiness=!transfer && impl_->review_changes==cache_changes &&
+        same_draft(original,readiness_image) && (!links || links->changed.empty());
+    const bool keep_sheet=[&]{
+        // An accepted memo edit can change a card's row image. It can also
+        // affect link exclusions or the validity of a dependent duplicate.
+        if(!keep_readiness || !committed || row.decision.disposition!=imports::Disposition::include ||
+           original.payee!=canonical.payee || original.payee_owner!=canonical.payee_owner ||
+           !impl_->sheet_cache || impl_->sheet_changes!=cache_changes)return false;
+        if(original.memo!=canonical.memo) {
+            const auto exclusions=link_exclusions();
+            if(std::any_of(exclusions.begin(),exclusions.end(),[&](const auto& rule){
+                return !rule.removed && rule.field=="memo" && (!rule.account || rule.account==impl_->selected_account);
+            }))return false;
+        }
+        Statement dependent(impl_->db,"SELECT 1 FROM versions WHERE duplicate_batch=? AND duplicate_ordinal=? LIMIT 1");
+        dependent.text(1,id.batch);dependent.integer(2,integer(id.ordinal));
+        return !dependent.row();
+    }();
     Atomic transaction(impl_->db);
     if(same_draft(original,canonical) && (!links || links->changed.empty())){
         ActionChain(impl_->db).no_change(action_token(),operation,request_hash);
@@ -2268,24 +2332,27 @@ app::ReviewReceipt ImportStore::edit_transaction_impl(std::string_view operation
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,generation+1);stack.done();impl_->pending_review_action=operation;
     session_snapshot::completed(impl_->db,operation,"editor",request_hash);
     const RetainedRowReads retained{cache_changes,{id}};
-    finish([&]{transaction.commit();},false,memo_only,(!links || links->changed.empty())?&retained:nullptr);
-    if(memo_only) {
+    finish([&]{transaction.commit();},false,keep_readiness,(!links || links->changed.empty())?&retained:nullptr);
+    if(keep_readiness) {
         const auto now=sqlite3_total_changes64(impl_->db);
-        // A transaction memo changes no money, matching source, inclusion or
-        // transfer readiness. Keep the prepared imports, replacing only the
-        // edited draft image. Review text exclusions are rebuilt independently.
-        if(prepared_current) {
-            if(!committed) {
-                const auto batch=impl_->reviews.find(id.batch);
-                if(batch!=impl_->reviews.end()) {
-                    batch->second.revision=info.revision+1;
-                    const auto row=batch->second.rows.find(id.ordinal);
-                    if(row!=batch->second.rows.end())row->second.row.draft=canonical;
-                }
+        if(!committed) {
+            const auto batch=impl_->reviews.find(id.batch);
+            if(batch!=impl_->reviews.end()) {
+                batch->second.revision=info.revision+1;
+                const auto row=batch->second.rows.find(id.ordinal);
+                if(row!=batch->second.rows.end())row->second.row.draft=canonical;
             }
-            impl_->review_changes=now;
         }
+        impl_->review_changes=now;
         for(auto& [key,epoch]:impl_->read_epochs)if(key!=id && epoch==cache_changes)epoch=now;
+    }
+    if(keep_sheet && sqlite3_get_autocommit(impl_->db) && impl_->sheet_cache && impl_->sheet_changes==cache_changes) {
+        auto& sheet=*impl_->sheet_cache;
+        for(auto& question:sheet.questions)for(auto& item:question.rows)
+            if(item.identity==id)item.draft=canonical;
+        sheet.generation=review_generation(impl_->db);
+        sheet.can_undo=false; // The editor owns the newest Undo action.
+        impl_->sheet_changes=sqlite3_total_changes64(impl_->db);
     }
     if(!links || links->changed.empty())retain_review_ledger_entries(*impl_,cache_changes,{id});
     return {std::string(operation)};

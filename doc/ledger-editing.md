@@ -510,11 +510,13 @@ audit still checks retained history. It does not run on every ordinary open.
 
 ## Edit refresh performance
 
-A memo-only edit still validates and saves the complete transaction and its Undo
-record atomically. When amounts, dates, allocations, other fields and transfer
-relationships are unchanged, it retains prepared import readiness and replaces
-the edited pending draft image after commit. Review text exclusions still use
-the new memo. Other edits retain their full readiness refresh.
+The editor validates and saves the complete transaction and its Undo record
+atomically. Edits to the transaction payee, memo, or balancing split preference
+reuse current import readiness when amounts, dates, allocations, and transfer
+relationships stay the same. After commit, a New transaction's cached draft
+reflects the saved values. Review suggestions and text exclusions still use the
+saved draft and its field ownership. Edits outside these conditions rebuild
+import readiness.
 
 Unchanged accepted entries survive an ordinary edit without relationship changes.
 Current row reads are reusable only at the same connection change count; rollback

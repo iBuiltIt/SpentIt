@@ -84,6 +84,16 @@ void group_snapshot_invalidation() {
     s.save(id,revision(s,id.batch),next);
     check(snapshot().unresolved_transfers==0 && snapshot().accounts[0].reviewed_change==Money(-1200,cad));
 
+    app::LedgerSelectionEdit deletion;
+    deletion.action=app::LedgerSelectionAction::remove;
+    deletion.account=2;
+    deletion.generation=s.ledger_edit_generation();
+    deletion.selected={id};
+    app::OperationContext remove;
+    s.edit_transactions("snapshot-delete",deletion,remove);
+    check(s.row(id).excluded_by_clear && s.current_ledger().empty() && s.acceptance_review().transactions==0);
+    s.undo_transaction_edit("undo-snapshot-delete","snapshot-delete");
+    check(!s.row(id).excluded_by_clear && s.current_ledger().size()==1 && s.acceptance_review().transactions==1);
     check(snapshot().unresolved==0);
     s.commit(id.batch,revision(s,id.batch),"snapshot-commit");check(snapshot().state==app::GroupState::started);
     s.verify();
@@ -352,6 +362,40 @@ void group_categories(){
      s.abort_import_group("archived");check(s.category_catalog().categories.size()==1);}
     // Category-only sources also require an explicit choice, before acceptance.
     {auto s=create(d.path/"only");s.opening(0,"2026-01-01",Money(0,cad));app::OperationContext c;s.prepare_import_group("only","!Type:Cat\nNUnused only\nE\n^\n",qif::DateOrder::dmy,{{0,1,{}}},c);app::OperationContext r;s.resume_import_group("only",r);check(s.category_catalog().categories.empty());choose_import_categories(s,"only");check(s.category_catalog().categories.size()==1);s.commit("only-account-0",revision(s,"only-account-0"),"only-commit");check(s.category_catalog().categories.size()==1);s.verify();}
+    // The same identity can have different valid paths at different revisions.
+    const auto historical_path=d.path/"historical-categories";
+    const std::string batch_id="historical-account-0";
+    {
+        auto s=create(historical_path);s.opening(0,"2026-01-01",Money(0,cad));
+        app::OperationContext capture;
+        s.prepare_import_group("historical",
+            "!Type:Bank\nD2026-01-02\nT-1\nLOriginal\n^\nD2026-01-03\nT-2\nLOriginal\n^\nD2026-01-04\nT-3\nLOriginal\n^\n",
+            qif::DateOrder::dmy,{{0,1,{}}},capture);
+        app::OperationContext resume;s.resume_import_group("historical",resume);
+        choose_import_categories(s,"historical");
+        auto draft=*s.row({batch_id,2}).draft;
+        auto allocations=draft.transaction.allocations();
+        const auto old_binding=allocations.at(0).category_binding;
+        check(old_binding.has_value());
+        s.apply_category_change("rename-historical",{app::CategoryAction::rename,old_binding->identity,"Renamed",{},CategoryKind::leaf},s.category_catalog().revision);
+        allocations[0].category="Renamed";
+        allocations[0].category_binding=CategoryBinding{old_binding->identity,s.category_catalog().revision};
+        allocations[0].category_owner=FieldOwnership::manual;
+        draft.transaction=draft.transaction.corrected(draft.transaction.effective_total(),std::move(allocations));
+        s.save({batch_id,2},revision(s,batch_id),draft);
+        s.certify({});
+    }
+    {
+        auto s=ImportStore::open(historical_path,password);
+        check(s.import_groups().at(0).accounts.at(0).reviewed_change==Money(-600,cad));
+        const auto allocation=[&](std::size_t ordinal){return s.row({batch_id,ordinal}).draft->transaction.allocations().at(0);};
+        const auto prior=allocation(0),repeated=allocation(1),renamed=allocation(2);
+        check(prior.category=="Original" && repeated.category=="Original" && renamed.category=="Renamed");
+        check(prior.category_binding && prior.category_binding==repeated.category_binding && renamed.category_binding);
+        check(prior.category_binding->identity==renamed.category_binding->identity &&
+              prior.category_binding->catalog_revision<renamed.category_binding->catalog_revision);
+        s.verify();
+    }
     no_leaks(d.path);
 }
 void group_transfers(){

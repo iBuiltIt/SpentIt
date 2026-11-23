@@ -31,8 +31,9 @@ app::ReviewReceipt ImportStore::save_and_apply_rules(std::string_view operation,
     std::set<imports::Occurrence> changed;
     {Statement members(impl_->db,"SELECT batch,ordinal FROM review_members WHERE answer=?");members.text(1,operation);while(members.row())changed.insert({members.bytes(0),static_cast<std::size_t>(members.integer(1))});}
     const RetainedRowReads retained{cache_changes,changed};
-    finish([&]{context.seal();transaction.commit();},true,false,&retained);
-    retain_review_ledger_entries(*impl_,cache_changes,changed);
+    finish([&]{context.seal();transaction.commit();},true,changed.empty(),&retained);
+    if(changed.empty())retain_rule_definition_reads(*impl_,cache_changes);
+    else retain_review_ledger_entries(*impl_,cache_changes,changed);
     return {std::string(operation)};
 }
 app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,const app::AccountRuleRequest& request,const app::OperationContext& context) {
@@ -66,18 +67,20 @@ app::ReviewReceipt ImportStore::apply_account_rules(std::string_view operation,c
     Statement receipt(impl_->db,"INSERT INTO review_answers VALUES(?,(SELECT coalesce(max(sequence),0)+1 FROM review_answers),2,'rules-account',?,?)");
     receipt.text(1,operation);receipt.text(2,encoded);receipt.integer(3,request.generation);receipt.done();
     std::set<imports::Occurrence> changed;
+    std::map<std::int64_t,Money> balances;
     std::size_t serial=0;
     for(const auto& record:preview.records){
         context.checkpoint("Applying matching rules");
         changed.insert(record.identity);
         impl_->selected_account=account_for_batch(record.identity.batch).identity;
-        const auto balance=committed_for(impl_->selected_account);
+        auto balance=balances.find(impl_->selected_account);
+        if(balance==balances.end())balance=balances.emplace(impl_->selected_account,committed_for(impl_->selected_account)).first;
         const auto row=load_row(record.identity,false);
         const auto before=transaction_accepted(record.identity)?committed_entry(record.identity).current.draft:*row.draft;
         if(!same_draft(before,record.before))fail(SQLITE_CONSTRAINT,refresh_rules);
         reapply_keep(impl_->db,before,record.proposal.after,request.catalog_revision);
         check_rule_transition(before,record.proposal.after,true,request.replace_manual);
-        write_review_row(operation,std::string(operation)+"-rule-"+std::to_string(++serial),record.identity,record.proposal.after,row.decision,true,false,false,request.ruleset_revision,balance);
+        write_review_row(operation,std::string(operation)+"-rule-"+std::to_string(++serial),record.identity,record.proposal.after,row.decision,true,false,false,request.ruleset_revision,balance->second);
     }
     Statement stack(impl_->db,"INSERT INTO review_stack VALUES(?,?)");stack.text(1,operation);stack.integer(2,request.generation+1);stack.done();impl_->pending_review_action=operation;
     if(!impl_->composing_rule_save)session_snapshot::completed(impl_->db,operation,"account-rules",request_hash);

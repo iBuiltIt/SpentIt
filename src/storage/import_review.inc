@@ -53,13 +53,22 @@ void ImportStore::finish(const std::function<void()>& commit,bool compatible,boo
     commit();
     if(impl_->observer && !impl_->undo_joined)impl_->observer(ImportPhase::after_commit);
 }
-void ImportStore::prepare_review() {
+void ImportStore::prepare_review(bool clean_open) {
     diag::Span span(diag::Code::review_refresh);
     ScopedStatements plans(impl_->db);
+    ScopedStatements::ReadinessBindings bindings;
+    auto& active_bindings=ScopedStatements::current(impl_->db)->readiness_bindings;
     struct Guard {
         Impl& state;std::int64_t account;bool prior;
-        ~Guard(){state.selected_account=account;state.preparing_review=prior;}
-    } guard{*impl_,impl_->selected_account,impl_->preparing_review};
+        ScopedStatements::ReadinessBindings*& active_bindings;
+        ScopedStatements::ReadinessBindings* prior_bindings;
+        ~Guard(){
+            state.selected_account=account;
+            state.preparing_review=prior;
+            active_bindings=prior_bindings;
+        }
+    } guard{*impl_,impl_->selected_account,impl_->preparing_review,active_bindings,
+            std::exchange(active_bindings,&bindings)};
     impl_->preparing_review=true;
     const auto resolved=resolved_transfers(all_transfers());
     std::string names;
@@ -76,7 +85,7 @@ void ImportStore::prepare_review() {
         std::set<imports::Occurrence> matched;
         std::set<std::size_t> retained_rows,removed_rows;
         {Statement kept(impl_->db,"SELECT ordinal FROM retained_transfer_rows WHERE batch=?");kept.text(1,id);while(kept.row())retained_rows.insert(static_cast<std::size_t>(kept.integer(0)));}
-        {Statement removed(impl_->db,"SELECT m.ordinal FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.committed=0 AND a.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=m.answer)");removed.text(1,id);while(removed.row())removed_rows.insert(static_cast<std::size_t>(removed.integer(0)));}
+        {Statement removed(impl_->db,pending_removals_in_batch);removed.text(1,id);while(removed.row())removed_rows.insert(static_cast<std::size_t>(removed.integer(0)));}
         Statement rows(impl_->db,R"SQL(SELECT v.ordinal,v.revision,
           coalesce(h.revision,-1),coalesce(h.active,-1),
           (SELECT count(*) FROM source_associations WHERE ledger_batch=v.batch AND ledger_ordinal=v.ordinal),
@@ -143,7 +152,7 @@ void ImportStore::prepare_review() {
     Statement groups(impl_->db,"SELECT id FROM import_groups WHERE state IN(1,2)");
     while(groups.row()) {
         const auto id=groups.bytes(0);
-        impl_->reviewed_groups.emplace(id,import_group(id));
+        impl_->reviewed_groups.emplace(id,import_group(id,clean_open));
     }
     for(auto i=impl_->reviews.begin();i!=impl_->reviews.end();)if(!pending.contains(i->first))i=impl_->reviews.erase(i);else ++i;
     impl_->review_changes=sqlite3_total_changes64(impl_->db);

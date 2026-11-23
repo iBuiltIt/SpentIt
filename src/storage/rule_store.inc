@@ -83,17 +83,42 @@ PreparedScope pending_scope(const ImportStore& store,std::string_view requested)
     PreparedScope scope;scope.present=true;scope.batch=found->id;scope.batch_revision=found->revision;scope.count=found->count;
     return scope;
 }
+app::RuleInput rule_input(const app::RowView& viewed,const auto& is_account_category){
+    app::RuleInput input{viewed.identity,viewed.source,*viewed.draft,{}};
+    auto add=[&](app::RuleField field,const std::string& allocation,const std::optional<RuleMark>& mark){if(mark)input.provenance.push_back({field,allocation,{mark->identity,mark->version}});};
+    add(app::RuleField::payee,"",input.draft.payee_rule);add(app::RuleField::memo,"",input.draft.memo_rule);
+    for(const auto& allocation:input.draft.transaction.allocations()){
+        add(app::RuleField::allocation_memo,allocation.identity,allocation.memo_rule);
+        add(app::RuleField::allocation_category,allocation.identity,allocation.category_rule);
+        if(is_account_category(allocation.category))input.transfer_allocations.push_back(allocation.identity);
+    }
+    return input;
+}
 std::vector<app::RuleInput> inputs_from(const std::vector<app::RowView>& rows,const app::ImportRepository& repo){
     std::vector<app::RuleInput> inputs;
-    for(const auto& viewed:rows){
-        app::RuleInput input{viewed.identity,viewed.source,*viewed.draft,{}};
-        auto add=[&](app::RuleField field,const std::string& allocation,const std::optional<RuleMark>& mark){if(mark)input.provenance.push_back({field,allocation,{mark->identity,mark->version}});};
-        add(app::RuleField::payee,"",input.draft.payee_rule);add(app::RuleField::memo,"",input.draft.memo_rule);
-        for(const auto& allocation:input.draft.transaction.allocations()){add(app::RuleField::allocation_memo,allocation.identity,allocation.memo_rule);add(app::RuleField::allocation_category,allocation.identity,allocation.category_rule);}
-        for(const auto& allocation:input.draft.transaction.allocations())if(repo.resolve_account_name(allocation.category))input.transfer_allocations.push_back(allocation.identity);
-        inputs.push_back(std::move(input));
-    }
+    inputs.reserve(rows.size());
+    const auto is_account_category=[&](std::string_view category){return repo.resolve_account_name(category).has_value();};
+    for(const auto& row:rows)inputs.push_back(rule_input(row,is_account_category));
     return inputs;
+}
+using RuleLookupCache=std::map<std::string,bool,std::less<>>;
+bool cached_rule_lookup(RuleLookupCache& cache,std::string_view key,const auto& lookup){
+    const auto found=cache.find(key);
+    if(found!=cache.end())return found->second;
+    const bool value=lookup(key);
+    if(cache.size()<4096 && key.size()<=256)cache.emplace(key,value);
+    return value;
+}
+
+void retain_rule_definition_reads(auto& state,sqlite3_int64 before){
+    const auto now=sqlite3_total_changes64(state.db);
+    for(auto& [id,epoch]:state.read_epochs){(void)id;if(epoch==before)epoch=now;}
+    if(state.review_changes==before)state.review_changes=now;
+    if(state.ledger_entry_changes==before)state.ledger_entry_changes=now;
+    if(state.sheet_cache && state.sheet_changes==before) {
+        state.sheet_cache->generation=review_generation(state.db);
+        state.sheet_changes=now;
+    }
 }
 // Bounds for retained output/preparation, separate from the evaluator's
 // per-transaction limits. These are conservative payload budgets, not RSS claims.
@@ -271,16 +296,7 @@ app::RuleSaveReceipt ImportStore::save_rules(std::string_view operation,const ap
     // transfer state or import readiness. The enclosing Save and apply still
     // performs the complete financial finish after applying its transactions.
     finish([&]{if(transaction)transaction->commit();},true,true);
-    {
-        const auto now=sqlite3_total_changes64(impl_->db);
-        for(auto& [id,epoch]:impl_->read_epochs){(void)id;if(epoch==cache_changes)epoch=now;}
-        if(impl_->review_changes==cache_changes)impl_->review_changes=now;
-        if(impl_->ledger_entry_changes==cache_changes)impl_->ledger_entry_changes=now;
-        if(impl_->sheet_cache && impl_->sheet_changes==cache_changes) {
-            impl_->sheet_cache->generation=action_token().epoch;
-            impl_->sheet_changes=now;
-        }
-    }
+    retain_rule_definition_reads(*impl_,cache_changes);
     return *rule_save_outcome(operation);
 }
 std::optional<app::RuleApplyReceipt> ImportStore::rule_apply_outcome(std::string_view operation) const {
@@ -323,15 +339,26 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
         catch(const std::invalid_argument&){fail(SQLITE_CONSTRAINT,rules_drift);}
     }();
     std::map<imports::Occurrence,std::vector<std::string>> protected_allocations;
+    // Neither import category decisions nor account aliases change during the
+    // scan, including when the new rule is staged in the enclosing transaction.
+    RuleLookupCache awaiting_categories,account_categories;
+    const auto is_account_category=[&](std::string_view category){
+        return cached_rule_lookup(account_categories,category,[&](auto name){return resolve_account_name(name).has_value();});
+    };
     std::size_t result_bytes=0;
     auto evaluate=[&](app::RowView viewed) {
         if(viewed.excluded_by_clear)return;
-        Statement awaiting(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");awaiting.text(1,viewed.identity.batch);if(awaiting.row())return;
+        if(cached_rule_lookup(awaiting_categories,viewed.identity.batch,[&](auto batch){
+            Statement awaiting(impl_->db,"SELECT 1 FROM import_category_decisions d JOIN batches b ON b.source_id=d.source WHERE b.id=? AND d.resolved=0");
+            awaiting.text(1,batch);
+            return awaiting.row();
+        }))return;
         context.checkpoint(result.evaluated%256==0?"Finding matching transactions":"");
         // Each record retains the existing allocation, text and regex execution
         // bounds. Cancellation/failure discards the entire locally-built result.
         std::optional<app::RuleProposal> evaluated;
-        auto inputs=inputs_from({viewed},*this);
+        std::vector<app::RuleInput> inputs;
+        inputs.push_back(rule_input(viewed,is_account_category));
         if(const auto found=protected_allocations.find(viewed.identity);found!=protected_allocations.end())inputs.front().transfer_allocations.insert(inputs.front().transfer_allocations.end(),found->second.begin(),found->second.end());
         try {evaluated=app::preview_rules(ruleset,prepared_catalog,inputs,request.replace_manual,[&]{return context.state.load()==app::OperationContext::requested;},true).front();}
         catch(const rules::RegexError& error){if(error.kind()==rules::RegexFailure::cancelled)throw app::OperationCancelled();throw;}
@@ -374,7 +401,7 @@ app::RulePreviewResult ImportStore::preview_pending_rules(const app::RulePreview
             // revision only while every connection write is accounted for. The
             // application re-reads and validates each changed row before writing.
             if(!impl_->verifying && impl_->ledger_entry_changes==sqlite3_total_changes64(impl_->db) && cached!=impl_->ledger_entries.end() && cached->second.revision==accepted.integer(2))viewed.draft=cached->second.draft;
-            else viewed.draft=entry_snapshot(id,accepted.integer(2)).draft;
+            else viewed.draft=entry_snapshot(id,accepted.integer(2),&viewed.source).draft;
             evaluate(std::move(viewed));
         }
         Statement pending(impl_->db,"SELECT v.batch,v.ordinal FROM versions v JOIN batches b ON b.id=v.batch WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND v.decision IN(0,1) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=v.batch AND ordinal=v.ordinal)");

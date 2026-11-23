@@ -374,9 +374,10 @@ void large_preview(std::size_t count,bool accepted=false){
     if(count<=5000)s.verify();
 }
 // Compare warm presentation/preview caches with authoritative reads after both
-// sides of commit, same-connection retries, Undo and definition-only saves.
+// sides of commit and same-connection retries, with and without row changes.
 void cache_consistency(){
-    for(const bool combined:{false,true})for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
+    enum class Save { definition, no_match, match };
+    for(const auto mode:{Save::definition,Save::no_match,Save::match})for(const auto phase:{ImportPhase::before_commit,ImportPhase::after_commit}) {
         Directory dir("spentit-rule-cache-XXXXXX");auto s=create(dir.path/"doc");
         s.ingest("old","D01/08/2026\nT-1\nPRide old\n^\nD02/08/2026\nT-2\nPUnchanged\n^\n",qif::DateOrder::dmy);s.accept_all("accept");
         s.ingest("new","D03/08/2026\nT-3\nPRide new\n^\n",qif::DateOrder::dmy);
@@ -391,19 +392,21 @@ void cache_consistency(){
             check(s.acceptance_review().transactions==1);
         };
         compare();const auto head=s.action_token().head;
-        const auto rule=rule_of("ride","Ride",rules::Scope::transaction,rules::InputField::payee,"^Ride",{"Ruled",{},"rule-default",false});
+        const auto rule=rule_of("ride","Ride",rules::Scope::transaction,rules::InputField::payee,
+            mode==Save::no_match?"(?!)":"^Ride",{"Ruled",{},"rule-default",false});
         const app::RuleSaveRequest definitions{{rule}};
         const app::AccountRuleRequest request{1,s.ledger_edit_generation(),0,s.category_catalog().revision,false,false,"ride",false};
-        const auto save=[&]{app::OperationContext c;if(combined)s.save_and_apply_rules("save",definitions,0,request,c);else s.save_rules("save",definitions,0,c);};
+        const auto save=[&]{app::OperationContext c;if(mode==Save::definition)s.save_rules("save",definitions,0,c);else s.save_and_apply_rules("save",definitions,0,request,c);};
         bool fired=false;s.observer([&](ImportPhase p){if(p==phase){fired=true;throw std::runtime_error("Synthetic acknowledgement failure");}});
         rejects_text(save,"");check(fired);s.observer({});compare();
         const bool durable=phase==ImportPhase::after_commit;
         check(s.rule_image().ordered.empty()!=durable);
-        check(s.committed_entry({"old",0}).current.draft.payee==(durable && combined?"Ruled":"Ride old"));
+        check(s.committed_entry({"old",0}).current.draft.payee==(durable && mode==Save::match?"Ruled":"Ride old"));
         save();compare();
         check(s.rule_image().ordered.size()==1);
-        check(s.committed_entry({"old",0}).current.draft.payee==(combined?"Ruled":"Ride old"));
-        if(combined){s.undo_account_rules("undo");compare();check(s.committed_entry({"old",0}).current.draft.payee=="Ride old");}
+        check(s.committed_entry({"old",0}).current.draft.payee==(mode==Save::match?"Ruled":"Ride old"));
+        check(s.row({"new",0}).draft->payee==(mode==Save::match?"Ruled":"Ride new"));
+        if(mode==Save::match){s.undo_account_rules("undo");compare();check(s.committed_entry({"old",0}).current.draft.payee=="Ride old");}
         else check(s.action_token().head==head);
         s.verify();
     }

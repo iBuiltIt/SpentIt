@@ -320,12 +320,44 @@ void policy_tests(const std::filesystem::path& dir) {
         s.ingest("out","!Type:Bank\nD01/01/2026\nT-10.00\nP"+c.payee+"\nL"+c.outgoing+"\n^\n",qif::DateOrder::dmy);
         if((comparisons(s)>0)!=c.eligible)throw std::runtime_error("Category eligibility case "+std::to_string(n)+" yielded "+std::to_string(comparisons(s))+" comparisons");
         if(n==3){
-            auto edit=*s.row({"out",0}).draft;edit.payee="Opening Balance";
-            s.save({"out",0},0,edit);check(comparisons(s)==0,"Opening payee invalidates cached eligibility");
-            edit=*s.row({"out",0}).draft;edit.payee="Ordinary payment";edit.payee_owner=FieldOwnership::manual;s.save({"out",0},1,edit);check(comparisons(s)==1,"Ordinary payee restores cached eligibility");
-            edit.memo="New memo";edit.memo_owner=FieldOwnership::manual;s.save({"out",0},2,edit);check(comparisons(s)==1,"Memo preserves cached transfer eligibility");
-            edit.date="2026-02-01";s.save({"out",0},3,edit);check(comparisons(s)==0,"Date edit removes old neighborhood edges");
-            edit.date="2026-01-01";s.save({"out",0},4,edit);check(comparisons(s)==1,"Date restoration restores neighborhood edges");
+            const imports::Occurrence payment{"out",0};
+            auto edit=*s.row(payment).draft;
+            edit.payee="Opening Balance";
+            edit.payee_owner=FieldOwnership::manual;
+            edit.remainder_allocation=edit.transaction.allocations().front().identity;
+            s.edit_transaction("opening-payee",payment,0,{},edit);
+            check(comparisons(s)==0,"Opening payee invalidates cached eligibility");
+            check(s.row(payment).draft->remainder_allocation==edit.remainder_allocation,
+                  "Prepared draft exposes the saved balancing split");
+            edit.payee="Ordinary payment";
+            s.edit_transaction("ordinary-payee",payment,1,{},edit);
+            check(comparisons(s)==1,"Ordinary payee restores cached eligibility");
+            const LinkExclusion exclusion{"new-memo","memo","New memo",1,false,false};
+            s.save_link_exclusion("exclude-new-memo",exclusion,s.review_sheet().generation);
+            edit.memo="New memo";
+            edit.memo_owner=FieldOwnership::manual;
+            s.edit_transaction("hide-payment",payment,2,{},edit);
+            check(comparisons(s)==0,"Editor memo refreshes text exclusions");
+            s.undo_transaction_edit("undo-hide-payment","hide-payment");
+            check(comparisons(s)==1,"Undo restores the eligible payment");
+            edit=*s.row(payment).draft;
+            edit.date="2026-02-01";
+            s.edit_transaction("different-date",payment,4,{},edit);
+            check(comparisons(s)==0,"Date edit removes old neighborhood edges");
+            edit.date="2026-01-01";
+            s.edit_transaction("same-date",payment,5,{},edit);
+            check(comparisons(s)==1,"Date restoration restores neighborhood edges");
+            check(s.balance()==Money(-1000,cad) && s.acceptance_review().transactions==2,
+                  "Text and date edits preserve balance and acceptance membership");
+            s.select_account(2);
+            const imports::Occurrence receipt{"in",0};
+            auto incoming=*s.row(receipt).draft;
+            incoming.payee="Starting balance";
+            incoming.payee_owner=FieldOwnership::manual;
+            s.edit_transaction("opening-receipt",receipt,0,{},incoming);
+            check(comparisons(s)==0,"The counterpart's new opening payee removes the suggestion");
+            s.undo_transaction_edit("undo-opening-receipt","opening-receipt");
+            check(comparisons(s)==1,"Undo restores the counterpart in its original date bucket");
             s.verify();
         }
         if(n==0){
@@ -879,6 +911,44 @@ void editor_tests(const std::filesystem::path& dir){
     {auto s=ImportStore::create(dir/"stale-edit","test","Checking",cad,"2026-01-01");s.opening(0,"2026-01-01",Money(0,cad));s.ingest("target",source("Target"),qif::DateOrder::dmy);s.accept_all("accept",false);s.ingest("duplicate",source("Different payee"),qif::DateOrder::dmy);const imports::Occurrence target{"target",0},duplicate{"duplicate",0};s.decide(duplicate,edit_revision(s,duplicate),{imports::Disposition::duplicate,target});auto changed=edit_row(s,target);changed.payee="Corrected target";changed.payee_owner=FieldOwnership::manual;const auto p=s.preview_committed_change({ChangeKind::correct,target,changed,{}});s.apply_committed_change_with_catalog("correct",p.request,p.expected,p.preview_sequence,p.catalog_revision);check(!s.row(duplicate).review_stale,"Matched payee edit keeps the duplicate");auto edit=edit_row(s,duplicate);edit.payee="Edited duplicate";edit.payee_owner=FieldOwnership::manual;s.edit_transaction("edit",duplicate,edit_revision(s,duplicate),{},edit);check(!s.row(duplicate).review_stale,"Editing the duplicate keeps the decision");s.undo_transaction_edit("undo","edit");check(!s.row(duplicate).review_stale,"Undo keeps the duplicate decision");s.verify();}
     // Linked committed edits and their reversals include the counterpart.
     {auto s=ImportStore::create(dir/"linked-edit","test","Checking",cad,"2026-01-01");assignment_setup(s);auto requests=assignment_requests(s);OperationContext context;s.assign_transfer_batch("assign",requests,context);s.accept_all("accept",true);const imports::Occurrence linked{"out",0};auto before=edit_row(s,linked);auto edit=before;auto aa=edit.transaction.allocations();aa[0].amount=Money(-40000,cad);edit.transaction=edit.transaction.corrected(Money(-40000,cad),aa);s.edit_transaction("linked",linked,edit_revision(s,linked),edit_token(s,linked),edit);s.verify();s.undo_transaction_edit("undo-linked","linked");check(edit_row(s,linked).transaction.effective_total()==before.transaction.effective_total(),"Linked edit Undo restores amount");assignment_check(s,true);}
+    {
+        auto s=ImportStore::create(dir/"memo-review","test","Checking",cad,"2026-01-01");
+        s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("payment",source("Payment","-10","Original memo"),qif::DateOrder::dmy);
+        s.accept_all("accept");
+        s.create_account(2,"Savings",cad,"2026-01-01");s.select_account(2);
+        s.opening(0,"2026-01-01",Money(0,cad));
+        s.ingest("deposit",source("Deposit","10"),qif::DateOrder::dmy);s.select_account(1);
+        const imports::Occurrence payment{"payment",0};
+        const auto check_card=[&](std::string_view memo,FieldOwnership owner) {
+            const auto sheet=s.review_sheet();
+            check(sheet.questions.size()==1 && sheet.questions.front().kind==ReviewKind::link,
+                  "The transfer question is available");
+            const auto& rows=sheet.questions.front().rows;
+            const auto found=std::find_if(rows.begin(),rows.end(),[&](const auto& row){return row.identity==payment;});
+            check(found!=rows.end() && found->draft.memo==memo && found->draft.memo_owner==owner,
+                  "The card uses the current accepted memo and ownership");
+            return sheet.generation;
+        };
+        const auto generation=check_card("Original memo",FieldOwnership::source);
+        const auto change=[&](std::string operation,std::string memo) {
+            auto edit=edit_row(s,payment);edit.memo=std::move(memo);edit.memo_owner=FieldOwnership::manual;
+            s.edit_transaction(operation,payment,edit_revision(s,payment),edit_token(s,payment),edit);
+        };
+        change("edit-visible-memo","Edited memo");
+        check(check_card("Edited memo",FieldOwnership::manual)>generation && !s.review_sheet().can_undo,
+              "The refreshed card has a new generation and Undo belongs to the editor");
+        s.undo_transaction_edit("undo-visible-memo","edit-visible-memo");
+        check_card("Original memo",FieldOwnership::source);
+        const LinkExclusion exclusion{"hide-memo","memo","Hidden memo",1,false,false};
+        s.save_link_exclusion("new-exclusion",exclusion,s.review_sheet().generation);
+        check_card("Original memo",FieldOwnership::source);
+        change("edit-excluded-memo","Hidden memo");
+        check(s.review_sheet().questions.empty(),"An accepted memo change applies the saved exclusion");
+        s.undo_transaction_edit("undo-excluded-memo","edit-excluded-memo");
+        check_card("Original memo",FieldOwnership::source);
+        s.verify();
+    }
 }
 void editor_faults(const std::filesystem::path& dir,bool memo_only=false){
     fault_vfs::install();const Currency cad("CAD");

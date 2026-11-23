@@ -20,7 +20,34 @@ CategoryDefinition category_at(sqlite3* db,std::string_view id,std::int64_t cata
     Statement row(db,"SELECT id,name,parent,kind,revision,archived,deleted,income FROM category_versions WHERE id=? AND catalog_revision<=? ORDER BY revision DESC LIMIT 1");row.text(1,id);row.integer(2,catalog);if(!row.row())fail(SQLITE_NOTFOUND,"Category does not exist");return {row.bytes(0),row.bytes(1),row.bytes(2),static_cast<CategoryKind>(row.integer(3)),row.integer(4),row.integer(5)!=0,row.integer(6)!=0,row.integer(7)!=0};
 }
 app::CategoryDisplay category_display(sqlite3* db,std::string_view id,std::int64_t catalog=INT64_MAX){const auto category=category_at(db,id,catalog);if(category.deleted)fail(SQLITE_CONSTRAINT,"Category was deleted");if(category.kind!=CategoryKind::leaf || !category.parent.empty())fail(SQLITE_CORRUPT);return {category.identity,category.name,!category.archived,category.archived};}
-void validate_binding(sqlite3* db,const Allocation& allocation){if(!allocation.category_binding)return;const auto& binding=*allocation.category_binding;if(binding.catalog_revision<1 || binding.catalog_revision>catalog_sequence(db))fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");const auto at=category_display(db,binding.identity,binding.catalog_revision);if(!at.assignable || at.path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");}
+void validate_binding(sqlite3* db,const Allocation& allocation,ScopedStatements::ReadinessBindings* reads=nullptr) {
+    if(!allocation.category_binding)return;
+    const auto& binding=*allocation.category_binding;
+    if(binding.catalog_revision<1)fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");
+    if(reads) {
+        const auto changes=sqlite3_total_changes64(db);
+        if(reads->changes!=changes) {
+            reads->paths.clear();
+            reads->catalog_revision=catalog_sequence(db);
+            reads->changes=changes;
+        }
+    }
+    if(binding.catalog_revision>(reads?reads->catalog_revision:catalog_sequence(db)))
+        fail(SQLITE_CONSTRAINT,"Category assignment revision is invalid");
+    const auto check=[&](std::string_view path) {
+        if(path!=allocation.category)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");
+    };
+    if(reads) {
+        const auto found=reads->paths.find({binding.identity,binding.catalog_revision});
+        if(found!=reads->paths.end()){check(found->second);return;}
+    }
+    const auto at=category_display(db,binding.identity,binding.catalog_revision);
+    if(!at.assignable)fail(SQLITE_CONSTRAINT,"Category assignment does not match its retained definition");
+    check(at.path);
+    // Cached definitions still have to match the category text on every allocation.
+    if(reads && reads->paths.size()<4096 && binding.identity.size()<=256 && at.path.size()<=1024)
+        reads->paths.emplace(std::pair{binding.identity,binding.catalog_revision},at.path);
+}
 bool source_category_equal(const Allocation& allocation,const qif::SourceAllocation* original) {
     if(!original)return false;
     if(!allocation.category_binding)return allocation.category==original->category;
@@ -65,15 +92,23 @@ void save_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revisi
         ++marked;
     }
 }
-void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,imports::DraftRow& row,bool entry){
-    Statement fields(db,entry?"SELECT payee_owner,memo_owner,manual_split_amounts,remainder_allocation FROM entry_fields WHERE batch=? AND ordinal=? AND revision=?":"SELECT payee_owner,memo_owner,manual_split_amounts,remainder_allocation FROM draft_fields WHERE batch=? AND ordinal=? AND revision=?");fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,revision);if(!fields.row())fail(SQLITE_CORRUPT);row.payee_owner=static_cast<FieldOwnership>(fields.integer(0));row.memo_owner=static_cast<FieldOwnership>(fields.integer(1));if(fields.integer(2)!=0 && fields.integer(2)!=1)fail(SQLITE_CORRUPT);row.manual_split_amounts=fields.integer(2)!=0;row.remainder_allocation=fields.bytes(3);if(!row.remainder_allocation.empty())identifier(row.remainder_allocation);
+void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,imports::DraftRow& row,bool entry,const Statement& fields) {
+    row.payee_owner=static_cast<FieldOwnership>(fields.integer(0));row.memo_owner=static_cast<FieldOwnership>(fields.integer(1));if(fields.integer(2)!=0 && fields.integer(2)!=1)fail(SQLITE_CORRUPT);row.manual_split_amounts=fields.integer(2)!=0;row.remainder_allocation=fields.bytes(3);if(!row.remainder_allocation.empty())identifier(row.remainder_allocation);
     if(rules_format(db)){Statement marks(db,entry?"SELECT payee_rule,payee_version,memo_rule,memo_version FROM entry_rule_fields WHERE batch=? AND ordinal=? AND revision=?":"SELECT payee_rule,payee_version,memo_rule,memo_version FROM draft_rule_fields WHERE batch=? AND ordinal=? AND revision=?");marks.text(1,id.batch);marks.integer(2,integer(id.ordinal));marks.integer(3,revision);if(marks.row()){auto take=[&](int id_col,int ver_col)->std::optional<RuleMark>{if(marks.null(id_col)!=marks.null(ver_col))fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");if(marks.null(id_col))return {};return RuleMark{marks.bytes(id_col),marks.integer(ver_col)};};row.payee_rule=take(0,1);row.memo_rule=take(2,3);}accept_rule_owner(row.payee_owner,row.payee_rule,true);accept_rule_owner(row.memo_owner,row.memo_rule,true);}
     else {validate_owner(row.payee_owner);validate_owner(row.memo_owner);}
     auto allocations=row.transaction.allocations();Statement meta(db,entry?"SELECT position,identity,source_ordinal,category_id,catalog_revision,category_owner,memo_owner FROM entry_allocation_meta WHERE batch=? AND ordinal=? AND revision=? ORDER BY position":"SELECT position,identity,source_ordinal,category_id,catalog_revision,category_owner,memo_owner FROM draft_allocation_meta WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");meta.text(1,id.batch);meta.integer(2,integer(id.ordinal));meta.integer(3,revision);std::size_t count=0;
-    while(meta.row()){if(count>=allocations.size() || meta.integer(0)!=integer(count))fail(SQLITE_CORRUPT);auto& allocation=allocations[count++];allocation.identity=meta.bytes(1);if(!meta.null(2))allocation.source_ordinal=static_cast<std::size_t>(meta.integer(2));if(!meta.null(3))allocation.category_binding=CategoryBinding{meta.bytes(3),meta.integer(4)};allocation.category_owner=static_cast<FieldOwnership>(meta.integer(5));allocation.memo_owner=static_cast<FieldOwnership>(meta.integer(6));if(!rules_format(db)){validate_owner(allocation.category_owner);validate_owner(allocation.memo_owner);}validate_binding(db,allocation);}
+    const auto* scope=ScopedStatements::current(db);
+    auto* bindings=scope?scope->readiness_bindings:nullptr;
+    while(meta.row()){if(count>=allocations.size() || meta.integer(0)!=integer(count))fail(SQLITE_CORRUPT);auto& allocation=allocations[count++];allocation.identity=meta.bytes(1);if(!meta.null(2))allocation.source_ordinal=static_cast<std::size_t>(meta.integer(2));if(!meta.null(3))allocation.category_binding=CategoryBinding{meta.bytes(3),meta.integer(4)};allocation.category_owner=static_cast<FieldOwnership>(meta.integer(5));allocation.memo_owner=static_cast<FieldOwnership>(meta.integer(6));if(!rules_format(db)){validate_owner(allocation.category_owner);validate_owner(allocation.memo_owner);}validate_binding(db,allocation,bindings);}
     if(count!=allocations.size())fail(SQLITE_CORRUPT);
     if(rules_format(db)){Statement marks(db,entry?"SELECT position,category_rule,category_version,memo_rule,memo_version FROM entry_rule_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position":"SELECT position,category_rule,category_version,memo_rule,memo_version FROM draft_rule_allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");marks.text(1,id.batch);marks.integer(2,integer(id.ordinal));marks.integer(3,revision);while(marks.row()){const auto position=static_cast<std::size_t>(marks.integer(0));if(position>=allocations.size())fail(SQLITE_CORRUPT);auto& allocation=allocations[position];auto take=[&](int id_col,int ver_col)->std::optional<RuleMark>{if(marks.null(id_col)!=marks.null(ver_col))fail(SQLITE_CORRUPT,"Rule provenance does not match its ownership");if(marks.null(id_col))return {};return RuleMark{marks.bytes(id_col),marks.integer(ver_col)};};allocation.category_rule=take(1,2);allocation.memo_rule=take(3,4);}for(auto& allocation:allocations){accept_rule_owner(allocation.category_owner,allocation.category_rule,true);accept_rule_owner(allocation.memo_owner,allocation.memo_rule,true);}}
     row.transaction=row.transaction.corrected(row.transaction.effective_total(),std::move(allocations));
+}
+void load_metadata(sqlite3* db,const imports::Occurrence& id,std::int64_t revision,imports::DraftRow& row,bool entry) {
+    Statement fields(db,entry?"SELECT payee_owner,memo_owner,manual_split_amounts,remainder_allocation FROM entry_fields WHERE batch=? AND ordinal=? AND revision=?":draft_fields_read);
+    fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,revision);
+    if(!fields.row())fail(SQLITE_CORRUPT);
+    load_metadata(db,id,revision,row,entry,fields);
 }
 }
 bool ImportStore::review_draft_undo(const imports::Occurrence& id,std::int64_t revision,const imports::DraftRow& draft) const {

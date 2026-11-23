@@ -87,6 +87,13 @@ public:
     struct CurrencyTimeline {std::vector<std::pair<std::int64_t,Currency>> values;bool complete=false;};
     struct AuditCurrencies {std::map<std::int64_t,CurrencyTimeline> accounts;std::size_t bytes=0,members=0;};
     AuditCurrencies* audit_currencies=nullptr;
+    struct ReadinessBindings {
+        sqlite3_int64 changes=-1;
+        std::int64_t catalog_revision=0;
+        std::map<std::pair<std::string,std::int64_t>,std::string> paths;
+    };
+    ReadinessBindings* readiness_bindings=nullptr;
+    void discard_readiness_bindings(){if(readiness_bindings)readiness_bindings->changes=-1;}
     std::optional<std::string> format_version;
     std::string alias_signature;
     std::optional<std::vector<app::AccountAlias>> aliases;
@@ -191,7 +198,10 @@ public:
             } else {
                 sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
             }
-            if (auto* scope = ScopedStatements::current(db_)) scope->clear_revisions();
+            if (auto* scope = ScopedStatements::current(db_)) {
+                scope->clear_revisions();
+                scope->discard_readiness_bindings();
+            }
         }
         if (depth_ && held_) { --*depth_; held_ = false; }
     }
@@ -744,6 +754,11 @@ bool pending_removed(sqlite3* db,const imports::Occurrence& id) {
     Statement q(db,"SELECT 1 FROM review_members m JOIN review_answers a ON a.id=m.answer WHERE m.batch=? AND m.ordinal=? AND m.committed=0 AND a.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=m.answer)");
     q.text(1,id.batch);q.integer(2,integer(id.ordinal));return q.row();
 }
+constexpr auto pending_removals_in_batch=R"SQL(
+    SELECT m.ordinal FROM review_answers a CROSS JOIN review_members m ON m.answer=a.id
+    WHERE m.batch=? AND m.committed=0 AND a.question='ledger-delete'
+      AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=a.id)
+)SQL";
 std::pair<std::int64_t,bool> review_target(sqlite3* db,const imports::Occurrence& id) {
     Statement row(db,"SELECT revision,active FROM review_targets WHERE batch=? AND ordinal=?");
     row.text(1,id.batch);row.integer(2,integer(id.ordinal));if(!row.row())fail(SQLITE_CONSTRAINT,"Duplicate target is no longer available");
@@ -776,7 +791,9 @@ void version(sqlite3* db,const imports::Occurrence& id,std::int64_t rev,const im
     }    save_metadata(db,id,rev,row,false,ruleset);
 }
 
+constexpr auto draft_fields_read="SELECT payee_owner,memo_owner,manual_split_amounts,remainder_allocation,definition FROM draft_fields WHERE batch=? AND ordinal=? AND revision=?";
 void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool);
+void load_metadata(sqlite3*,const imports::Occurrence&,std::int64_t,imports::DraftRow&,bool,const Statement&);
 bool categories_format(sqlite3*){return true;}
 bool rules_format(sqlite3*){
 #ifdef SPENTIT_RULES_STORAGE
@@ -801,15 +818,62 @@ constexpr const char* candidate_where =
     "b.account_id=spentit_account() AND b.state IN(0,1,4) AND r.batch<>?4 AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal) AND v.decision=1 "
     "AND (b.parser='manual-v1' OR ?5=1 OR (?3<>'' AND EXISTS(SELECT 1 FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=r.batch AND a.ledger_ordinal=r.ordinal AND o.fitid=?3)) "
     "OR ((r.original=?2 OR r.original IS NULL OR ?2 IS NULL) AND (r.source_date=?1 OR r.source_date='' OR ?1='')))";
+constexpr auto max_associated_ids=4096U;
+void set_associated_primary_id(qif::Record& source) {
+    source.associated_fitid.clear();
+    if(source.fitid.empty() && source.associated_fitids.size()==1)source.associated_fitid=source.associated_fitids.front();
+}
 void load_associated_ids(sqlite3* db,const imports::Occurrence& id,qif::Record& source) {
-    source.associated_fitid.clear();source.associated_fitids.clear();
+    source.associated_fitids.clear();
     Statement fits(db,"SELECT DISTINCT fitid FROM source_associations a JOIN source_occurrences o ON o.batch=a.source_batch AND o.ordinal=a.source_ordinal WHERE a.ledger_batch=? AND a.ledger_ordinal=? AND fitid<>'' ORDER BY fitid");
     fits.text(1,id.batch);fits.integer(2,integer(id.ordinal));
     while(fits.row()) {
-        if(source.associated_fitids.size()==4096)fail(SQLITE_TOOBIG,"More than 4096 retained bank IDs on one transaction");
+        if(source.associated_fitids.size()==max_associated_ids)fail(SQLITE_TOOBIG,"More than 4096 retained bank IDs on one transaction");
         source.associated_fitids.push_back(fits.bytes(0));
     }
-    if(source.fitid.empty() && source.associated_fitids.size()==1)source.associated_fitid=source.associated_fitids.front();
+    set_associated_primary_id(source);
+}
+// Read by ledger identity so bank IDs can come from any associated source.
+// The ledger key orders the scan. Only one occurrence's distinct IDs are held.
+class BatchBankIds {
+public:
+    BatchBankIds(sqlite3* db,std::string_view batch):rows_(db,R"SQL(
+        SELECT a.ledger_ordinal,o.fitid FROM source_associations a
+        CROSS JOIN source_occurrences o ON (o.batch,o.ordinal)=(a.source_batch,a.source_ordinal)
+        WHERE a.ledger_batch=? AND o.fitid<>'' ORDER BY a.ledger_ordinal
+    )SQL"){rows_.text(1,batch);}
+    bool read(std::size_t ordinal,qif::Record& source) {
+        const auto wanted=integer(ordinal);
+        if(previous_ && wanted<=*previous_)return false;
+        if(!previous_)advance();
+        previous_=wanted;
+        while(next_ && *next_<wanted)advance();
+        std::set<std::string> ids;
+        while(next_ && *next_==wanted) {
+            ids.insert(rows_.bytes(1));
+            if(ids.size()>max_associated_ids)fail(SQLITE_TOOBIG,"More than 4096 retained bank IDs on one transaction");
+            advance();
+        }
+        source.associated_fitids.assign(ids.begin(),ids.end());
+        set_associated_primary_id(source);
+        return true;
+    }
+private:
+    void advance(){
+        if(rows_.row())next_=rows_.integer(0);
+        else next_.reset();
+    }
+    Statement rows_;
+    std::optional<std::int64_t> previous_,next_;
+};
+constexpr auto stored_source_rows=R"SQL(
+    SELECT r.raw,r.ordinal,o.format,o.grammar,o.fitid,o.source_account_key,o.time_evidence,o.trntype,o.uninterpreted
+    FROM records r LEFT JOIN source_occurrences o ON (o.batch,o.ordinal)=(r.batch,r.ordinal)
+    WHERE r.batch=? AND r.ordinal BETWEEN ? AND ? ORDER BY r.ordinal
+)SQL";
+constexpr int stored_source_ordinal=1;
+void bind_source_range(Statement& rows,std::string_view batch,std::int64_t first,std::int64_t last){
+    rows.text(1,batch);rows.integer(2,first);rows.integer(3,last);
 }
 void write_occurrence(sqlite3* db,std::string_view batch,std::size_t ordinal,const qif::Record& record) {
     if(!record.source_currency) fail(SQLITE_CORRUPT,"Source currency is missing");
@@ -822,12 +886,10 @@ void write_occurrence(sqlite3* db,std::string_view batch,std::size_t ordinal,con
     if(record.diagnostic) row.integer(18,static_cast<int>(record.diagnostic->issue));
     row.integer(19,record.diagnostic && !record.repairable?1:0);row.done();
 }
-void overlay_occurrence(sqlite3* db,const imports::Occurrence& id,qif::Record& source) {
-    Statement row(db,"SELECT format,grammar,fitid,source_account_key,time_evidence,trntype,uninterpreted FROM source_occurrences WHERE batch=? AND ordinal=?");
-    row.text(1,id.batch);row.integer(2,integer(id.ordinal));
-    if(!row.row() || row.bytes(2)!=source.fitid) fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
-    source.format=row.bytes(0);source.grammar=row.bytes(1);source.fitid=row.bytes(2);source.source_account_key=row.bytes(3);
-    source.time_evidence=row.bytes(4);source.trntype=row.bytes(5);source.uninterpreted=row.bytes(6);
+void overlay_occurrence(const Statement& row,qif::Record& source) {
+    if(row.null(2) || row.bytes(4)!=source.fitid)fail(SQLITE_CORRUPT,"Source occurrence does not match its record");
+    source.format=row.bytes(2);source.grammar=row.bytes(3);source.source_account_key=row.bytes(5);
+    source.time_evidence=row.bytes(6);source.trntype=row.bytes(7);source.uninterpreted=row.bytes(8);
 }
 statements::Index indexed_source(sqlite3* db,std::string_view source_id,std::string_view bytes,const std::function<void()>& checkpoint={}) {
     Statement header(db,"SELECT format FROM source_headers WHERE source_id=?");header.text(1,source_id);
@@ -1343,7 +1405,10 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
 #endif
     sqlite3_rollback_hook(db,[](void* pointer){
         auto& state=*static_cast<Impl*>(pointer);
-        if(auto* cache=ScopedStatements::current(state.db))cache->discard_accounts();
+        if(auto* cache=ScopedStatements::current(state.db)){
+            cache->discard_accounts();
+            cache->discard_readiness_bindings();
+        }
         state.pending_review_action.clear();
         state.pending_action.reset();state.pending_action_digest.clear();
         state.reviews.clear();state.reviewed_groups.clear();state.reviewed_sources.clear();state.review_changes=-1;
@@ -1381,7 +1446,7 @@ CREATE TABLE report_periods(report TEXT NOT NULL REFERENCES reports(id) ON DELET
         }
         if(context)context->checkpoint("Removing unfinished import");
         store.impl_->startup_cleanup=store.cleanup_incomplete_imports();
-        store.prepare_review();}
+        store.prepare_review(!recovery && !upgrade);}
     return store;
 }
 ImportStore ImportStore::create(const std::filesystem::path& path,std::string_view password,std::string_view name,const Currency& currency,std::string_view today,bool overwrite,const app::DatasetOptions& options) {
@@ -1722,12 +1787,29 @@ bool ImportStore::duplicate_source_still_matches(const app::RowView& row,std::in
     const auto context=confirmed_duplicate(impl_->db,row.identity,target,revision)?imports::MatchContext::confirmed_decision:imports::MatchContext::suggestion;
     return imports::candidate_basis(row.source,*compared,context).has_value();
 }
-app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates) const {
+struct ImportStore::GroupedRowReads {
+    const app::BatchInfo& batch;
+    const Currency& currency;
+    std::string parser;
+    std::vector<qif::CategoryDefinition> categories;
+    std::optional<std::set<std::size_t>> removed;
+    std::optional<BatchBankIds> bank_ids{};
+    const Statement* stored_source=nullptr;
+};
+app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates,GroupedRowReads* grouped) const {
     if(!candidates && impl_->verification_rows) {
         const auto found=impl_->verification_rows->rows.find(id);
         if(found!=impl_->verification_rows->rows.end())return found->second;
     }
     require_account(id.batch);
+    const auto is_removed=[&]{
+        if(grouped && grouped->removed)return grouped->removed->contains(id.ordinal);
+        return pending_removed(impl_->db,id);
+    };
+    const auto load_bank_ids=[&](qif::Record& source){
+        if(!grouped || !grouped->bank_ids || !grouped->bank_ids->read(id.ordinal,source))
+            load_associated_ids(impl_->db,id,source);
+    };
     if(!candidates && !impl_->verifying && (impl_->preparing_review || impl_->publishing_review || impl_->review_changes==sqlite3_total_changes64(impl_->db))) {
         const auto batch=impl_->reviews.find(id.batch);
         if(batch!=impl_->reviews.end()) {
@@ -1743,18 +1825,21 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(known!=impl_->read_epochs.end() && known->second==epoch && cached!=impl_->read_rows.rows.end())return cached->second;
     }
     auto* rows=impl_->verification_rows;
-    std::string stamp;
     if(!candidates) {
-        Statement state(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");
-        state.text(1,id.batch);state.integer(2,integer(id.ordinal));
-        if(state.row() && !state.null(0))stamp=std::to_string(state.integer(0));
-        const auto old=impl_->read_stamps.find(id);
-        const auto cached=impl_->read_rows.rows.find(id);
-        if(!rows && cached!=impl_->read_rows.rows.end() && (old==impl_->read_stamps.end() || old->second!=stamp)) {
-            impl_->read_rows.bytes-=VerificationRows::row_size(cached->second);
-            impl_->read_rows.rows.erase(cached);
+        if(!rows) {
+            rows=&impl_->read_rows;
+            const auto cached=rows->rows.find(id);
+            if(cached!=rows->rows.end()) {
+                Statement state(impl_->db,"SELECT max(revision) FROM versions WHERE batch=? AND ordinal=?");
+                state.text(1,id.batch);state.integer(2,integer(id.ordinal));
+                const auto old=impl_->read_stamps.find(id);
+                const bool current=state.row() && !state.null(0) && old!=impl_->read_stamps.end() && old->second==std::to_string(state.integer(0));
+                if(!current){
+                    rows->bytes-=VerificationRows::row_size(cached->second);
+                    rows->rows.erase(cached);
+                }
+            }
         }
-        if(!rows)rows=&impl_->read_rows;
     }
     if(!candidates && rows) {
         const auto found=rows->rows.find(id);
@@ -1764,8 +1849,8 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
             const auto prior_size=VerificationRows::row_size(cached);
             bool reread=false;
             if(!impl_->verification_rows) {
-                cached.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || pending_removed(impl_->db,id);
-                load_associated_ids(impl_->db,id,cached.source);
+                cached.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || is_removed();
+                load_bank_ids(cached.source);
                 if(cached.decision.duplicate_of && review_merged_source(impl_->db,id)){cached.decision.duplicate_of=review_association(impl_->db,id);cached.review_stale=false;}
                 else if(cached.decision.duplicate_of) {
                     const auto& target=*cached.decision.duplicate_of;
@@ -1783,9 +1868,17 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
             else {rows->bytes=rows->bytes-prior_size+VerificationRows::row_size(cached);if(!impl_->verifying && !impl_->verification_rows)impl_->read_epochs[id]=epoch;return cached;}
         }
     }
-    const auto b=batch(impl_->db,id.batch); const auto source_currency=pinned_currency(impl_->db,id.batch);
-    Statement src(impl_->db,"SELECT raw FROM records WHERE batch=? AND ordinal=?"); src.text(1,id.batch); src.integer(2,integer(id.ordinal));
-    if(!src.row()) {
+    const auto b=grouped?grouped->batch:batch(impl_->db,id.batch);
+    const auto source_currency=grouped?grouped->currency:pinned_currency(impl_->db,id.batch);
+    std::optional<Statement> exact_source;
+    const Statement* src=grouped?grouped->stored_source:nullptr;
+    if(!src) {
+        exact_source.emplace(impl_->db,stored_source_rows);
+        const auto ordinal=integer(id.ordinal);
+        bind_source_range(*exact_source,id.batch,ordinal,ordinal);
+        if(exact_source->row())src=&*exact_source;
+    }
+    if(!src) {
         auto parsed=parsed_source(id.batch);
         if(id.ordinal>=parsed.records.size()) fail(SQLITE_NOTFOUND);
         auto source=std::move(parsed.records[id.ordinal]);
@@ -1793,22 +1886,29 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         if(b.state!=app::BatchState::captured && !present.row()){source.repairable=false;return {id,std::move(source),{},{imports::Disposition::unresolved,{}},{},false,true};}
         return {id,std::move(source),{}, {imports::Disposition::unresolved,{}},{}};
     }
-    Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
-    const auto version=parser.bytes(0);
-    const auto parsed=version=="manual-v1" ? manual_codec::parse(src.bytes(0),source_currency) :
+    const auto version=[&]{
+        if(grouped)return grouped->parser;
+        Statement parser(impl_->db,"SELECT parser FROM batches WHERE id=?");
+        parser.text(1,id.batch);if(!parser.row())fail(SQLITE_CORRUPT);
+        return parser.bytes(0);
+    }();
+    auto parsed=version=="manual-v1" ? manual_codec::parse(src->bytes(0),source_currency) :
         version==qif::parser_version || version==qif::strict_parser_version
-        ? qif::parse(src.bytes(0),b.profile,source_currency,{},source_categories(id.batch),version==qif::parser_version)
-        : statements::parse_occurrence(src.bytes(0),version,source_currency,b.profile);
+        ? qif::parse(src->bytes(0),b.profile,source_currency,{},grouped?grouped->categories:source_categories(id.batch),version==qif::parser_version)
+        : statements::parse_occurrence(src->bytes(0),version,source_currency,b.profile);
     if(parsed.diagnostic || parsed.records.size()!=1 || (!parsed.records[0].transaction && !parsed.records[0].repairable)) fail(SQLITE_CORRUPT);
-    auto source=parsed.records[0]; overlay_occurrence(impl_->db,id,source);
-    load_associated_ids(impl_->db,id,source);
+    auto source=std::move(parsed.records.front());overlay_occurrence(*src,source);
+    load_bank_ids(source);
     app::RowView out{id,std::move(source),{}, {},{}};out.matched_generated=generated_match(impl_->db,id);
-    out.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || pending_removed(impl_->db,id);
+    out.excluded_by_clear= !retained_member(impl_->db,id.batch,id.ordinal) || is_removed();
     Statement v(impl_->db,"SELECT revision,date,payee,memo,total,decision,duplicate_batch,duplicate_ordinal FROM versions WHERE batch=? AND ordinal=? ORDER BY revision DESC LIMIT 1");
     v.text(1,id.batch); v.integer(2,integer(id.ordinal)); if(!v.row()) fail(SQLITE_CORRUPT);
     Statement allocations(impl_->db,"SELECT position,category,memo,units FROM allocations WHERE batch=? AND ordinal=? AND revision=? ORDER BY position");
     allocations.text(1,id.batch); allocations.integer(2,integer(id.ordinal)); allocations.integer(3,v.integer(0));
-    const auto draft_currency=version_currency(impl_->db,id.batch,integer(id.ordinal),v.integer(0));
+    Statement fields(impl_->db,draft_fields_read);
+    fields.text(1,id.batch);fields.integer(2,integer(id.ordinal));fields.integer(3,v.integer(0));
+    if(!fields.row())fail(SQLITE_CORRUPT,"Snapshot currency is missing");
+    const auto draft_currency=Currency::from_definition(fields.bytes(4));
     const bool reassigned=out.source.source_currency && *out.source.source_currency!=draft_currency;
     std::vector<Allocation> aa;
     while(allocations.row()) {
@@ -1816,13 +1916,14 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         aa.push_back({allocations.bytes(1),allocations.bytes(2),Money(allocations.integer(3),draft_currency)});
     }
     out.draft=imports::DraftRow{v.bytes(1),v.bytes(2),v.bytes(3),Transaction::repaired_import(out.source.original_amount,Money(v.integer(4),draft_currency),std::move(aa),reassigned)};
-    load_metadata(impl_->db,id,v.integer(0),*out.draft,false);
+    load_metadata(impl_->db,id,v.integer(0),*out.draft,false,fields);
     imports::validate_draft(out.source,*out.draft,reassigned);
     if(impl_->observer)impl_->observer(ImportPhase::validate_row);
     out.decision.disposition=static_cast<imports::Disposition>(v.integer(5));
-    if(out.decision.disposition==imports::Disposition::duplicate) out.decision.duplicate_of=imports::Occurrence{v.bytes(6),static_cast<std::size_t>(v.integer(7))};
-    const bool merged=review_merged_source(impl_->db,id);
-    if(merged && out.decision.disposition==imports::Disposition::duplicate)out.decision.duplicate_of=review_association(impl_->db,id);
+    const bool duplicate=out.decision.disposition==imports::Disposition::duplicate;
+    const bool merged=duplicate && review_merged_source(impl_->db,id);
+    if(merged)out.decision.duplicate_of=review_association(impl_->db,id);
+    else if(duplicate)out.decision.duplicate_of=imports::Occurrence{v.bytes(6),static_cast<std::size_t>(v.integer(7))};
     if(out.decision.duplicate_of && !merged) {
         Statement target(impl_->db,"SELECT s.target_revision,s.target_active,h.revision,h.active FROM review_stamps s JOIN review_targets h ON h.batch=? AND h.ordinal=? WHERE s.batch=? AND s.ordinal=? AND s.revision=?");
         target.text(1,out.decision.duplicate_of->batch);target.integer(2,integer(out.decision.duplicate_of->ordinal));target.text(3,id.batch);target.integer(4,integer(id.ordinal));target.integer(5,v.integer(0));
@@ -1830,7 +1931,16 @@ app::RowView ImportStore::load_row(const imports::Occurrence& id,bool candidates
         const bool revision_changed=target.integer(0)!=target.integer(2),activity_changed=target.integer(1)!=target.integer(3);
         out.review_stale=activity_changed || (revision_changed && !duplicate_source_still_matches(out,v.integer(0)));
     }
-    if (!candidates) {if(rows){rows->remember(out);if(rows->rows.contains(id)){impl_->read_stamps[id]=std::move(stamp);if(!impl_->verifying && !impl_->verification_rows)impl_->read_epochs[id]=epoch;}}return out;}
+    if(!candidates){
+        if(rows){
+            rows->remember(out);
+            if(!impl_->verification_rows && rows->rows.contains(id)){
+                impl_->read_stamps[id]=std::to_string(v.integer(0));
+                if(!impl_->verifying)impl_->read_epochs[id]=epoch;
+            }
+        }
+        return out;
+    }
     out.candidates=duplicate_candidates(out.source,id.batch,false);
     if(!impl_->verifying && impl_->review_changes==sqlite3_total_changes64(impl_->db)) {
         const auto reviewed=impl_->reviews.find(id.batch);
@@ -2361,7 +2471,7 @@ app::LedgerSourceOrder ledger_source_order(sqlite3* db,std::string_view batch_id
     return decreased?Order::newest_first:Order::file_order;
 }
 }
-std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current) const {
+std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current,LedgerRead read) const {
     ScopedStatements read_plans(impl_->db);
         if(projected && !current && !projected_balance())fail(SQLITE_CONSTRAINT,"Projection is incomplete; review the pending import");
         std::vector<app::LedgerRow> result;
@@ -2385,6 +2495,7 @@ std::vector<app::LedgerRow> ImportStore::ledger_rows(bool projected,bool current
         if(projected){Statement pending(impl_->db,"SELECT r.batch,r.ordinal,r.sequence FROM records r JOIN batches b ON b.id=r.batch JOIN versions v ON v.batch=r.batch AND v.ordinal=r.ordinal WHERE b.account_id=spentit_account() AND (b.state IN(0,4) OR (b.state=1 AND EXISTS(SELECT 1 FROM restored_import_drafts restored WHERE (restored.batch,restored.ordinal)=(v.batch,v.ordinal)))) AND (b.state!=4 OR EXISTS(SELECT 1 FROM retained_transfer_rows keep WHERE keep.batch=v.batch AND keep.ordinal=v.ordinal)) AND NOT EXISTS(SELECT 1 FROM accepted_transactions t WHERE t.batch=v.batch AND t.ordinal=v.ordinal) AND NOT EXISTS(SELECT 1 FROM generated_source_matches g WHERE g.batch=v.batch AND g.ordinal=v.ordinal) AND (v.decision=1 OR (?1=1 AND v.decision=0)) AND (v.batch,v.ordinal) NOT IN(SELECT deleted.batch,deleted.ordinal FROM review_members deleted JOIN review_answers deletion ON deletion.id=deleted.answer WHERE deleted.committed=0 AND deletion.question='ledger-delete' AND NOT EXISTS(SELECT 1 FROM review_undos u WHERE u.answer=deleted.answer)) AND v.revision=(SELECT max(revision) FROM versions WHERE batch=r.batch AND ordinal=r.ordinal)");pending.integer(1,current?1:0);while(pending.row()){imports::Occurrence identity{pending.bytes(0),static_cast<std::size_t>(pending.integer(1))};auto row=load_row(identity,false);result.push_back({identity,pending.integer(2),std::move(*row.draft),false,app::LedgerSourceOrder::none,row.source.format=="qif" && row.source.uninterpreted==qif::repeated_payee_evidence});}}
         const auto local=local_transfer_ledger(projected);result.insert(result.end(),local.begin(),local.end());
         std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return std::tie(a.draft.date,a.sequence)<std::tie(b.draft.date,b.sequence);});
+        if(read==LedgerRead::review)return result;
         std::map<std::string_view,app::LedgerSourceOrder> orders;
         for(auto day=result.begin();day!=result.end();) {
             const auto next=std::find_if(day+1,result.end(),[&](const auto& row){return row.draft.date!=day->draft.date;});
@@ -2483,7 +2594,13 @@ void ImportStore::verify(const app::OperationContext* context) const {
     (void)amount_format();
     (void)report_catalog();
     ScopedStatements read_plans(impl_->db,context);
-    struct VerificationGuard { bool& value; bool prior; ~VerificationGuard(){value=prior;} } guard{impl_->verifying,impl_->verifying};
+    auto& active_bindings=ScopedStatements::current(impl_->db)->readiness_bindings;
+    struct VerificationGuard {
+        bool& value;bool prior;
+        ScopedStatements::ReadinessBindings*& active_bindings;
+        ScopedStatements::ReadinessBindings* prior_bindings;
+        ~VerificationGuard(){value=prior;active_bindings=prior_bindings;}
+    } guard{impl_->verifying,impl_->verifying,active_bindings,std::exchange(active_bindings,nullptr)};
     impl_->verifying=true;
     verify_action_restorations();
     impl_->read_rows=VerificationRows{};impl_->read_rows_changes=-1;impl_->read_stamps.clear();impl_->read_epochs.clear();

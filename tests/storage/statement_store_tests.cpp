@@ -312,7 +312,45 @@ void common_matching() {
 
 }
 void aso_review();
+void grouped_bank_ids_on_clean_open() {
+    Directory d;
+    const auto path=d.path/"grouped-bank-ids";
+    const std::string batch="grouped-account-0";
+    {
+        auto s=create(path);
+        s.opening(0,"2026-01-01",Money(0,cad));
+        capture(s,"grouped",
+            "!Type:Bank\nD2026-02-01\nT-12.34\nPCoffee\n^\nD2026-02-02\nT-2\nPNo bank match\n^\nD2026-02-03\nT-22.62\nPCoffee\n^\n",
+            {{0,1,{}}},"qif");
+        materialize(s,"grouped");
+        s.commit(batch,revision(s,batch),"publish-grouped");
+        const auto match=[&](std::string_view id,std::string_view bytes,std::size_t count){
+            capture(s,std::string(id),bytes,{{0,1,{}}});
+            materialize(s,id);
+            const auto incoming=std::string(id)+"-account-0";
+            const auto receipt=s.commit(incoming,revision(s,incoming),"publish-"+std::string(id));
+            check(receipt.included==0 && receipt.excluded==count);
+        };
+        match("download",sgml(bank(txn("ID-Z","20260201","-12.34")+txn("ID-A","20260203","-22.62"))),2);
+        match("repeat-bank-id",sgml(bank(txn("ID-Z","20260201120500","-12.34"))),1);
+        s.certify({});
+    }
+    {
+        auto s=ImportStore::open(path,password);
+        const auto first=s.committed_entry({batch,0}).source;
+        const auto middle=s.committed_entry({batch,1}).source;
+        const auto last=s.committed_entry({batch,2}).source;
+        check(first.fitid.empty() && first.associated_fitid=="ID-Z" &&
+              first.associated_fitids==std::vector<std::string>{"ID-Z"});
+        check(middle.associated_fitid.empty() && middle.associated_fitids.empty());
+        check(last.fitid.empty() && last.associated_fitid=="ID-A" &&
+              last.associated_fitids==std::vector<std::string>{"ID-A"});
+        check(s.committed_balance()==Money(-3696,cad));
+        s.verify();
+    }
+}
 void review() {
+    grouped_bank_ids_on_clean_open();
     const auto qif = std::string("D01/02/2026\nT-12.34\nPCoffee\n^\n");
     const auto overlap = sgml(bank(txn("FIT-1", "20260201120000.000[-5:EST]", "-12.34")));
     Directory d;

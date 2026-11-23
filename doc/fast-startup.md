@@ -19,6 +19,22 @@ The obsolete cache publication, file-fingerprint functions and build-generated
 verifier ID have been removed; recovery-sidecar detection remains. Legacy cache
 path arguments are ignored by storage opening/finalization.
 
+Grouped import readiness reads the pinned currency, parser profile, source
+categories and active draft deletion marks once per batch. The deletion lookup
+has a bounded in-memory cache and falls back to individual reads above the
+limit. Each row still validates its retained source and draft. Full verification
+uses its own reads.
+
+Readiness reuses validated category definitions by identity and catalog revision
+within one preparation pass. It checks each allocation against its retained
+definition, even when several rows reference the same category. Draft row
+reconstruction reads the saved currency and field ownership from the same row.
+
+On a clean open, grouped readiness reads stored slices, occurrence metadata,
+and linked bank IDs in batch order. It still parses every reconstructed slice
+and checks the occurrence's bank ID against it. The bank-ID scan follows ledger
+links across source batches and keeps the per-row uniqueness and size checks.
+
 Successful close prunes obsolete ordinary snapshots and their operation records,
 expires session Undo, advances the baseline cutoffs and marks the file clean in
 one SQL transaction. It does not accept pending transactions, run verification,
