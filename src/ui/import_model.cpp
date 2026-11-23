@@ -1135,7 +1135,6 @@ struct ImportModel::Worker {
             {"source",evidencePreview(raw)},{"manual",row.source.format=="manual"},{"hasImportedOriginal",original.has_value()}};
         if(source.diagnostic) selected["diagnostic"]=text(qif::message(*source.diagnostic));
         const bool repeatedPayee=source.format=="qif" && source.uninterpreted==qif::repeated_payee_evidence;
-        if(repeatedPayee)selected["importWarning"]=text(qif::repeated_payee_warning);
         QStringList classes;
         if(!source.source_class.empty())classes<<"Record class: "+text(source.source_class);
         if(source.has_source_splits)for(std::size_t i=0;i<source.source_allocation_fields.size();++i)if(!source.source_allocation_fields[i].class_label.empty())classes<<QString("Split %1 class: ").arg(i+1)+text(source.source_allocation_fields[i].class_label);
@@ -1190,7 +1189,12 @@ struct ImportModel::Worker {
         if(source.diagnostic) selected["diagnostic"]=selected["diagnostic"].toString()+" — saved interpretation repair; original diagnostic retained.";
         selected["original"]=original?(source.original_amount?money(*source.original_amount,amountFormat):QString("Unavailable")):QString();
         const bool pendingRow=found->state==app::BatchState::pending || row.restored_draft;
-        selected["editable"]=pendingRow && !repo.transaction_accepted({batch,ordinal});
+        const bool accepted=repo.transaction_accepted({batch,ordinal});
+        selected["editable"]=pendingRow && !accepted;
+        if((pendingRow || found->state==app::BatchState::protected_drafts) && !accepted &&
+            !row.excluded_by_clear && row.decision.disposition!=imports::Disposition::duplicate &&
+            app::has_repeated_payee_warning(row.source,*row.draft))
+            selected["importWarning"]=text(qif::repeated_payee_warning);
         selected["decision"]=static_cast<int>(row.decision.disposition);
         selected["reviewStale"]=row.review_stale;
         if(row.review_stale) selected["diagnostic"]=selected.value("diagnostic").toString()+" Choose whether this is already imported or a separate transaction.";
@@ -1202,8 +1206,8 @@ struct ImportModel::Worker {
                 resolved|=side->endpoint==endpoint || (side->attached_evidence && side->attached_evidence->endpoint==endpoint) || (side->proposed_evidence && side->proposed_evidence->endpoint==endpoint);
             if(!resolved)selected["diagnostic"]=selected.value("diagnostic").toString()+" Choose a destination for this transfer: "+text(allocation.category)+". In Transfers, choose the destination for this split or match an existing transfer.";
         }
-        selected["transferEligible"]=pendingRow && !repo.transaction_accepted({batch,ordinal}) && row.decision.disposition==imports::Disposition::include;
-        const bool committed=repo.transaction_accepted({batch,ordinal}) && row.decision.disposition==imports::Disposition::include && !row.excluded_by_clear;
+        selected["transferEligible"]=pendingRow && !accepted && row.decision.disposition==imports::Disposition::include;
+        const bool committed=accepted && row.decision.disposition==imports::Disposition::include && !row.excluded_by_clear;
         selected["committed"]=committed;
         if(committed && repo.committed_changes_supported()) {
             const auto entry=repo.committed_entry({batch,ordinal});selectedCommittedToken=entry.token;selected["draft"]=draft(entry.current.draft,categoryById,dateFormat,amountFormat);

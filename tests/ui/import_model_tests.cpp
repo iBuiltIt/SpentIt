@@ -3406,17 +3406,26 @@ private slots:
         QCOMPARE(payee->property("text").toString(),"TEST SHOP");
         QVERIFY(!payee->property("readOnly").toBool());
         QTRY_VERIFY(window->findChild<QObject*>("transactionImportWarning")->property("visible").toBool());
-        const auto index=m.occurrenceIndex(batch.toString(),0);QVERIFY(index>=0);
-        QVERIFY(!m.data(m.index(index,0),Qt::UserRole).toMap().value("importWarning").toString().isEmpty());
+        const auto ledgerWarning=[&](const QVariant& sourceBatch){
+            return m.rowRecord(m.occurrenceIndex(sourceBatch.toString(),0)).value("importWarning").toString();
+        };
+        const auto editorWarning=[&]{return selected(m).value("importWarning").toString();};
+        const QString warning="Repeated payee text. Used the first line.";
+        QCOMPARE(ledgerWarning(batch),warning);
         auto edit=selected(m).value("draft").toMap();edit["memo"]="Purchase";
         run(m,"save",edit);
         QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(ledgerWarning(batch),warning);
+        QCOMPARE(editorWarning(),warning);
 
         QVERIFY(payee->setProperty("text","Edited shop"));
         QVERIFY(QMetaObject::invokeMethod(payee,"textEdited"));
         QVERIFY(QMetaObject::invokeMethod(payee,"accepted"));
         QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
         QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QVERIFY(ledgerWarning(batch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
+        QTRY_VERIFY(!window->findChild<QObject*>("transactionImportWarning")->property("visible").toBool());
         QCOMPARE(m.state().value("newTransactions").toInt(),1);
         QCOMPARE(m.state().value("committed").toString(),"0.00");
         QCOMPARE(m.state().value("balance").toString(),"-10.38");
@@ -3424,22 +3433,56 @@ private slots:
 
         run(m,"undo_action",m.state().value("actionUndo").toMap());
         QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(ledgerWarning(batch),warning);
+        QCOMPARE(editorWarning(),warning);
         QCOMPARE(m.state().value("newTransactions").toInt(),1);
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"TEST SHOP");
         run(m,"redo_action",m.state().value("actionRedo").toMap());
         QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QVERIFY(ledgerWarning(batch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
         QCOMPARE(m.state().value("newTransactions").toInt(),1);
 
         run(m,"close");run(m,"open",{{"path",path}});run(m,"review_load");
         QCOMPARE(m.state().value("reviewCount").toInt(),0);
         QCOMPARE(m.state().value("newTransactions").toInt(),1);
+        run(m,"inspect",{{"batch",batch},{"ordinal",0}});
+        QVERIFY(ledgerWarning(batch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
+
+        const QByteArray secondRaw="D2026-09-28\nT-2.00\nPTEST STORE\nTEST STORE\n^\n";
+        run(m,"import",{{"path",fixture(dir.path(),secondRaw)},{"profile","DMY"}});
+        const auto secondBatch=selected(m).value("batch");
+        QVERIFY(!secondBatch.toString().isEmpty() && secondBatch!=batch);
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(ledgerWarning(secondBatch),warning);
+        QCOMPARE(editorWarning(),warning);
+
         QVERIFY(QMetaObject::invokeMethod(window,"requestCommit"));
         QTRY_VERIFY(!m.busy());QVERIFY2(m.error().isEmpty(),qPrintable(m.error()));
-        QCOMPARE(m.state().value("committed").toString(),"-10.38");
+        QCOMPARE(m.state().value("committed").toString(),"-12.38");
+        QCOMPARE(m.state().value("reviewCount").toInt(),0);
+        QVERIFY(ledgerWarning(secondBatch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
+
+        run(m,"undo_action",m.state().value("actionUndo").toMap());
+        QCOMPARE(m.state().value("reviewCount").toInt(),1);
+        QCOMPARE(ledgerWarning(secondBatch),warning);
+        QCOMPARE(editorWarning(),warning);
+        QVERIFY(ledgerWarning(batch).isEmpty());
+        run(m,"redo_action",m.state().value("actionRedo").toMap());
+        QCOMPARE(m.state().value("committed").toString(),"-12.38");
+        QVERIFY(ledgerWarning(secondBatch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
+
         run(m,"close");run(m,"open",{{"path",path}});run(m,"inspect",{{"batch",batch},{"ordinal",0}});
         QCOMPARE(selected(m).value("draft").toMap().value("payee").toString(),"Edited shop");
-        QVERIFY(!selected(m).value("importWarning").toString().isEmpty());
+        QVERIFY(editorWarning().isEmpty());
         QCOMPARE(selected(m).value("source").toString().trimmed(),QString::fromUtf8(raw).trimmed());
+        run(m,"inspect",{{"batch",secondBatch},{"ordinal",0}});
+        QVERIFY(ledgerWarning(secondBatch).isEmpty());
+        QVERIFY(editorWarning().isEmpty());
+        QCOMPARE(selected(m).value("source").toString().trimmed(),QString::fromUtf8(secondRaw).trimmed());
         QCOMPARE(m.state().value("reviewCount").toInt(),0);
     }
     void reviewUnsupportedRecordShowsSource() {

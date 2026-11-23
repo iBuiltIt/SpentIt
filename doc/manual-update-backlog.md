@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Manual work through MAN-114 is complete. The next entry is MAN-118.
+Manual work through MAN-114 is complete. The next entry is MAN-119.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -13,7 +13,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-118. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-119. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [Help contract](help.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -48,6 +48,16 @@ In [Create or open your file](../manual/create-open-file.md), explain that typin
 a currency code such as `ZAR` jumps to the match in the open list. Mention that
 a short pause starts a fresh search and Enter chooses the highlighted currency.
 The existing pictures still apply.
+
+### MAN-118 — Repeated payee warning clears
+
+2026-11-23 · [QIF contract](qif-profile.md)
+
+In [Look at import problems](../manual/review-duplicates-transfers.md#look-at-import-problems),
+explain that saving a payee correction or accepting the transaction clears the
+warning from Review, the ledger, and the transaction editor. The original QIF
+remains available. The existing Review picture still shows the warning before
+either action.
 
 ## Recapturing pictures
 

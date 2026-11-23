@@ -235,9 +235,7 @@ app::ReviewSheet ImportStore::build_review_sheet(const std::vector<app::LinkExcl
         for(auto& row:ledger_rows(true,true,LedgerRead::review)) {
             if(row.identity.batch.starts_with("~transfer-"))continue;
             const auto [entry,inserted]=rows.emplace(row.identity,app::ReviewTransaction{row.identity,account.identity,account.name,std::move(row.draft),row.committed,manual_batches.at(row.identity.batch)?"Manually entered":""});
-            // A saved manual payee supersedes the import suggestion. Undo
-            // restores the prior payee ownership along with its text.
-            if(inserted && row.repeated_payee && !row.committed && entry->second.draft.payee_owner!=FieldOwnership::manual)
+            if(inserted && row.repeated_payee)
                 result.questions.push_back({"payee:"+review_key(row.identity),app::ReviewKind::notice,account.identity,account.name,std::string(qif::repeated_payee_warning),row.identity.batch,row.identity.ordinal,{entry->second},{},0,app::ReviewIssueAction::inspect});
         }
         for(const auto& b:account_batches)if(b.state==app::BatchState::pending || b.state==app::BatchState::captured || b.state==app::BatchState::protected_drafts){

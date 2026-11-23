@@ -154,6 +154,11 @@ struct ImportGroup {
 };
 struct MissingImportCategories { std::string source; std::vector<std::string> names; };
 struct ImportRepairProgress {std::size_t total=0,done=0,amounts=0,blocked=0;};
+// Call for a New transaction. Undo restores the prior payee ownership with its text.
+inline bool has_repeated_payee_warning(const qif::Record& source,const imports::DraftRow& draft) {
+    return source.format=="qif" && source.uninterpreted==qif::repeated_payee_evidence &&
+        draft.payee_owner!=FieldOwnership::manual;
+}
 struct RowView {
     imports::Occurrence identity;
     qif::Record source;
