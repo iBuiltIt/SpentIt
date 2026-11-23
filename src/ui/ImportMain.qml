@@ -101,6 +101,9 @@ ApplicationWindow {
     component UsableComboBox: ComboBox {
         id:combo
         property real popupPreferredWidth: 180
+        property bool typeAheadEnabled: false
+        Keys.onPressed: function(event) { menu.handleTypeAheadKey(event) }
+        onHighlightedIndexChanged: if (typeAheadEnabled && menu) menu.typeAheadIndex = -1
         delegate: ItemDelegate {
             required property var model
             required property int index
@@ -114,18 +117,78 @@ ApplicationWindow {
                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
             }
             font.weight: combo.currentIndex === index ? Font.DemiBold : Font.Normal
-            highlighted: combo.highlightedIndex === index
+            highlighted: (combo.typeAheadEnabled ? menu.currentIndex : combo.highlightedIndex) === index
             hoverEnabled: combo.hoverEnabled
         }
         popup:Popup {
-            onVisibleChanged:window.diagnosticModalChanged(29,visible)
+            onVisibleChanged: {
+                window.diagnosticModalChanged(29, visible)
+                if (combo.typeAheadEnabled && !visible) {
+                    menu.clearPrefix()
+                    menu.typeAheadIndex = -1
+                }
+            }
             y:combo.height;width:Math.min(window.width-40,Math.max(combo.width,combo.popupPreferredWidth));padding:4
             x:Math.min(0,window.width-20-combo.mapToItem(window.contentItem,0,0).x-width)
             height:Math.min(320,menu.contentHeight+8)
             contentItem:ListView {
                 id:menu;clip:true;implicitHeight:contentHeight;model:combo.popup.visible?combo.delegateModel:null
-                currentIndex:combo.highlightedIndex;boundsBehavior:Flickable.StopAtBounds
+                currentIndex:typeAheadIndex>=0?typeAheadIndex:combo.highlightedIndex
+                boundsBehavior:Flickable.StopAtBounds
+                Binding on highlightMoveDuration {
+                    when: combo.typeAheadEnabled
+                    value: 0
+                }
                 ScrollBar.vertical:UsableScrollBar {objectName:"comboScrollBar"}
+
+                // The combo box exposes its popup highlight as read-only.
+                property int typeAheadIndex: -1
+                property string prefix: ""
+                property double lastLetterTime: 0
+                function clearPrefix() {
+                    prefix = ""
+                    lastLetterTime = 0
+                }
+                Keys.onPressed: function(event) { handleTypeAheadKey(event) }
+                function handleTypeAheadKey(event) {
+                    if (!combo.typeAheadEnabled || !combo.popup.visible)
+                        return
+                    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                        return
+                    if (/^[a-zA-Z]$/.test(event.text)) {
+                        event.accepted = true
+                        if (event.isAutoRepeat)
+                            return
+                        const now = Date.now()
+                        // Check on keypress so the reset is independent of frame timing.
+                        if (now - lastLetterTime >= 600 || now < lastLetterTime)
+                            clearPrefix()
+                        lastLetterTime = now
+                        prefix += event.text.toUpperCase()
+                        const match = combo.find(prefix, Qt.MatchStartsWith)
+                        if (match >= 0)
+                            typeAheadIndex = match
+                    } else if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
+                               || event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+                        clearPrefix()
+                        if (typeAheadIndex < 0)
+                            return
+                        if (event.key === Qt.Key_Home)
+                            typeAheadIndex = 0
+                        else if (event.key === Qt.Key_End)
+                            typeAheadIndex = combo.count - 1
+                        else
+                            typeAheadIndex = Math.max(0, Math.min(combo.count - 1,
+                                typeAheadIndex + (event.key === Qt.Key_Down ? 1 : -1)))
+                        event.accepted = true
+                    } else if (typeAheadIndex >= 0 && (event.key === Qt.Key_Return
+                               || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                        event.accepted = true
+                        combo.currentIndex = typeAheadIndex
+                        combo.popup.close()
+                        combo.activated(combo.currentIndex)
+                    }
+                }
             }
         }
     }
@@ -4238,7 +4301,15 @@ ApplicationWindow {
                         Button {text:"Browse new location…";onClicked:{createDialog.currentFolder=workflow.documentsFolder;createDialog.selectedFile=workflow.suggestedFile;createDialog.open()}}
                         Label {text:"Account name"}
                         NavigableTextField {id:accountName;objectName:"initialAccountName";text:"SpentIt";placeholderText:"Account name";Layout.fillWidth:true;Accessible.name:"Account name"}
-                        RowLayout {Label {text:"Home / account currency"} UsableComboBox {id:currency;objectName:"setupCurrency";model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD");Accessible.name:"Currency";onActivated:suggestSetupDate()}}
+                        RowLayout {
+                            Label {text:"Home / account currency"}
+                            UsableComboBox {
+                                id:currency;objectName:"setupCurrency"
+                                model:workflow.currencies;currentIndex:workflow.currencies.indexOf("CAD")
+                                typeAheadEnabled:true;Accessible.name:"Currency"
+                                onActivated:suggestSetupDate()
+                            }
+                        }
                         DateFormatSelector {
                             id:setupDate;comboName:"setupDateFormat";customName:"customDateFormat";Layout.fillWidth:true
                             onEdited:setupDateOverridden=true

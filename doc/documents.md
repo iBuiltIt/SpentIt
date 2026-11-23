@@ -28,7 +28,10 @@ UTF-8 text. This check does not change the file format.
 ## Creation and welcome
 
 Creation defaults to the account name SpentIt, CAD, password protection on, and
-**Use default categories** checked. The date-format selector offers six presets
+**Use default categories** checked. With the currency list open, type the start
+of a currency code to jump to the first match. A pause of 600 ms clears the
+typed prefix. Press Enter to choose the highlighted currency or Escape to
+close the list. The date-format selector offers six presets
 and a custom pattern of `YYYY`, `MM`, and `DD` once each. The
 suggestion follows the chosen currency (`MM/DD/YYYY` for USD, `DD/MM/YYYY` for
 GBP, AUD, and NZD, `YYYY-MM-DD` otherwise) and stays if the user overrides it.

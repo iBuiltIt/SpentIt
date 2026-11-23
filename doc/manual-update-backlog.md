@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Manual work through MAN-114 is complete. The next entry is MAN-117.
+Manual work through MAN-114 is complete. The next entry is MAN-118.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -13,7 +13,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-117. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-118. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [Help contract](help.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -39,6 +39,15 @@ In [Find transactions](../manual/find-transactions.md), explain the rose edge,
 the outlined **Selected** and **Match** rows, and the balance shown for each
 candidate. Show the comparison on a synthetic ledger with several candidates
 and one chosen match.
+
+### MAN-117 — Startup currency type-ahead
+
+2026-11-23 · [File creation contract](documents.md#creation-and-welcome)
+
+In [Create or open your file](../manual/create-open-file.md), explain that typing
+a currency code such as `ZAR` jumps to the match in the open list. Mention that
+a short pause starts a fresh search and Enter chooses the highlighted currency.
+The existing pictures still apply.
 
 ## Recapturing pictures
 

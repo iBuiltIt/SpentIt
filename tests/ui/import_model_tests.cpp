@@ -2878,6 +2878,81 @@ private slots:
         QCOMPARE(gateway->repository().ledger(false).front().draft.date,std::string("2026-10-12"));
         QCOMPARE(gateway->repository().account().opening_date,std::string("2026-09-28"));
     }
+    void setupCurrencyTypeAhead() {
+        ImportModel model(storage::document_gateway());
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("workflow", &model);
+        engine.load(QUrl("qrc:/spentit/ImportMain.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowActive(window));
+        QTRY_VERIFY(model.error().contains("not found"));
+        auto* newFile = window->findChild<QObject*>("newDataset");
+        QVERIFY(newFile && QMetaObject::invokeMethod(newFile, "clicked"));
+        QTRY_VERIFY(!model.busy());
+
+        auto* currency = window->findChild<QQuickItem*>("setupCurrency");
+        auto* date = window->findChild<QObject*>("setupDateFormat");
+        QVERIFY(currency && date);
+        auto* popup = currency->property("popup").value<QObject*>();
+        QVERIFY(popup);
+        auto* list = popup->property("contentItem").value<QQuickItem*>();
+        QVERIFY(list);
+        const auto codes = model.currencies();
+        auto highlighted = [&] { return codes.value(list->property("currentIndex").toInt()); };
+        auto selected = [&] { return currency->property("currentText").toString(); };
+        auto highlightInView = [&] {
+            auto* item = list->property("currentItem").value<QQuickItem*>();
+            if (!item || !item->property("highlighted").toBool())
+                return false;
+            const auto top = item->mapToItem(list, QPointF()).y();
+            return top >= -1 && top + item->height() <= list->height() + 1;
+        };
+
+        currency->forceActiveFocus();
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QTest::keyClick(window, Qt::Key_U);
+        QTest::keyClick(window, Qt::Key_S);
+        QTest::keyClick(window, Qt::Key_D);
+        QCOMPARE(highlighted(), QString("USD"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(selected(), QString("USD"));
+        QCOMPARE(date->property("currentText").toString(), QString("MM/DD/YYYY"));
+
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QTest::keyClick(window, Qt::Key_C);
+        QCOMPARE(highlighted(), QString("CAD"));
+        QTRY_VERIFY_WITH_TIMEOUT(highlightInView(), 250);
+        QCOMPARE(selected(), QString("USD"));
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(selected(), QString("USD"));
+
+        QTest::keyClick(window, Qt::Key_Space);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        QTest::keyClick(window, Qt::Key_Z, Qt::ShiftModifier);
+        QTest::keyClick(window, Qt::Key_A, Qt::ShiftModifier);
+        QTest::keyClick(window, Qt::Key_R, Qt::ShiftModifier);
+        QCOMPARE(highlighted(), QString("ZAR"));
+        QTRY_VERIFY_WITH_TIMEOUT(highlightInView(), 250);
+        QTest::qWait(700);
+        QTest::keyClick(window, Qt::Key_C);
+        QCOMPARE(highlighted(), QString("CAD"));
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(highlighted(), codes.at(codes.indexOf("CAD") + 1));
+        QTest::keyClick(window, Qt::Key_Z);
+        QTest::keyClick(window, Qt::Key_A);
+        QTest::keyClick(window, Qt::Key_R);
+        QCOMPARE(highlighted(), QString("ZAR"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QCOMPARE(selected(), QString("ZAR"));
+        QCOMPARE(date->property("currentText").toString(), QString("YYYY-MM-DD"));
+    }
     void welcomeFlow() {
         QTemporaryDir dir;const auto missing=dir.path()+"/missing.spentit";
         QSettings().setValue("datasetPath",missing);
