@@ -58,6 +58,10 @@ Desktop.ini
 *.p12
 *.pfx
 
+# Local tutorial video planning. Keep these files on the machine that
+# records the videos; they are not part of the SpentIt repository.
+/assets/tutorial/
+
 # Runtime documents, bank exports, database sidecars and backups.
 # Never add personal data. Deliberately synthetic fixtures matching these
 # patterns need explicit review and a narrow exception before tracking.
