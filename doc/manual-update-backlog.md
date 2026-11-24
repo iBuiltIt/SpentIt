@@ -1,6 +1,6 @@
 # Manual update backlog
 
-Manual work through MAN-114 is complete. The next entry is MAN-119.
+Manual work through MAN-114 is complete. The next entry is MAN-120.
 
 Owner direction: accumulate the next manual changes here while application work
 continues, then update and verify the manual in a later owner-authorized pass.
@@ -13,7 +13,7 @@ Logging an item does not authorize editing `manual/` or recapturing pictures.
 - Distinguish text already updated from outstanding text, screenshots, captions,
   examples, and cross-references. Merge overlapping work so pictures are
   recaptured once against the final UI.
-- Keep stable entry IDs. The next entry is MAN-119. Remove an entry from this
+- Keep stable entry IDs. The next entry is MAN-120. Remove an entry from this
   log once the affected content and pictures are in bundled Help.
 - Follow [Help contract](help.md). Use synthetic examples.
   Preserve topic and section identifiers. Never use private records.
@@ -58,6 +58,14 @@ explain that saving a payee correction or accepting the transaction clears the
 warning from Review, the ledger, and the transaction editor. The original QIF
 remains available. The existing Review picture still shows the warning before
 either action.
+
+### MAN-119 — Rules list selection outline
+
+2026-11-23 · [Rules workspace contract](rules.md#workspace)
+
+In [Rules](../manual/rules.md), refresh `rules-editor.png` and
+`rules-preview.png` to show the rule-name, Up, and Down buttons inset within
+the selected row. The existing instructions still apply.
 
 ## Recapturing pictures
 

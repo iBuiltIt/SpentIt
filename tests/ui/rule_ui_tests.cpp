@@ -1496,8 +1496,18 @@ private slots:
         QVERIFY(click(s.root,"saveRules"));wait(s.model);
         transactionRule(s.root,"Third","^Third$","Third payee");
         QVERIFY(click(s.root,"saveRules"));wait(s.model);
-        QVERIFY(click(s.root,"openRule_2"));
         auto item=[&](const QString& name){return qobject_cast<QQuickItem*>(object(s.root,name));};
+        QVERIFY(click(s.root,"openRule_1"));
+        auto* middleRow=item("ruleRow_1");
+        QVERIFY(middleRow);
+        for(const auto* name:{"openRule_1","moveRuleUp_1","moveRuleDown_1"}) {
+            auto* button=item(name);
+            QVERIFY(button && button->isVisible());
+            const auto bounds=button->mapRectToItem(middleRow,button->boundingRect());
+            QVERIFY2(bounds.top()>=3,name);
+            QVERIFY2(middleRow->height()-bounds.bottom()>=3,name);
+        }
+        QVERIFY(click(s.root,"openRule_2"));
         QVERIFY(!object(s.root,"ruleNumber_0"));
         auto* header=item("ruleListHeader");QVERIFY(header && header->isVisible());
         QCOMPARE(item("ruleColumnEnabled")->property("text").toString(),QString("Enabled"));

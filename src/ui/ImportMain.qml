@@ -4861,6 +4861,7 @@ ApplicationWindow {
                     ColumnLayout {
                         id:rulesColumn;width:rulesPage.availableWidth;spacing:8
                         readonly property int ruleListSpacing: 6
+                        readonly property int ruleButtonVerticalInset: 3
                         readonly property int ruleNameColumnWidth: 240
                         readonly property int ruleTypeColumnWidth: 180
                         readonly property int ruleCategoryColumnWidth: 200
@@ -4932,6 +4933,9 @@ ApplicationWindow {
                                         text:(label||("Rule "+(index+1)))+(ruleEntry.isNew?" · New":ruleEntry.deletedDraft?" · Removal pending":ruleEntry.changed?" · Unsaved":"")
                                         highlighted:ruleIndex===index;onClicked:openRule(index);clip:true
                                         Layout.preferredWidth:rulesColumn.ruleNameColumnWidth;Layout.minimumWidth:rulesColumn.ruleNameColumnWidth;Layout.maximumWidth:rulesColumn.ruleNameColumnWidth
+                                        Layout.preferredHeight:implicitHeight-2*rulesColumn.ruleButtonVerticalInset
+                                        Layout.topMargin:rulesColumn.ruleButtonVerticalInset
+                                        Layout.bottomMargin:rulesColumn.ruleButtonVerticalInset
                                         contentItem: Label {
                                             text:openRuleButton.text;font:openRuleButton.font;textFormat:Text.PlainText
                                             color:openRuleButton.highlighted?openRuleButton.palette.brightText:openRuleButton.palette.buttonText
@@ -4941,10 +4945,24 @@ ApplicationWindow {
                                     }
                                     Label {objectName:"ruleType_"+index;text:(scope==="split"?"Split":"Transaction")+" · "+(scope==="split" && input==="payee"?"Parent payee":input);textFormat:Text.PlainText;elide:Text.ElideRight;clip:true;Layout.preferredWidth:rulesColumn.ruleTypeColumnWidth;Layout.minimumWidth:rulesColumn.ruleTypeColumnWidth;Layout.maximumWidth:rulesColumn.ruleTypeColumnWidth}
                                     Label {objectName:"ruleCategory_"+index;text:actionSummary(ruleEntry);textFormat:Text.PlainText;elide:Text.ElideRight;clip:true;Layout.preferredWidth:rulesColumn.ruleCategoryColumnWidth;Layout.minimumWidth:rulesColumn.ruleCategoryColumnWidth;Layout.maximumWidth:rulesColumn.ruleCategoryColumnWidth}
-                                    Button {id:moveUp;objectName:"moveRuleUp_"+index;text:"Up";visible:index>0 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,-1);Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth}
+                                    Button {
+                                        id:moveUp;objectName:"moveRuleUp_"+index;text:"Up"
+                                        visible:index>0 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,-1)
+                                        Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth
+                                        Layout.preferredHeight:implicitHeight-2*rulesColumn.ruleButtonVerticalInset
+                                        Layout.topMargin:rulesColumn.ruleButtonVerticalInset
+                                        Layout.bottomMargin:rulesColumn.ruleButtonVerticalInset
+                                    }
                                     // A missing Up or Down keeps its width so the columns stay on the same edge.
                                     Item {objectName:"moveRuleUpSpacer_"+index;visible:!moveUp.visible;Layout.preferredWidth:moveUp.implicitWidth;Layout.minimumWidth:moveUp.implicitWidth;Layout.maximumWidth:moveUp.implicitWidth}
-                                    Button {id:moveDown;objectName:"moveRuleDown_"+index;text:"Down";visible:index<ruleModel.count-1 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,1);Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth}
+                                    Button {
+                                        id:moveDown;objectName:"moveRuleDown_"+index;text:"Down"
+                                        visible:index<ruleModel.count-1 && !ruleEntry.deletedDraft;enabled:visible;onClicked:moveRule(index,1)
+                                        Layout.preferredWidth:implicitWidth;Layout.minimumWidth:implicitWidth;Layout.maximumWidth:implicitWidth
+                                        Layout.preferredHeight:implicitHeight-2*rulesColumn.ruleButtonVerticalInset
+                                        Layout.topMargin:rulesColumn.ruleButtonVerticalInset
+                                        Layout.bottomMargin:rulesColumn.ruleButtonVerticalInset
+                                    }
                                     Item {objectName:"moveRuleDownSpacer_"+index;visible:!moveDown.visible;Layout.preferredWidth:moveDown.implicitWidth;Layout.minimumWidth:moveDown.implicitWidth;Layout.maximumWidth:moveDown.implicitWidth}
 
                                     }
